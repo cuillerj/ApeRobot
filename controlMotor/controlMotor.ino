@@ -45,7 +45,7 @@ void setup() {
   Serial.print(" mm at ");
   Serial.print(iSpeed);
   Serial.println(" mm/s means");
-  setMotorOrder(iDistance, iSpeed, iDistance, iSpeed);
+  setMotorOrder(iDistance, iSpeed, iDistance, iSpeed); // Used to compute the distance and speed expected for each motor.
   Serial.print("Moving during ");
   Serial.print(iLeftDuration);
   Serial.print(" s at ");
