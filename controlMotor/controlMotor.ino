@@ -10,8 +10,8 @@ int iLeftWheelDiameter = 65; //(in mm - used to measure robot moves)
 int iRightWheelDiameter = iLeftWheelDiameter; //(in mm - used to measure robot moves)
 int iLeftMotorDemultiplierPercent = 100; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel)
 int iRightMotorDemultiplierPercent = iLeftMotorDemultiplierPercent; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel)
-int iLeftTractionDistPerRev = 2*PI*iLeftWheelDiameter/2*iLeftMotorDemultiplierPercent/100;
-int iRightTractionDistPerRev = 2*PI*iRightWheelDiameter/2*iRightMotorDemultiplierPercent/100;
+int iLeftTractionDistPerRev = 2 * PI * iLeftWheelDiameter / 2 * iLeftMotorDemultiplierPercent / 100;
+int iRightTractionDistPerRev = 2 * PI * iRightWheelDiameter / 2 * iRightMotorDemultiplierPercent / 100;
 
 //-- left Motor connection --
 int leftMotorENA = 3; //Connecté à Arduino pin 5(sortie pwm)
@@ -27,11 +27,12 @@ int rightMotorIN4 = 8; //Connecté à Arduino pin 7
 boolean bForward = true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
-
+boolean firstCycle = true;
 unsigned long iDistance = 1000; // mm
 int iSpeed = 250; // mm/s
 unsigned long iLeftDuration;
 unsigned long iRightDuration;
+unsigned long restartedDelay;
 int iLeftRevSpeed;
 int iRightRevSpeed;
 
@@ -45,22 +46,36 @@ void setup() {
   Serial.print(" mm at ");
   Serial.print(iSpeed);
   Serial.println(" mm/s means");
-  setMotorOrder(iDistance, iSpeed, iDistance, iSpeed); // Used to compute the distance and speed expected for each motor.
+  setMotorOrder(iDistance, iSpeed, iDistance, iSpeed);
   Serial.print("Moving during ");
   Serial.print(iLeftDuration);
   Serial.print(" s at ");
   Serial.print(iLeftRevSpeed);
   Serial.println(" turns per minute");
-  startMotors();
+  //  startMotors();
 }
 
 void loop() {
-  Serial.print("millis: ");
-  Serial.println(millis());
-  boolean isLeftRunning = leftMotor.CheckMotor();
-  boolean isRightRunning = rightMotor.CheckMotor();
-
-  delay(1000);
+  // Serial.print("millis: ");
+  //  Serial.println(millis());
+  int iLeftRpm = leftMotor.CheckMotor();
+  int iRightRpm = rightMotor.CheckMotor();
+  Serial.print(iLeftRpm);
+  Serial.print(" - ");
+  Serial.println(iRightRpm);
+  if (firstCycle == true)
+  {
+    startMotors();
+    Serial.println("start");
+    firstCycle =false;
+  }
+  if (millis() - restartedDelay >= 30000)
+  {
+    startMotors();
+    restartedDelay=millis();
+    Serial.println("re-start");
+  }
+delay(100);
 }
 
 void startMotors() {
@@ -70,10 +85,10 @@ void startMotors() {
 
 void setMotorOrder(unsigned long iLeftDistance, int iLeftSpeed, unsigned long iRightDistance, int iRightSpeed)
 {
-  iLeftDuration = iLeftDistance/iLeftSpeed*1000; // ms
-  iRightDuration = iRightDistance/iLeftSpeed*1000; // ms
-  Serial.println(iLeftSpeed);
-  Serial.println(iLeftTractionDistPerRev);
-  iLeftRevSpeed = iLeftSpeed*60/iLeftTractionDistPerRev; // revolutions per minute
-  iRightRevSpeed = iRightSpeed*60/iRightTractionDistPerRev; // revolutions per minute
+  iLeftDuration = iLeftDistance / iLeftSpeed * 1000; // ms
+  iRightDuration = iRightDistance / iLeftSpeed * 1000; // ms
+ // Serial.println(iLeftSpeed);
+//  Serial.println(iLeftTractionDistPerRev);
+  iLeftRevSpeed = iLeftSpeed * 60 / iLeftTractionDistPerRev; // revolutions per minute
+  iRightRevSpeed = iRightSpeed * 60 / iRightTractionDistPerRev; // revolutions per minute
 }
