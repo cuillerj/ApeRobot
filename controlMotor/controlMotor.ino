@@ -30,8 +30,8 @@ boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to ge
 boolean firstCycle = true;
 unsigned long iDistance = 1000; // mm
 int iSpeed = 250; // mm/s
-unsigned long iLeftDuration;
-unsigned long iRightDuration;
+unsigned long iLeftCentiRevolutions;
+unsigned long iRightCentiRevolutions;
 unsigned long restartedDelay;
 int iLeftRevSpeed;
 int iRightRevSpeed;
@@ -46,10 +46,10 @@ void setup() {
   Serial.print(" mm at ");
   Serial.print(iSpeed);
   Serial.println(" mm/s means");
-  setMotorOrder(iDistance, iSpeed, iDistance, iSpeed);
+  ComputerMotorsRevolutionsAndrpm(iDistance, iSpeed, iDistance, iSpeed);
   Serial.print("Moving during ");
-  Serial.print(iLeftDuration);
-  Serial.print(" s at ");
+  Serial.print(iLeftCentiRevolutions);
+  Serial.print(" centi-revolutions at ");
   Serial.print(iLeftRevSpeed);
   Serial.println(" turns per minute");
   //  startMotors();
@@ -79,14 +79,14 @@ delay(100);
 }
 
 void startMotors() {
-  leftMotor.TurnMotor(bLeftClockwise, iLeftDuration, iLeftRevSpeed);
-  rightMotor.TurnMotor(bRightClockwise, iRightDuration, iRightRevSpeed);
+  leftMotor.TurnMotor(bLeftClockwise, iLeftCentiRevolutions, iLeftRevSpeed);
+  rightMotor.TurnMotor(bRightClockwise, iRightCentiRevolutions, iRightRevSpeed);
 }
 
-void setMotorOrder(unsigned long iLeftDistance, int iLeftSpeed, unsigned long iRightDistance, int iRightSpeed)
+void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed, unsigned long iRightDistance, int iRightSpeed)
 {
-  iLeftDuration = iLeftDistance / iLeftSpeed * 1000; // ms
-  iRightDuration = iRightDistance / iLeftSpeed * 1000; // ms
+  iLeftCentiRevolutions = iLeftDistance / iLeftTractionDistPerRev * 100; // Centi-revolutions
+  iRightCentiRevolutions = iRightDistance / iRightTractionDistPerRev * 100; // ms
  // Serial.println(iLeftSpeed);
 //  Serial.println(iLeftTractionDistPerRev);
   iLeftRevSpeed = iLeftSpeed * 60 / iLeftTractionDistPerRev; // revolutions per minute
