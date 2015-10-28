@@ -69,7 +69,7 @@ int leftMotorIN2 = 4; //Connecté à Arduino pin 4
 
 //-- right Motor connection --
 int rightMotorENB = 6; //Connecté à Arduino pin 6(Sortie pwm)
-int rightMotorIN3 = 5; //Connecté à Arduino pin 5
+int rightMotorIN3 = 5; //Connecté à Arduino pin 4
 int rightMotorIN4 = 7; //Connecté à Arduino pin 7
 
 //boolean bClockwise = true; //Used to turn the motor clockwise or counterclockwise
