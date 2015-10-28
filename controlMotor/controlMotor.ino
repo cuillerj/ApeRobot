@@ -14,7 +14,7 @@ int iLeftTractionDistPerRev = 2 * PI * iLeftWheelDiameter / 2 * iLeftMotorDemult
 int iRightTractionDistPerRev = 2 * PI * iRightWheelDiameter / 2 * iRightMotorDemultiplierPercent / 100;
 
 //-- left Motor connection --
-int leftMotorENA = 3; //Connecté à Arduino pin 5(sortie pwm)
+int leftMotorENA = 3; //Connecté à Arduino pin 3(sortie pwm)
 int leftMotorIN1 = 2; //Connecté à Arduino pin 2
 int leftMotorIN2 = 4; //Connecté à Arduino pin 3
 
@@ -29,7 +29,7 @@ boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left mot
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 boolean firstCycle = true;
 unsigned long iDistance = 1000; // mm
-int iSpeed = 250; // mm/s
+int iSpeed = 409; // mm/s 408.4 maxi 
 unsigned long iLeftCentiRevolutions;
 unsigned long iRightCentiRevolutions;
 unsigned long restartedDelay;
@@ -58,24 +58,25 @@ void setup() {
 void loop() {
   // Serial.print("millis: ");
   //  Serial.println(millis());
-  int iLeftRpm = leftMotor.CheckMotor();
-  int iRightRpm = rightMotor.CheckMotor();
-  Serial.print(iLeftRpm);
-  Serial.print(" - ");
-  Serial.println(iRightRpm);
+ int iLeftRpm = leftMotor.CheckMotor();
+int iRightRpm = rightMotor.CheckMotor();
+//  Serial.print(iLeftRpm);
+//  Serial.print(" - ");
+//  Serial.println(iRightRpm);
+
   if (firstCycle == true)
   {
-    startMotors();
+       startMotors();
     Serial.println("start");
-    firstCycle =false;
+    firstCycle = false;
   }
   if (millis() - restartedDelay >= 30000)
   {
-    startMotors();
-    restartedDelay=millis();
+      startMotors();
+    restartedDelay = millis();
     Serial.println("re-start");
   }
-delay(100);
+  delay(100);
 }
 
 void startMotors() {
@@ -87,8 +88,8 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed
 {
   iLeftCentiRevolutions = iLeftDistance / iLeftTractionDistPerRev * 100; // Centi-revolutions
   iRightCentiRevolutions = iRightDistance / iRightTractionDistPerRev * 100; // ms
- // Serial.println(iLeftSpeed);
-//  Serial.println(iLeftTractionDistPerRev);
+  // Serial.println(iLeftSpeed);
+  //  Serial.println(iLeftTractionDistPerRev);
   iLeftRevSpeed = iLeftSpeed * 60 / iLeftTractionDistPerRev; // revolutions per minute
   iRightRevSpeed = iRightSpeed * 60 / iRightTractionDistPerRev; // revolutions per minute
 }
