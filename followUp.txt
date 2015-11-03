@@ -1,4 +1,6 @@
-29/10/2015 localization tools and first documentation now online
+03/11/2015 introduction de la dimension angulaire dans les outils de localisation
+	   en 1ere approche introduit un bruit tres important dans la localisation !
+29/10/2015 localization tools and first documentation now written
 28/10/2015 second scan run more than one hour powered by battery (after 12 hours reloading) (still running at the end)
 	145 scans en BD - a noter de nombreux scans incomplets - perte dans la comm via raspberry
 27/10/2015 start of using the new motor library 
