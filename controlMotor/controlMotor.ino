@@ -28,7 +28,7 @@ boolean bForward = true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 boolean firstCycle = true;
-unsigned long iDistance = 1000; // mm
+unsigned long iDistance = 100; // mm
 int iSpeed = 409; // mm/s 408.4 maxi 
 unsigned long iLeftCentiRevolutions;
 unsigned long iRightCentiRevolutions;
@@ -86,10 +86,11 @@ void startMotors() {
 
 void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed, unsigned long iRightDistance, int iRightSpeed)
 {
-  iLeftCentiRevolutions = iLeftDistance / iLeftTractionDistPerRev * 100; // Centi-revolutions
-  iRightCentiRevolutions = iRightDistance / iRightTractionDistPerRev * 100; // ms
-  // Serial.println(iLeftSpeed);
-  //  Serial.println(iLeftTractionDistPerRev);
+  iLeftCentiRevolutions = iLeftDistance* 100 / iLeftTractionDistPerRev ; // Centi-revolutions
+  iRightCentiRevolutions = iRightDistance*100 / iRightTractionDistPerRev ; // ms
+  Serial.println(iLeftSpeed);
+   Serial.println(iLeftTractionDistPerRev);
+   Serial.println(iLeftCentiRevolutions);
   iLeftRevSpeed = iLeftSpeed * 60 / iLeftTractionDistPerRev; // revolutions per minute
   iRightRevSpeed = iRightSpeed * 60 / iRightTractionDistPerRev; // revolutions per minute
 }

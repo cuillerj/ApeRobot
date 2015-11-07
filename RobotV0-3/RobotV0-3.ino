@@ -783,8 +783,9 @@ void MoveToward(int orientation, int lengthToDo) {
     RightClockwise = bRightClockwise;
   }
   */
-  // lLeftCentiRevolutions = 100 * revolutionsToDo[0];
+  // iLeftRpm  = 100 * revolutionsToDo[0];
   // lRightCentiRevolutions = 100 * revolutionsToDo[1];
+  Serial.println(iLeftCentiRevolutions );
   startMotors();
   // leftMotor.TurnMotor(bLeftClockwise, iLeftCentiRevolutions, iLeftRevSpeed);
   //  rightMotor.TurnMotor(bRightClockwise, iRightCentiRevolutions, iRightRevSpeed);
@@ -994,8 +995,8 @@ void startMotors() {
 
 void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed, unsigned long iRightDistance, int iRightSpeed)
 {
-  iLeftCentiRevolutions = iLeftDistance / iLeftTractionDistPerRev * 100; // Centi-revolutions
-  iRightCentiRevolutions = iRightDistance / iRightTractionDistPerRev * 100; // ms
+  iLeftCentiRevolutions = iLeftDistance*100 / iLeftTractionDistPerRev; // Centi-revolutions
+  iRightCentiRevolutions = iRightDistance*100 / iRightTractionDistPerRev; // ms
   // Serial.println(iLeftSpeed);
   Serial.println(iLeftCentiRevolutions);
   iLeftRevSpeed = iLeftSpeed * 60 / iLeftTractionDistPerRev; // revolutions per minute
