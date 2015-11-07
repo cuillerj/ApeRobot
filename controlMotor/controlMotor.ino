@@ -60,7 +60,7 @@ void loop() {
   //  Serial.println(millis());
  int iLeftRpm = leftMotor.CheckMotor();
 int iRightRpm = rightMotor.CheckMotor();
-//  Serial.print(iLeftRpm);
+ // Serial.print(iLeftRpm);
 //  Serial.print(" - ");
 //  Serial.println(iRightRpm);
 
