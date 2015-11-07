@@ -1,4 +1,4 @@
-String Version = "RobotV0-2";
+String Version = "RobotV0-3";
 // passage sur GitHub
 // test maj GitHub
 // modif 16:27
@@ -54,30 +54,34 @@ byte cycleRetrySendUnit = 0; // cycle retry check unitary command - used in case
 //#include <avr/pgmspace.h>
 #include <SoftwareSerial.h>
 //-- General Robot parameters --
-int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
-int iRightMotorMaxrpm = iLeftMotorMaxrpm; // (Value unknown so far - Maximum revolutions per minute for left motor)
+int iLeftMotorMaxrpm = 125; // (Value unknown so far - Maximum revolutions per minute for left motor)
+int iRightMotorMaxrpm = 142; // (Value unknown so far - Maximum revolutions per minute for left motor)
+float fMaxrpmAdjustment;  // will be used to compansate speed difference betweeen motors
 int iLeftWheelDiameter = 65; //(in mm - used to measure robot moves)
 int iRightWheelDiameter = iLeftWheelDiameter; //(in mm - used to measure robot moves)
 int iLeftMotorDemultiplierPercent = 100; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel)
 int iRightMotorDemultiplierPercent = iLeftMotorDemultiplierPercent; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel)
 int iLeftTractionDistPerRev = 2 * PI * iLeftWheelDiameter / 2 * iLeftMotorDemultiplierPercent / 100;
 int iRightTractionDistPerRev = 2 * PI * iRightWheelDiameter / 2 * iRightMotorDemultiplierPercent / 100;
+int iRobotWidth = 150; // en mn
+int uRefMotorVoltage=1200;  // mVolt for maxRPM
+//int rayonRoue = 37; //en mn
 //-- left Motor connection --
-int leftMotorENA = 3; //Connecté à Arduino pin 3(sortie pwm)
-int leftMotorIN1 = 2; //Connecté à Arduino pin 2
-int leftMotorIN2 = 4; //Connecté à Arduino pin 4
+int leftMotorENA = 6; //Connecté à Arduino pin 3(sortie pwm)
+int leftMotorIN1 = 5; //Connecté à Arduino pin 2
+int leftMotorIN2 = 7; //Connecté à Arduino pin 4
 
 //-- right Motor connection --
-int rightMotorENB = 6; //Connecté à Arduino pin 6(Sortie pwm)
-int rightMotorIN3 = 5; //Connecté à Arduino pin 4
-int rightMotorIN4 = 7; //Connecté à Arduino pin 7
+int rightMotorENB = 3; //Connecté à Arduino pin 6(Sortie pwm)
+int rightMotorIN3 = 2; //Connecté à Arduino pin 4
+int rightMotorIN4 = 4; //Connecté à Arduino pin 7
 
 //boolean bClockwise = true; //Used to turn the motor clockwise or counterclockwise
 boolean bForward = true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 //
-unsigned long iDistance = 1000; // mm
+unsigned long iDistance = 0; // mm
 int iSpeed = 409; // mm/s 408.4 maxi
 unsigned long iLeftCentiRevolutions;
 unsigned long iRightCentiRevolutions;
@@ -102,8 +106,13 @@ unsigned long serialTimer;
 unsigned long durationMaxEcho = 25000; // en us
 uint8_t Diag = 0xFF;
 uint8_t toDo = 0x00; //
+uint8_t pendingAction = 0x00; //
+#define pendingLeftMotor 0
+#define pendingRightMotor 1
 #define toDoScan 0
 #define toDoMove 1
+#define toDoRotation 2
+#define toDoForward 3
 #define delayBetween2Scan 1500 // pour laisser le temps de positionner le servo et remonter data
 #define delayBetweenScanFB 700  // delai entre 2 pulses
 uint8_t SavDiag = 0xFF;
@@ -124,7 +133,7 @@ String data = "";
 char c = 0;
 int distFSav = 0;
 int distBSav = 0;
-
+int pendingForward = 0;
 /* Utilisation du capteur Ultrason HC-SR04 */
 //
 // définition des broches utilisées
@@ -198,8 +207,7 @@ int i = 0;
 // attached to
 //Stepper stepperD(STEPS, 6, 7); // moteur droit
 //Stepper stepperG(STEPS, 8, 11); // moteur gauche 30 a cabler
-int rayonRobot = 150; // en mn
-int rayonRoue = 37; //en mn
+
 //
 void setup() {
   Serial.begin(38400);
@@ -241,18 +249,34 @@ void setup() {
   myservo.write(pulseValue[(nbPulse + 1) / 2]);
   delay(1000);
   myservo.detach();
+  Serial.print("iLeftTractionDistPerRev:");
+  Serial.println(iLeftTractionDistPerRev);
+  fMaxrpmAdjustment=float (iLeftMotorMaxrpm)/iRightMotorMaxrpm;
+  Serial.println(fMaxrpmAdjustment);
   //  Serial.print ("free ram");
   // Serial.println(freeRam());
   //  ComputerMotorsRevolutionsAndrpm(iDistance, iSpeed, iDistance, iSpeed);
 }
 
 void loop() {
-  int iLeftRpm = leftMotor.CheckMotor();
-  if (iLeftRpm != 0)
+  if (bitRead(pendingAction, pendingLeftMotor) == true)
   {
-    Serial.println(iLeftRpm );
+    if (leftMotor.CheckMotor() == 0)
+    {
+      bitWrite(pendingAction, pendingLeftMotor, false);
+    }
   }
-  int iRightRpm = rightMotor.CheckMotor();
+  if (bitRead(pendingAction, pendingRightMotor) == true)
+  {
+    if (rightMotor.CheckMotor() == 0)
+    {
+      bitWrite(pendingAction, pendingRightMotor, false);
+    }
+  }
+  if (bitRead(toDo, toDoForward) == true && bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false)
+  {
+   MoveForward(pendingForward) ;
+  }
   int getSerial = Serial_have_message();
   if (getSerial > 0)
   {
@@ -272,26 +296,14 @@ void loop() {
 
   if (PendingReqSerial != 0x00)
   {
-    //  Serial.println("datatosend");
-    DataToSendSerial(); // bidouille pour forcer la gateway serial udp a lire le cote udp
+
+    DataToSendSerial(); //
   }
 
   else
   {
     ;
-    /*
-    if (millis() - serialAliveTimer >= 2000)
-    {
-      serialAliveTimer = millis();
-      PendingDataReqSerial[0] = 0xff;
 
-      PendingDataLenSerial = 0x01;
-      //   pendingAckSerial = 0x01;
-      PendingReqSerial = PendingReqRefSerial;
-      DataToSendSerial();
-
-    }
-    */
   }
 
 
@@ -314,18 +326,7 @@ void loop() {
     PowerCheck();
 
   }
-  /*
-    cycleRetrySendUnit = cycleRetrySendUnit + 1;
-    if ( cycleRetrySendUnit >= 30) {
-      cycleRetrySendUnit = 1;
-      uint8_t retCode = CheckUnitInd();
-      if (retCode == 0x00)
-      {
-        // verifie que la derniere data a remonter de façon securisee a ete acquittee
-      }
-    }
-    */
-  // ci-dessous mettre le code applicatif
+
   if (bitRead(toDo, toDoScan) == 1)
   {
 
@@ -336,24 +337,10 @@ void loop() {
 
   if (bitRead(toDo, toDoMove) == 1) {
     Serial.println("move");
-    MoveToward(reqAng, reqMove);
+    Move(reqAng, reqMove);
     AppStat = AppStat | 0xf0;
   }
-  //    ScanPosition(1,0);
-  //    MoveToward(-10,-300);
-  //   }
 
-  /*      for (int i=1;i<=nbPas;i++){
-   //  Serial.print(i);
-   stepperD.step(1);  // 1 pas
-   stepperG.step(1);  //
-   }
-   Serial.print("pos:" );
-   Serial.print(valAng);
-   Serial.print(" pin: ");
-   ServoFeedbackValue=analogRead(ServoFeedbackPin);
-   Serial.println(ServoFeedbackValue);
-   */
 
   if (retryCount >= 3)
   {
@@ -377,6 +364,8 @@ void TraitInput(uint8_t cmdInput) {
     case 0x73: // commande s
       Serial.println("cmd stop");
       AppStat = 0xff;
+      leftMotor.StopMotor();
+      rightMotor.StopMotor();
       break;
     case 0x78: // commande x
       Serial.println("cmd start");
@@ -690,19 +679,6 @@ int ScanOnceBack(int numStep)
 {
   int distB = PingBack();
   trameNumber = trameNumber + 1;
-  //  servoFeedbackValue = analogRead(servoFeedbackPin);
-  //  bool checkFeeback = CheckFeedback();
-  /*
-    if ((abs(abs(pulseFeedback[(pulseNumber) % nbPulse] - servoFeedbackValue)))  >= 1.05)
-    {
-      Serial.print("pb feedback:");
-      Serial.print(abs(abs(pulseFeedback[(pulseNumber) % nbPulse] - servoFeedbackValue)) / servoFeedbackValue);
-    }
-    */
-  //  Serial.println();
-  //  Serial.print("AngleB:");
-  //  Serial.print(servoFeedbackValue);
-  //  AngleRadian = ((servoFeedbackValue - 158) / 128);
   AngleRadian = (pulseValue[(pulseNumber) % nbPulse] - pulseValue[0]) * coefAngRef;
   AngleDegre = AngleRadian / PI * 180;
   // Serial.print(AngleRadian);
@@ -743,115 +719,92 @@ void SendEndScan()
   numStep = 0;
   // SendRFNoSecured();
 }
-void MoveToward(int orientation, int lengthToDo) {
-  bitWrite(toDo, toDoMove, 0);       // position bit toDo move
-  //  int nbPasToDo[4]={
-  //   MoveTowardCalculation(orientation,length)   };
-  Serial.print("rotationToDo:");
-  Serial.println(orientation);
-  Serial.print("lenToDo:");
-  Serial.println(lengthToDo);
-  int s1;
-  //  float* revolutionsToDo = MoveTowardCalculation(orientation, length) ;
-  //  for (int i = 0; i <= 3; i++)
-  //  {
-  //    Serial.println(revolutionsToDo[i]);
-  //  }
-  //  unsigned long lLeftCentiRevolutions = 100 * abs(revolutionsToDo[0]);
-  //unsigned long lRightCentiRevolutions = 100 * abs(revolutionsToDo[1]);
-  unsigned int lentghLeftToDo = lengthToDo;
-  unsigned int lentghRightToDo = lengthToDo;
-  ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, iSpeed, lentghRightToDo, iSpeed);
-  boolean LeftClockwise;
-  boolean RightClockwise;
-  // rotation
-  /*
-  if (revolutionsToDo[0] < 0)
+void Move(int orientation, int lenghtToDo)
+{
+  bitWrite(toDo, toDoMove, false);       // position bit toDo move
+  if (orientation != 0)
   {
-    LeftClockwise = bLeftClockwise * -1;
+    bitWrite(toDo, toDoRotation, true);       // position bit toDo move
+    Rotate(orientation);
   }
-  else
+  if (lenghtToDo != 0)
   {
-    LeftClockwise = bLeftClockwise;
+    bitWrite(toDo, toDoForward, true);       // position bit toDo move
+    pendingForward = lenghtToDo;
   }
-  if (revolutionsToDo[1] < 0)
+
+  Rotate(orientation);
+
+}
+void Rotate( int orientation) {
+  bitWrite(toDo, toDoRotation, false);       // position bit toDo move
+  unsigned int lentghLeftToDo = 0;
+  unsigned int lentghRightToDo = 0;
+  if (orientation != 0)
   {
-    RightClockwise = RightClockwise * -1;
+    Serial.print("rotationToDo:");
+    Serial.println(orientation);
+
+    // Rotate
+    lentghLeftToDo = RotationCalculation(abs(orientation));
+    lentghRightToDo = lentghLeftToDo;
+    ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, iSpeed, lentghRightToDo, iSpeed);
+    if (orientation > 0)
+    {
+      bLeftClockwise = true;
+ 
+    }
+    else {
+      bLeftClockwise = false;
+    }
+    bRightClockwise = !bLeftClockwise;
+
+    startMotors();
   }
-  else
-  {
-    RightClockwise = bRightClockwise;
-  }
-  */
-  // iLeftRpm  = 100 * revolutionsToDo[0];
-  // lRightCentiRevolutions = 100 * revolutionsToDo[1];
-  Serial.println(iLeftCentiRevolutions );
-  startMotors();
-  // leftMotor.TurnMotor(bLeftClockwise, iLeftCentiRevolutions, iLeftRevSpeed);
-  //  rightMotor.TurnMotor(bRightClockwise, iRightCentiRevolutions, iRightRevSpeed);
   //
-  // mouvement rectiligne
-  /*
-  if (revolutionsToDo[2] < 0)
-  {
-    LeftClockwise = bLeftClockwise * -1;
-  }
-  else
-  {
-    LeftClockwise = bLeftClockwise;
-  }
-  if (revolutionsToDo[3] < 0)
-  {
-    RightClockwise = RightClockwise * -1;
-  }
-  else
-  {
-    RightClockwise = bRightClockwise;
-  }
-  */
-  //  lLeftCentiRevolutions = 100 * revolutionsToDo[2];
-  //  lRightCentiRevolutions = 100 * revolutionsToDo[3];
-  //  leftMotor.TurnMotor(bLeftClockwise, lLeftCentiRevolutions, iLeftRevSpeed);
-  //  rightMotor.TurnMotor(bRightClockwise, lRightCentiRevolutions, iRightRevSpeed);
-  //  if (orientation != 0) {
-  //    s1 = (orientation < 0) ? -1 : +1;
-  //  }
-  //  float distCorrige = abs(distToDo[0]) * coeffGlissementRotation;
+  Serial.println("rotate ");
+  actStat = 0x69; //" move completed
+}
 
-  // Serial.print("nbPasCorrige:");
-  // Serial.println(nbPasCorrige);
-  /*
-  int j = 0;
-  for (int i = 1; i <= (nbPasCorrige); i++) {
-    if  ((AppStat & 0xf0) < 0xe0) {
-  //      stepperD.step(s1);  //
-  //      stepperG.step(s1);  //
-    }
-    j = j + 1;
-    if (j % 72 == 0) {
 
+
+// SendRFNoSecured();
+
+void MoveForward( int lengthToDo) {
+  bitWrite(toDo, toDoForward, false);       // position bit toDo move
+  unsigned int lentghLeftToDo = 0;
+  unsigned int lentghRightToDo = 0;
+
+  // move Toward
+  if (lengthToDo != 0 )
+  {
+    Serial.print("moveToDo:");
+    Serial.println(lengthToDo);
+    lentghLeftToDo = abs(lengthToDo);
+    lentghRightToDo = abs(lengthToDo);
+    ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, iSpeed, lentghRightToDo, iSpeed);
+
+
+
+    if (lengthToDo < 0)
+    {
+      bLeftClockwise = true;
+      bRightClockwise = false;
     }
-  }
-  delay(200);
-  if (length != 0) {
-    s1 = (length < 0) ? -1 : +1;
-  }
-  //  j=0;
-  for (int i = 1; i <= abs(nbPasToDo[2]); i++) {
-    if  ((AppStat & 0xf0) < 0xe0) {
-  //      stepperD.step(s1);  //
-  //      stepperG.step(-s1);  //
-    }
-    j = j + 1;
-    if (j % 72 == 0) {
-      //      if (vw_have_message())
-      //     {
-      //       TrameAnalyzeSlave();
-      //     }
+    else
+    {
+      bLeftClockwise = false;
+      bRightClockwise = true;
     }
 
+
+
+    // iLeftRpm  = 100 * revolutionsToDo[0];
+    // lRightCentiRevolutions = 100 * revolutionsToDo[1];
+    Serial.println(iLeftCentiRevolutions );
+    startMotors();
   }
-  */
+
   Serial.println("move ok");
   actStat = 0x69; //" move completed
 
@@ -859,36 +812,19 @@ void MoveToward(int orientation, int lengthToDo) {
 }
 
 
-float*  MoveTowardCalculation(int orientation, int length) {
-  float *revolutionsToDo = (float *) malloc(sizeof(float) * 4);
-  int nbPasG1;
-  int nbPasD2;
-  int nbPasG2;
-  Serial.print("sinus:");
+
+
+unsigned int  RotationCalculation(int orientation) {
+  Serial.print("Radian:");
   float angleRadian = orientation;
+  unsigned int distToDo;
   angleRadian = angleRadian / 180 * PI;
   Serial.println(angleRadian);
-  Serial.println(sin(angleRadian));
-  Serial.println(rayonRobot * sin(angleRadian));
-  revolutionsToDo[0] = ((rayonRobot * PI / 180) * orientation);
-  revolutionsToDo[1] = -revolutionsToDo[0];
-  if (orientation < 0)
-  {
-    revolutionsToDo[0] = - revolutionsToDo[0];
-    revolutionsToDo[1] = - revolutionsToDo[1] ;
-  }
-  //  nbPasToDo[1]=rayonRobot*sin(orientation)*nbPas/(2*PI*rayonRoue);
-  //  nbPasG1=nbPasD1[0];
-  revolutionsToDo[2] = (length / (2 * PI * rayonRoue));
-  revolutionsToDo[3] = (length / (2 * PI * rayonRoue));
-  //  nbPasG2=-nbPasD2;
-  Serial.print("tours D1:");
-  Serial.println(revolutionsToDo[0]);
-  Serial.print("tours D2:");
-  Serial.println(revolutionsToDo[2]);
-  return (revolutionsToDo);
+  distToDo = ((iRobotWidth * PI / 180) * orientation);
+  Serial.print("dist:");
+  Serial.println(distToDo);
+  return (distToDo);
 }
-
 bool CheckFeedback()
 {
   Serial.print("Checkfeedback:");
@@ -968,15 +904,15 @@ void PowerCheck()
   Serial.print("power1:");
   power1Mesurt = 3 * map(analogRead(power1Value), 0, 1023, 0, 467);
   Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 12v
-  Serial.println("cv");
+  Serial.println("cVolt");
   Serial.print("power2:");
   power2Mesurt = 2 * map(analogRead(power2Value), 0, 1023, 0, 456);
   Serial.print(power2Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
-  Serial.println("cv");
+  Serial.println("cV");
   power3Mesurt = 2 * map(analogRead(power3Value), 0, 1023, 0, 540);
   Serial.print("power3:");
   Serial.print(power3Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
-  Serial.println("cv");
+  Serial.println("cV");
   PendingReqSerial = PendingReqRefSerial;
   PendingDataReqSerial[0] = 0x70; //
   PendingDataReqSerial[1] = uint8_t(power1Mesurt / 10); //
@@ -989,16 +925,21 @@ void PowerCheck()
 }
 
 void startMotors() {
+  bitWrite(pendingAction, pendingLeftMotor, true);
+  bitWrite(pendingAction, pendingRightMotor, true);
   leftMotor.TurnMotor(bLeftClockwise, iLeftCentiRevolutions, iLeftRevSpeed);
   rightMotor.TurnMotor(bRightClockwise, iRightCentiRevolutions, iRightRevSpeed);
 }
 
 void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed, unsigned long iRightDistance, int iRightSpeed)
 {
-  iLeftCentiRevolutions = iLeftDistance*100 / iLeftTractionDistPerRev; // Centi-revolutions
-  iRightCentiRevolutions = iRightDistance*100 / iRightTractionDistPerRev; // ms
+
+    float powerAdustment = float (uRefMotorVoltage)/(3 * map(analogRead(power1Value), 0, 1023, 0, 467)); // speed adjustement to power supply
+  Serial.println(powerAdustment);
+  iLeftCentiRevolutions = (iLeftDistance * 100 / iLeftTractionDistPerRev)*powerAdustment; // Centi-revolutions
+  iRightCentiRevolutions = ((iRightDistance * 100 / iRightTractionDistPerRev)*powerAdustment)*fMaxrpmAdjustment; // ms
   // Serial.println(iLeftSpeed);
-  Serial.println(iLeftCentiRevolutions);
+ // Serial.println(iLeftCentiRevolutions);
   iLeftRevSpeed = iLeftSpeed * 60 / iLeftTractionDistPerRev; // revolutions per minute
   iRightRevSpeed = iRightSpeed * 60 / iRightTractionDistPerRev; // revolutions per minute
 }
