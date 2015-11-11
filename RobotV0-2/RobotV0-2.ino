@@ -243,7 +243,7 @@ void setup() {
   myservo.detach();
   //  Serial.print ("free ram");
   // Serial.println(freeRam());
-  ComputerMotorsRevolutionsAndrpm(iDistance, iSpeed, iDistance, iSpeed);
+  //  ComputerMotorsRevolutionsAndrpm(iDistance, iSpeed, iDistance, iSpeed);
 }
 
 void loop() {
@@ -328,58 +328,37 @@ void loop() {
     ScanPosition();
 
   }
-  bcl2 = bcl2 + 1;
-  if (bcl2 > Lbcl2) {
-    bcl2 = 0;
-    /*  if (AppStat<0xff) {
-     if (AppStat<0xe0) {  // a partir de 0xe0 plus de rotation
-     if (AppStat==0xd0) {
-     AppStat=0xe0;         // force position a fixe pour rotation pas a pas
-     }
-     //     val = IncPulse( myservo.read(), 50);
 
-     //valAng=valR;
-     }
-     */
-    // Serial.print("cycle appstat:");
-    //  Serial.println(AppStat,HEX);
-    // Serial.println(AppStat&0x0f,HEX);
-    // Serial.println(AppStat&0xf0,HEX);
 
-    if ((AppStat & 0x0f) < 0x0e) {
-      //      Serial.println("scan pos");
-
-    }
-
-    if ((AppStat & 0xf0) < 0xe0) {
-      Serial.println("move");
-      MoveToward(reqAng, reqMove);
-      AppStat = AppStat | 0xf0;
-    }
-    //    ScanPosition(1,0);
-    //    MoveToward(-10,-300);
-    //   }
-
-    /*      for (int i=1;i<=nbPas;i++){
-     //  Serial.print(i);
-     stepperD.step(1);  // 1 pas
-     stepperG.step(1);  //
-     }
-     Serial.print("pos:" );
-     Serial.print(valAng);
-     Serial.print(" pin: ");
-     ServoFeedbackValue=analogRead(ServoFeedbackPin);
-     Serial.println(ServoFeedbackValue);
-     */
+  if ((bitRead(toDo, toDoMove) == 1) {
+  Serial.println("move");
+    MoveToward(reqAng, reqMove);
+    AppStat = AppStat | 0xf0;
   }
+  //    ScanPosition(1,0);
+  //    MoveToward(-10,-300);
+  //   }
+
+  /*      for (int i=1;i<=nbPas;i++){
+   //  Serial.print(i);
+   stepperD.step(1);  // 1 pas
+   stepperG.step(1);  //
+   }
+   Serial.print("pos:" );
+   Serial.print(valAng);
+   Serial.print(" pin: ");
+   ServoFeedbackValue=analogRead(ServoFeedbackPin);
+   Serial.println(ServoFeedbackValue);
+   */
+
   if (retryCount >= 3)
-  {
-    pendingAckSerial = 0x00;
-    retryCount = 0;
-  }
-  if ( millis() - timeSendSecSerial >= 5000 && pendingAckSerial != 0x00 && retryCount < 3) {
-    //   uint8_t retCode = (CheckUnitInd());
-    ReSendSecuSerial();
+{
+  pendingAckSerial = 0x00;
+  retryCount = 0;
+}
+if ( millis() - timeSendSecSerial >= 5000 && pendingAckSerial != 0x00 && retryCount < 3) {
+  //   uint8_t retCode = (CheckUnitInd());
+  ReSendSecuSerial();
     Serial.println("retry");
     timeSendSecSerial = millis();
     retryCount = retryCount + 1;
@@ -435,20 +414,24 @@ void TraitInput(uint8_t cmdInput) {
       actStat = 0x68; // moving
 
       //     SendRFNoSecured();
-      for (int i = 0; i <= 5; i++) {
+      for (int i = 0; i < 15; i++) {
         Serial.print(DataInSerial[i], HEX);
         Serial.print("-");
       }
       Serial.println("Move: ");
       bitWrite(toDo, toDoMove, 1);       // position bit toDo move
       reqAng = DataInSerial[4] * 256 + DataInSerial[5];
+
       if (DataInSerial[3] == 0x2d) {
         reqAng = -reqAng;
       }
+      Serial.print(reqAng);
       reqMove = DataInSerial[7] * 256 + DataInSerial[8];
       if (DataInSerial[6] == 0x2d) {
         reqMove = -reqMove;
       }
+      Serial.print(" ");
+      Serial.println(reqMove);
       //   Serial.println(inc);
       break;
     case 0x53: // commande S
@@ -756,20 +739,24 @@ void SendEndScan()
   numStep = 0;
   // SendRFNoSecured();
 }
-void MoveToward(int orientation, int length) {
+void MoveToward(int orientation, int lengthToDo) {
   //  int nbPasToDo[4]={
   //   MoveTowardCalculation(orientation,length)   };
+  Serial.print("len to do:");
+  Serial.print (lengthToDo);
   int s1;
-  float* revolutionsToDo = MoveTowardCalculation(orientation, length) ;
-  for (int i = 0; i <= 3; i++)
-  {
-    Serial.println(revolutionsToDo[i]);
-  }
-  unsigned long lLeftCentiRevolutions = 100 * abs(revolutionsToDo[0]);
-  unsigned long lRightCentiRevolutions = 100 * abs(revolutionsToDo[1]);
+  //  float* revolutionsToDo = MoveTowardCalculation(orientation, length) ;
+  //  for (int i = 0; i <= 3; i++)
+  //  {
+  //    Serial.println(revolutionsToDo[i]);
+  //  }
+  //  unsigned long lLeftCentiRevolutions = 100 * abs(revolutionsToDo[0]);
+  //unsigned long lRightCentiRevolutions = 100 * abs(revolutionsToDo[1]);
+  ComputerMotorsRevolutionsAndrpm(lengthToDo, iSpeed, lengthToDo, iSpeed);
   boolean LeftClockwise;
   boolean RightClockwise;
-  // rotation 
+  // rotation
+  /*
   if (revolutionsToDo[0] < 0)
   {
     LeftClockwise = bLeftClockwise * -1;
@@ -786,12 +773,14 @@ void MoveToward(int orientation, int length) {
   {
     RightClockwise = bRightClockwise;
   }
-  lLeftCentiRevolutions = 100 * revolutionsToDo[0];
-  lRightCentiRevolutions = 100 * revolutionsToDo[1];
-  leftMotor.TurnMotor(bLeftClockwise, lLeftCentiRevolutions, iLeftRevSpeed);
-  rightMotor.TurnMotor(bRightClockwise, lRightCentiRevolutions, iRightRevSpeed);
+  */
+  // lLeftCentiRevolutions = 100 * revolutionsToDo[0];
+  // lRightCentiRevolutions = 100 * revolutionsToDo[1];
+  leftMotor.TurnMotor(bLeftClockwise, iLeftCentiRevolutions, iLeftRevSpeed);
+  rightMotor.TurnMotor(bRightClockwise, iRightCentiRevolutions, iRightRevSpeed);
   //
   // mouvement rectiligne
+  /*
   if (revolutionsToDo[2] < 0)
   {
     LeftClockwise = bLeftClockwise * -1;
@@ -808,10 +797,11 @@ void MoveToward(int orientation, int length) {
   {
     RightClockwise = bRightClockwise;
   }
-  lLeftCentiRevolutions = 100 * revolutionsToDo[2];
-  lRightCentiRevolutions = 100 * revolutionsToDo[3];
-  leftMotor.TurnMotor(bLeftClockwise, lLeftCentiRevolutions, iLeftRevSpeed);
-  rightMotor.TurnMotor(bRightClockwise, lRightCentiRevolutions, iRightRevSpeed);
+  */
+  //  lLeftCentiRevolutions = 100 * revolutionsToDo[2];
+  //  lRightCentiRevolutions = 100 * revolutionsToDo[3];
+  //  leftMotor.TurnMotor(bLeftClockwise, lLeftCentiRevolutions, iLeftRevSpeed);
+  //  rightMotor.TurnMotor(bRightClockwise, lRightCentiRevolutions, iRightRevSpeed);
   //  if (orientation != 0) {
   //    s1 = (orientation < 0) ? -1 : +1;
   //  }
