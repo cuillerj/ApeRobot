@@ -1,3 +1,4 @@
+14/11/2015 localization tools now works 360° - 
 03/11/2015 introduction de la dimension angulaire dans les outils de localisation
 	   en 1ere approche introduit un bruit tres important dans la localisation !
 29/10/2015 localization tools and first documentation now written
