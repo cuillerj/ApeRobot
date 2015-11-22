@@ -1,3 +1,4 @@
+22/11/2015 homemade wheel encoders
 14/11/2015 localization tools now works 360° - 
 03/11/2015 introduction de la dimension angulaire dans les outils de localisation
 	   en 1ere approche introduit un bruit tres important dans la localisation !

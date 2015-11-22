@@ -70,12 +70,12 @@ int uRefMotorVoltage = 1200; // mVolt for maxRPM
 int leftMotorENA = 6; //Connecté à Arduino pin 3(sortie pwm)
 int leftMotorIN1 = 5; //Connecté à Arduino pin 2
 int leftMotorIN2 = 7; //Connecté à Arduino pin 4
-#define wheelSpeedLeftPin 18   // pin 19
+#define wheelSpeedLeftPin 19   // pin 19
 //-- right Motor connection --
 int rightMotorENB = 3; //Connecté à Arduino pin 6(Sortie pwm)
 int rightMotorIN3 = 2; //Connecté à Arduino pin 4
 int rightMotorIN4 = 4; //Connecté à Arduino pin 7
-#define wheelSpeedRigthPin 19  // pin 18
+#define wheelSpeedRightPin 18  // pin 18
 //boolean bClockwise = true; //Used to turn the motor clockwise or counterclockwise
 boolean bForward = true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
@@ -93,7 +93,9 @@ Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm);
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm);
 //
 unsigned long prevWheelSpeedLeftInt;
-unsigned long wheelSpeedLeftInt;
+volatile unsigned long wheelSpeedLeftInt;
+unsigned long prevWheelSpeedRightInt;
+volatile unsigned long wheelSpeedRightInt;
 unsigned long timeAppli; // cycle applicatif
 unsigned long timeStatut;  // cycle envoi du statut au master
 unsigned long timeNetwStat; // cycle affichage des stat RF433 sur serial
@@ -258,7 +260,8 @@ void setup() {
   //  Serial.print ("free ram");
   // Serial.println(freeRam());
   //  ComputerMotorsRevolutionsAndrpm(iDistance, iSpeed, iDistance, iSpeed);
-  startLeftWheelSpeedControl();   // pour test
+  StartLeftWheelSpeedControl();   // pour test
+  StartRightWheelSpeedControl();   // pour test
 }
 
 void loop() {
@@ -357,15 +360,22 @@ void loop() {
     timeSendSecSerial = millis();
     retryCount = retryCount + 1;
   }
-  if (prevWheelSpeedLeftInt != wheelSpeedLeftInt)  // pour test
+  if (prevWheelSpeedLeftInt != wheelSpeedLeftInt || prevWheelSpeedRightInt != wheelSpeedRightInt )  // pour test
   {
-    Serial.print("steps:");
+    Serial.print("left steps:");
     Serial.print(wheelSpeedLeftInt);
-        Serial.print(" tourd:");
+    Serial.print(" tours:");
     Serial.print(wheelSpeedLeftInt / 8);
     Serial.print(" distance:");
-    Serial.println((wheelSpeedLeftInt*PI*iLeftWheelDiameter) / 8);
+    Serial.println((wheelSpeedLeftInt * PI * iLeftWheelDiameter) / 8);
     prevWheelSpeedLeftInt = wheelSpeedLeftInt;
+    Serial.print("right steps:");
+    Serial.print(wheelSpeedRightInt);
+    Serial.print(" tours:");
+    Serial.print(wheelSpeedRightInt / 8);
+    Serial.print(" distance:");
+    Serial.println((wheelSpeedRightInt * PI * iLeftWheelDiameter) / 8);
+    prevWheelSpeedRightInt = wheelSpeedRightInt;
   }
 }
 void TraitInput(uint8_t cmdInput) {
@@ -956,20 +966,32 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed
   iRightRevSpeed = iRightSpeed * 60 / iRightTractionDistPerRev; // revolutions per minute
 }
 
-void startLeftWheelSpeedControl()
+void StartLeftWheelSpeedControl()
 {
   wheelSpeedLeftInt = 0;
-  attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), leftWheelCount, RISING);
+  attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), LeftWheelCount, RISING);
 }
-void stopLeftWheelSpeedControl()
+void StopLeftWheelSpeedControl()
 {
   detachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin));
 }
-void leftWheelCount()
+void LeftWheelCount()
 {
   wheelSpeedLeftInt++;
 }
-
+void StartRightWheelSpeedControl()
+{
+  wheelSpeedRightInt = 0;
+  attachInterrupt(digitalPinToInterrupt(wheelSpeedRightPin), RightWheelCount, RISING);
+}
+void StopRightWheelSpeedControl()
+{
+  detachInterrupt(digitalPinToInterrupt(wheelSpeedRightPin));
+}
+void RightWheelCount()
+{
+  wheelSpeedRightInt++;
+}
 
 
 
