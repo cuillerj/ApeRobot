@@ -54,35 +54,35 @@ byte cycleRetrySendUnit = 0; // cycle retry check unitary command - used in case
 //#include <avr/pgmspace.h>
 #include <SoftwareSerial.h>
 //-- General Robot parameters --
-int iLeftMotorMaxrpm = 125; // (Value unknown so far - Maximum revolutions per minute for left motor)
-int iRightMotorMaxrpm = 142; // (Value unknown so far - Maximum revolutions per minute for left motor)
-float fMaxrpmAdjustment;  // will be used to compansate speed difference betweeen motors
+int iLeftMotorMaxrpm = 105; // (Value unknown so far - Maximum revolutions per minute for left motor)
+int iRightMotorMaxrpm = 105; // (Value unknown so far - Maximum revolutions per minute for left motor)
+float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
 int iLeftWheelDiameter = 65; //(in mm - used to measure robot moves)
 int iRightWheelDiameter = iLeftWheelDiameter; //(in mm - used to measure robot moves)
 int iLeftMotorDemultiplierPercent = 100; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel)
 int iRightMotorDemultiplierPercent = iLeftMotorDemultiplierPercent; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel)
-int iLeftTractionDistPerRev =  PI * iLeftWheelDiameter / iLeftMotorDemultiplierPercent / 100;
-int iRightTractionDistPerRev = PI * iRightWheelDiameter / iRightMotorDemultiplierPercent / 100;
+unsigned int iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) / (iLeftMotorDemultiplierPercent / 100);
+unsigned int iRightTractionDistPerRev = (PI * iRightWheelDiameter) / (iRightMotorDemultiplierPercent / 100);
 int iRobotWidth = 150; // en mn
 int uRefMotorVoltage = 1200; // mVolt for maxRPM
 //int rayonRoue = 37; //en mn
 //-- left Motor connection --
-int leftMotorENA = 6; //Connecté à Arduino pin 3(sortie pwm)
-int leftMotorIN1 = 5; //Connecté à Arduino pin 2
-int leftMotorIN2 = 7; //Connecté à Arduino pin 4
-#define wheelSpeedLeftPin 19   // pin 19
+int leftMotorENA = 6; //Connecté à Arduino pin (sortie pwm)
+int leftMotorIN1 = 5; //Connecté à Arduino pin
+int leftMotorIN2 = 7; //Connecté à Arduino pin
+#define wheelSpeedLeftPin 18   // pin 19
 //-- right Motor connection --
-int rightMotorENB = 3; //Connecté à Arduino pin 6(Sortie pwm)
-int rightMotorIN3 = 2; //Connecté à Arduino pin 4
-int rightMotorIN4 = 4; //Connecté à Arduino pin 7
-#define wheelSpeedRightPin 18  // pin 18
+int rightMotorENB = 3; //Connecté à Arduino pin (Sortie pwm)
+int rightMotorIN3 = 2; //Connecté à Arduino pin
+int rightMotorIN4 = 4; //Connecté à Arduino pin
+#define wheelSpeedRightPin 19  // pin 18
 //boolean bClockwise = true; //Used to turn the motor clockwise or counterclockwise
-boolean bForward = true; //Used to drive traction chain forward
+# define bForward  true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 //
 unsigned long iDistance = 0; // mm
-int iSpeed = 409; // mm/s 408.4 maxi
+int iSpeed = 120; // mm/s 360 maxi
 unsigned long iLeftCentiRevolutions;
 unsigned long iRightCentiRevolutions;
 unsigned long restartedDelay;
@@ -92,10 +92,10 @@ int iRightRevSpeed;
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm);
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm);
 //
-unsigned long prevWheelSpeedLeftInt;
-volatile unsigned long wheelSpeedLeftInt;
-unsigned long prevWheelSpeedRightInt;
-volatile unsigned long wheelSpeedRightInt;
+unsigned int prevWheelSpeedLeftInt;
+volatile unsigned int wheelSpeedLeftInt;
+unsigned int prevWheelSpeedRightInt;
+volatile unsigned int wheelSpeedRightInt;
 unsigned long timeAppli; // cycle applicatif
 unsigned long timeStatut;  // cycle envoi du statut au master
 unsigned long timeNetwStat; // cycle affichage des stat RF433 sur serial
@@ -809,13 +809,13 @@ void MoveForward( int lengthToDo) {
 
     if (lengthToDo < 0)
     {
-      bLeftClockwise = true;
-      bRightClockwise = false;
+      bLeftClockwise = bForward;
+      bRightClockwise = !bForward;
     }
     else
     {
-      bLeftClockwise = false;
-      bRightClockwise = true;
+      bLeftClockwise = !bForward;
+      bRightClockwise = bForward;
     }
 
 
@@ -945,8 +945,10 @@ void PowerCheck()
 
 }
 
-void startMotors() {
-
+void startMotors()
+{
+  StartLeftWheelSpeedControl();   // pour test
+  StartRightWheelSpeedControl();   // pour test
   bitWrite(pendingAction, pendingLeftMotor, true);
   bitWrite(pendingAction, pendingRightMotor, true);
   leftMotor.TurnMotor(bLeftClockwise, iLeftCentiRevolutions, iLeftRevSpeed);
@@ -958,12 +960,21 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed
 
   float powerAdustment = float (uRefMotorVoltage) / (3 * map(analogRead(power1Value), 0, 1023, 0, 467)); // speed adjustement to power supply
   Serial.println(powerAdustment);
-  iLeftCentiRevolutions = (iLeftDistance * 100 / iLeftTractionDistPerRev) * powerAdustment; // Centi-revolutions
-  iRightCentiRevolutions = ((iRightDistance * 100 / iRightTractionDistPerRev) * powerAdustment) * fMaxrpmAdjustment; // ms
+  //  iLeftCentiRevolutions = (iLeftDistance * 100 / iLeftTractionDistPerRev) * powerAdustment; // Centi-revolutions
+  //  iRightCentiRevolutions = ((iRightDistance * 100 / iRightTractionDistPerRev) * powerAdustment) * fMaxrpmAdjustment; // ms
+  iLeftCentiRevolutions = (iLeftDistance * 100 / iLeftTractionDistPerRev) ; // Centi-revolutions
+  iRightCentiRevolutions = (iRightDistance * 100 / iRightTractionDistPerRev) ; // ms
   // Serial.println(iLeftSpeed);
   // Serial.println(iLeftCentiRevolutions);
-  iLeftRevSpeed = iLeftSpeed * 60 / iLeftTractionDistPerRev; // revolutions per minute
-  iRightRevSpeed = iRightSpeed * 60 / iRightTractionDistPerRev; // revolutions per minute
+  iLeftRevSpeed = (iLeftSpeed * 60 ) / iLeftTractionDistPerRev; // revolutions per minute
+  iRightRevSpeed = (iRightSpeed * 60) / iRightTractionDistPerRev; // revolutions per minute
+  Serial.println(iLeftRevSpeed);
+  Serial.println(iLeftTractionDistPerRev);
+  Serial.println(iLeftCentiRevolutions);
+
+  Serial.println(iRightRevSpeed);
+  Serial.println(iRightTractionDistPerRev);
+  Serial.println(iRightCentiRevolutions);
 }
 
 void StartLeftWheelSpeedControl()
