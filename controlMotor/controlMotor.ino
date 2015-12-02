@@ -34,8 +34,8 @@ boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left mot
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 boolean firstCycle = true;
 unsigned long iDistance = 2040; // mm
-int iSpeedLeft = 204; // mm/s 408.4 maxi
-int iSpeedRight = 204; // mm/s 408.4 maxi
+int iSpeedLeft = 408; // mm/s 408.4 maxi
+int iSpeedRight = 408; // mm/s 408.4 maxi
 unsigned long iLeftCentiRevolutions;
 unsigned long iRightCentiRevolutions;
 unsigned long restartedDelay;
@@ -47,10 +47,11 @@ int iLeftRevSpeed;
 int iRightRevSpeed;
 float avgRightWheelSpeed = 0;
 float avgLeftWheelSpeed = 0;
-unsigned int instantLeftWheelRevSpeed[8];
-unsigned int instantRightWheelRevSpeed[8];
 #define sizeOfLeftRev 8
 #define sizeOfRightRev 8
+unsigned int instantLeftWheelRevSpeed[sizeOfLeftRev];
+unsigned int instantRightWheelRevSpeed[sizeOfRightRev];
+
 uint8_t leftWheelSpeedCount = 0x00;
 uint8_t rightWheelSpeedCount = 0x00;
 unsigned long prevLeftWheelInterrupt = 0;
@@ -60,10 +61,8 @@ volatile unsigned long rightWheelInterrupt = 0;
 unsigned long saveLeftWheelInterrupt = 0;
 unsigned long saveRightWheelInterrupt = 0;
 boolean motorsOn = false;
-#define iLeftSlowPMW 20 // PMW value to slowdown motor at the end of the run
+#define iLeftSlowPMW 30 // PMW value to slowdown motor at the end of the run
 #define iRightSlowPMW iLeftSlowPMW   // 
-#define sizeOfLeftRev 8
-#define sizeOfRightRev 8
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPMW);
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPMW);
 
@@ -111,7 +110,7 @@ void loop() {
 
   }
   if (millis() - delayPrintSpeed > 1000)
-  {525/8+
+  {
 
     Serial.print("leftAvpSpeed:");
     Serial.print(avgLeftWheelSpeed);
@@ -189,7 +188,7 @@ void StartLeftWheelSpeedControl()
   {
     instantLeftWheelRevSpeed[i] = 0; // init avec expected speed
   }
-  attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), LeftWheelCount, RISING);
+  attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), LeftWheelCount, FALLING);
   leftWheelInterrupt = 0;
 }
 void StopLeftWheelSpeedControl()
@@ -207,7 +206,7 @@ void StartRightWheelSpeedControl()
   {
     instantRightWheelRevSpeed[i] = 0; // init avec expected speed
   }
-  attachInterrupt(digitalPinToInterrupt(wheelSpeedRightPin), RightWheelCount, RISING);
+  attachInterrupt(digitalPinToInterrupt(wheelSpeedRightPin), RightWheelCount, FALLING);
   rightWheelInterrupt = 0;
 }
 void StopRightWheelSpeedControl()
