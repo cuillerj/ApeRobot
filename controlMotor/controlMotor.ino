@@ -20,20 +20,20 @@ int iRightTractionDistPerRev = 2 * PI * iRightWheelDiameter / 2 * iRightMotorDem
 int leftMotorENA = 6; //ConnectÃ© Ã  Arduino pin 3(sortie pwm)
 int leftMotorIN1 = 5; //ConnectÃ© Ã  Arduino pin 2
 int leftMotorIN2 = 7; //ConnectÃ© Ã  Arduino pin 4
-#define wheelSpeedLeftPin 18   // pin
+#define wheelSpeedLeftPin 19   // pin
 #define leftWheelEncoderHoles 8
 //-- right Motor connection --
 int rightMotorENB = 3; //ConnectÃ© Ã  Arduino pin 6(Sortie pwm)
 int rightMotorIN3 = 2; //ConnectÃ© Ã  Arduino pin 5
 int rightMotorIN4 = 4; //ConnectÃ© Ã  Arduino pin 7
-#define wheelSpeedRightPin 19  // pin 
+#define wheelSpeedRightPin 18  // pin 
 #define rightWheelEncoderHoles leftWheelEncoderHoles
 //boolean bClockwise = true; //Used to turn the motor clockwise or counterclockwise
 boolean bForward = true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 boolean firstCycle = true;
-unsigned long iDistance = 2040; // mm
+unsigned long iDistance = 0; // mm
 int iSpeedLeft = 408; // mm/s 408.4 maxi
 int iSpeedRight = 408; // mm/s 408.4 maxi
 unsigned long iLeftCentiRevolutions;
@@ -82,7 +82,8 @@ void setup() {
   fMaxrpmAdjustment = 90;
   Serial.println(fMaxrpmAdjustment);
   Serial.println(sizeOfLeftRev);
-
+  pinMode(wheelSpeedLeftPin, INPUT);
+  pinMode(wheelSpeedRightPin, INPUT);
   //  startMotors();
 }
 
@@ -104,7 +105,7 @@ void loop() {
     avgRightWheelSpeed = 0;
     for (int i = 0; i < sizeOfRightRev; i++)
     {
-      avgRightWheelSpeed =avgRightWheelSpeed+ instantRightWheelRevSpeed[i]  ;
+      avgRightWheelSpeed = avgRightWheelSpeed + instantRightWheelRevSpeed[i]  ;
     }
     avgRightWheelSpeed = avgRightWheelSpeed / sizeOfRightRev;
 
@@ -117,9 +118,9 @@ void loop() {
     Serial.print(" rightAvpSpeed:");
     Serial.println(avgRightWheelSpeed);
     delayPrintSpeed = millis();
-        Serial.print(((leftWheelInterrupt * 100) / leftWheelEncoderHoles) * iLeftMotorDemultiplierPercent / 100);
-        Serial.print(" ");
-     Serial.println(((rightWheelInterrupt * 100) / rightWheelEncoderHoles) * iRightMotorDemultiplierPercent / 100);
+    Serial.print(((leftWheelInterrupt * 100) / leftWheelEncoderHoles) * iLeftMotorDemultiplierPercent / 100);
+    Serial.print(" ");
+    Serial.println(((rightWheelInterrupt * 100) / rightWheelEncoderHoles) * iRightMotorDemultiplierPercent / 100);
   }
 
 
@@ -148,7 +149,7 @@ void loop() {
     Serial.println("start");
     firstCycle = false;
   }
-  if (millis() - restartedDelay >= 30000)
+  if (millis() - restartedDelay >= 30000 & iDistance !=0)
   {
     startMotors();
     restartedDelay = millis();
@@ -223,9 +224,9 @@ void SpeedRightWheel()
   prevRightWheelIntTime = millis();
   unsigned int deltaEncoder = rightWheelInterrupt - prevRightWheelInterrupt;
   prevRightWheelInterrupt = rightWheelInterrupt;
-//  Serial.print("right wheel rpm:");
+  //  Serial.print("right wheel rpm:");
   instantRightWheelRevSpeed[rightWheelSpeedCount % sizeOfRightRev] = 60 * (float (deltaEncoder * 1000 / deltaTime) / rightWheelEncoderHoles);
-//  Serial.println(instantRightWheelRevSpeed[rightWheelSpeedCount % sizeof(instantRightWheelRevSpeed) / 2]);
+  //  Serial.println(instantRightWheelRevSpeed[rightWheelSpeedCount % sizeof(instantRightWheelRevSpeed) / 2]);
   rightWheelSpeedCount++;
 }
 void SpeedLeftWheel()
@@ -234,10 +235,10 @@ void SpeedLeftWheel()
   prevLeftWheelIntTime = millis();
   unsigned int deltaEncoder = leftWheelInterrupt - prevLeftWheelInterrupt;
   prevLeftWheelInterrupt = leftWheelInterrupt;
- // Serial.print("left wheel rpm:");
+  // Serial.print("left wheel rpm:");
   instantLeftWheelRevSpeed[leftWheelSpeedCount % sizeOfLeftRev] = 60 * (float (deltaEncoder * 1000 / deltaTime) / leftWheelEncoderHoles);
-//  Serial.println(instantLeftWheelRevSpeed[leftWheelSpeedCount % sizeof(instantLeftWheelRevSpeed) / 2]);
-//  Serial.println(leftWheelSpeedCount % sizeOfLeftRev);
+  //  Serial.println(instantLeftWheelRevSpeed[leftWheelSpeedCount % sizeof(instantLeftWheelRevSpeed) / 2]);
+  //  Serial.println(leftWheelSpeedCount % sizeOfLeftRev);
   leftWheelSpeedCount++;
 }
 

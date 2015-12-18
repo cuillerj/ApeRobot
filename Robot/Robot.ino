@@ -21,7 +21,7 @@ byte cycleRetrySendUnit = 0; // cycle retry check unitary command - used in case
 #include <SoftwareSerial.h>
 //-- General Robot parameters --
 int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
-int iRightMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
+int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
 float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
 int iLeftWheelDiameter = 65; //(in mm - used to measure robot moves)
 int iRightWheelDiameter = iLeftWheelDiameter; //(in mm - used to measure robot moves)
@@ -36,13 +36,13 @@ int uRefMotorVoltage = 1200; // mVolt for maxRPM
 int leftMotorENA = 6; //ConnectÃ© Ã  Arduino pin (sortie pwm)
 int leftMotorIN1 = 5; //ConnectÃ© Ã  Arduino pin
 int leftMotorIN2 = 7; //ConnectÃ© Ã  Arduino pin
-#define wheelSpeedLeftPin 18   // pin
+#define wheelSpeedLeftPin 19   // pin
 #define leftWheelEncoderHoles 8
 //-- right Motor connection --
 int rightMotorENB = 3; //ConnectÃ© Ã  Arduino pin (Sortie pwm)
 int rightMotorIN3 = 2; //ConnectÃ© Ã  Arduino pin
 int rightMotorIN4 = 4; //ConnectÃ© Ã  Arduino pin
-#define wheelSpeedRightPin 19  // pin 
+#define wheelSpeedRightPin 18  // pin 
 #define rightWheelEncoderHoles leftWheelEncoderHoles
 float avgRightWheelSpeed = 0;
 float avgLeftWheelSpeed = 0;
@@ -83,6 +83,7 @@ unsigned long timeScanFront;  // cycle demande heure
 unsigned long timeScanBack;  // cycle demande heure
 unsigned long timeSendSec;  //
 unsigned long timeSendSecSerial;  //
+unsigned long timeReceiveSerial;  //
 unsigned long timePower1Check;  //
 unsigned long delayToStopWheel = 0;
 unsigned long prevLeftWheelIntTime;
@@ -90,18 +91,26 @@ unsigned long prevRightWheelIntTime;
 unsigned long delayCheckSpeed;
 unsigned long delayCheckPosition;
 unsigned long delayPrintSpeed;
-unsigned long serialAliveTimer;
-unsigned long serialTimer;
+unsigned long timeAffLed;
+unsigned long serialAliveTimer;  //  for serial link communication
+unsigned long serialTimer;       //   for serial link communication
+unsigned long checkObstacleTimer;     // to regurarly ckeck obstacle when moving
 unsigned long durationMaxEcho = 25000; // en us
+unsigned long timeSendInfo;
 uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
 uint8_t diagPower = 0x00;   // bit 0 power1, 1 power2, 2 power3 0 Ok 1 Ko
+uint8_t diagConnection = 0x01;   // bit 0 pending serial link
+uint8_t diagRobot = 0x00;
 uint8_t toDo = 0x00; //
 uint8_t pendingAction = 0x00; //
+uint8_t sendInfoSwitch = 0x00;
+boolean moveFront;
+int movePingInit;
 long posX = 0;
 long posY = 0;
 long targetX = 0;
 long targetY = 0;
-uint8_t checkPositionCount = 0;
+//uint8_t checkPositionCount = 0;
 #define pendingLeftMotor 0
 #define pendingRightMotor 1
 #define toDoScan 0
@@ -110,6 +119,7 @@ uint8_t checkPositionCount = 0;
 #define toDoForward 3
 #define delayBetween2Scan 1500 // pour laisser le temps de positionner le servo et remonter data
 #define delayBetweenScanFB 700  // delai entre 2 pulses
+#define delayBetweenInfo 5000
 //uint8_t savDiagMotor = 0x00;
 uint8_t nbRTC = 0;
 int cpt = 0;
@@ -132,11 +142,11 @@ int pendingForward = 0;
 /* Utilisation du capteur Ultrason HC-SR04 */
 //
 // definition des broches utilisees
-#define echoFront 22
-#define trigF  23
-#define echoBack  24
-#define trigB  25
-#define delayPowerCheck 60000
+#define echoFront 24
+#define trigF  25
+#define echoBack  22
+#define trigB  23
+#define delayPowerCheck 5000
 int servoFeedbackPin = A0;
 int servoFeedbackValue;
 float AngleRadian;
@@ -155,7 +165,7 @@ int pos;    // variable to store the servo position
 uint8_t AppStat = 0xff; // statut code application 00 active ff stopped 1er demi octet mouvement 2eme demi scan
 uint8_t actStat = 0xff; // staut action en cours
 int valAng;  // angle servo
-int minAng = 950; // testÃ©: min absolu 950 et maxi 2100 - pour un angle de 132Â°
+int minAng = 950; // teste: min absolu 950 et maxi 2100 - pour un angle de 132Â°
 int maxAng = 2100;
 int reqAng = 0;
 int reqMove = 0;
@@ -166,30 +176,22 @@ byte valueEeprom;
 #define STEPS 64
 #define servoPin 9
 #define power1Pin 53  // power 1 servomoteur
-#define power1Value A15
-#define power2Value A14
-#define power3Value A13
-#define greenLed 52
-#define redLed 53
+#define power1Value A15  // 12v power
+#define power2Value A14  // 9v power
+#define power3Value A13  // 5V power
+#define blueLed 50    // red LED
+#define yellowLed 51    // red LED
+#define greenLed 52  // green LED
+#define redLed 53    // red LED
+boolean blueLedOn =  true;
+boolean yellowLedOn = true;
+boolean greenLedOn =  true;
+boolean redLedOn = true;
 int power1Mesurt = 0;
 int power2Mesurt = 0;
 int power3Mesurt = 0;
 int nbPas = 2048;
-//int pulseValue[16]={
-// 981,1078,1133,1220,1287,1386,1442,1523,1598,1673,1748,1823,1898,1973,2048}; // liste des pulses stables
-/*
-int pulseValue[14] = {
-  1078, 1133, 1220, 1287, 1386, 1442, 1523, 1598, 1673, 1748, 1823, 1898, 1973, 2048
-}; // liste des pulses stables
-*/
-//int pulseValue[15] = {850, 943, 1036, 1129, 1221, 1292, 1442, 1500, 1593, 1686, 1779, 1871, 1964, 2057, 2150};
-//int pulseValue[15] = {1299, 1290, 1291, 1292, 1293, 1294,1295, 1296, 1297, 1298, 1299, 1301, 1301,1302,1303};
-//int pulseValue[15] = {850, 850, 850, 850, 1500, 1500,1500, 1500, 1500, 1500, 1500, 2150, 2150,2150,2150};
-//int pulseValue[15] = {1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500, 1500};
-//float coefAngRef = 0.00177491;
 float coefAngRef;
-//float coefAngRead = 0.0064;
-//int pulseValue[15] = {910, 994, 1079, 1163, 1247, 1331, 1416, 1500, 1584, 1669, 1753, 1837, 1921, 2006, 2090};
 int pulseValue[15] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165};
 //int pulseFeedback[15] = {294, 319, 344, 367, 389, 410, 435, 456, 482, 503, 525, 544, 565, 588, 611}; // valeurs relevees
 int pulseFeedback[15] = {240, 258, 278, 298, 317, 336, 355, 373, 392, 409, 428, 445, 463, 481, 495}; // valeurs relevees avec alim a 580mv
@@ -234,15 +236,13 @@ void setup() {
   pinMode(echoBack, INPUT);
   pinMode(servoPin, OUTPUT);
   pinMode(power1Pin, OUTPUT);
+  pinMode(blueLed, OUTPUT);
+  pinMode(yellowLed, OUTPUT);
   pinMode(greenLed, OUTPUT);
   pinMode(redLed, OUTPUT);
-  digitalWrite(greenLed, HIGH);
-  digitalWrite(redLed, HIGH);
-  //pinMode(power1Value, INPUT);
-
+  pinMode(wheelSpeedLeftPin, INPUT);
+  pinMode(wheelSpeedRightPin, INPUT);
   digitalWrite(power1Pin, LOW);
-  //  stepperD.setSpeed(172); // vitesse de bon fonctionnement 172
-  //  stepperG.setSpeed(172); //
   Serial.print("nbpas: ");
   Serial.println(nbPas);
   coefAngRef = PI / (pulseValue[14] - pulseValue[0]);
@@ -250,20 +250,16 @@ void setup() {
   myservo.write(pulseValue[(nbPulse + 1) / 2]);
   delay(1000);
   myservo.detach();
+  //  myservo.attach(servoPin);
+  //  EchoServoAlign();
+  //  myservo.detach();
   Serial.print("iLeftTractionDistPerRev:");
   Serial.println(iLeftTractionDistPerRev);
-
-  //  fMaxrpmAdjustment = float (iLeftMotorMaxrpm) / iRightMotorMaxrpm;
-  //  Serial.println(fMaxrpmAdjustment);
-  //  Serial.print ("free ram");
-  // Serial.println(freeRam());
-  //  ComputerMotorsRevolutionsAndrpm(iDistance, iSpeed, iDistance, iSpeed);
-  //  StartLeftWheelSpeedControl();   // pour test
-  //  StartRightWheelSpeedControl();   // pour test
+  PowerCheck();
 }
 
 void loop() {
-  checkPositionCount++;
+
   if (millis() - delayCheckSpeed > 250 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
   {
     SpeedRightWheel();
@@ -284,7 +280,7 @@ void loop() {
     avgRightWheelSpeed = avgRightWheelSpeed / sizeOfRightRev;
 
   }
-  if (millis() - delayCheckPosition > 1000 && (prevLeftWheelInterrupt != leftWheelInterrupt || prevRightWheelInterrupt != rightWheelInterrupt))
+  if (millis() - delayCheckPosition > 1000 && (prevLeftWheelInterrupt != leftWheelInterrupt || prevRightWheelInterrupt != rightWheelInterrupt) && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
   {
     delayCheckPosition = millis();
     CheckMoveSynchronisation();
@@ -296,7 +292,11 @@ void loop() {
     PrintSpeed();
 
   }
-
+  if (millis() - checkObstacleTimer > 1000 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
+  {
+    //    checkObstacle();
+    checkObstacleTimer = millis();
+  }
   if (bitRead(pendingAction, pendingLeftMotor) == true)
   {
 
@@ -326,14 +326,7 @@ void loop() {
       default:
         break;
     }
-    /*
-    if (feedBackLeftMotor == 0)
-    {
-      bitWrite(pendingAction, pendingLeftMotor, false);
-      //leftMotor.StopMotor();
-      rightMotor.StopMotor();  // stop synchrone des 2 moteurs
-    }
-    */
+
   }
   if (bitRead(pendingAction, pendingRightMotor) == true)
   {
@@ -363,14 +356,7 @@ void loop() {
         break;
     }
 
-    /*
-    if (rightMotor.CheckMotor( (instantRightWheelRevSpeed * iRightMotorDemultiplierPercent) / 100  , ((wheelSpeedRightInt * 100) / rightWheelEncoderHoles) * iRightMotorDemultiplierPercent / 100 ) <= 0)
-    {
-      bitWrite(pendingAction, pendingRightMotor, false);
-      leftMotor.StopMotor();  // stop synchrone des 2 moteurs
-      //rightMotor.StopMotor();
-    }
-    */
+
   }
   if (bitRead(toDo, toDoForward) == true && bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false)
   {
@@ -385,40 +371,23 @@ void loop() {
   int getSerial = Serial_have_message();
   if (getSerial > 0)
   {
-    //    Serial.print("getSerial:");
 
-    //   Serial.println (getSerial);
-    for (int i = 0; i < getSerial; i++)
-    {
-      //     Serial.print(DataInSerial[i],HEX);
-      //    Serial.print("-");
-
-    }
-    //   Serial.println();
     TraitInput(DataInSerial[2]);
   }
 
 
-  if (PendingReqSerial != 0x00)
+  if (PendingReqSerial != 0x00 )
   {
 
     DataToSendSerial(); //
+    timeSendSecSerial = millis();
   }
 
-  else
-  {
-    ;
-
-  }
-
-
-
-  if ((millis() - timeStatut) >= (295000 + random(0, 10000))) // toutes les 5mn  (un cycle rate tous les 50 jours)
+  if ((millis() - timeStatut) >= (295000 + random(0, 10000))) // toutes les 5mn
   {
     timeStatut = millis(); // au pas nÂ° 5000 tous les 1000
-    //   DemandStatus();   // remontee cycle du statut vers serveur
   }
-  if ((millis() - timePower1Check) >= delayPowerCheck ) // toutes les 5mn  (un cycle rate tous les 50 jours)
+  if ((millis() - timePower1Check) >= delayPowerCheck ) // toutes les 5mn
   {
     PowerCheck();
 
@@ -445,72 +414,58 @@ void loop() {
     retryCount = 0;
   }
   if ( millis() - timeSendSecSerial >= 5000 && pendingAckSerial != 0x00 && retryCount < 3) {
-    //   uint8_t retCode = (CheckUnitInd());
     ReSendSecuSerial();
     Serial.println("retry");
     timeSendSecSerial = millis();
     retryCount = retryCount + 1;
   }
-  if (diagPower == 0x00 && diagMotor == 0x00)
+  if (millis() - timeAffLed > 1000)
   {
-    digitalWrite(greenLed, 1);
-    digitalWrite(redLed, 0);
+    AffLed();
+    timeAffLed = millis();
   }
-  if (diagMotor != 0x00 )
+  if (millis() - timeReceiveSerial >= 30000)
   {
-    digitalWrite(greenLed, 1);
-    digitalWrite(redLed, 1);
+    //   Serial.println(timeReceiveSerial);
+    bitWrite(diagConnection, 1, 0);       // established connection
   }
-  if (diagPower != 0x00 )
+  if (millis() - timeSendInfo >= delayBetweenInfo && toDo == 0x00)
   {
-    digitalWrite(greenLed, 0);
-    digitalWrite(redLed, 1);
+    if (sendInfoSwitch % 2 == 0)
+    {
+      SendStatus();
+    }
+    if (sendInfoSwitch % 2 == 1)
+    {
+      SendPowerValue();
+    }
+    sendInfoSwitch = sendInfoSwitch + 1;
+    timeSendInfo = millis();
   }
 }
+
 void TraitInput(uint8_t cmdInput) {
-  //  Serial.print("input:");
-  //  Serial.println(cmdInput, HEX);
+  Serial.println("serialInput");
+  bitWrite(diagConnection, 0, 0);       // established connection
+  timeReceiveSerial = millis();
+
   switch (cmdInput) {
+
     case 0x73: // commande s
       Serial.println("cmd stop");
       AppStat = 0xff;
       leftMotor.StopMotor();
       rightMotor.StopMotor();
+      toDo = 0x00;
       break;
     case 0x78: // commande x
       Serial.println("cmd start");
       AppStat = 0x00;
       break;
     case 0x65: // commande e
-      //     Serial.println(" echo");
-      PendingReqSerial = PendingReqRefSerial;
-      PendingDataReqSerial[0] = 0x65; //
-      PendingDataReqSerial[1] = AppStat; //
-      PendingDataReqSerial[2] = actStat;
-      PendingDataReqSerial[3] = diagMotor;
-      if (posX >= 0)
-      {
-        PendingDataReqSerial[5] = 0x2b;
-      }
-      else
-      {
-        PendingDataReqSerial[5] = 0x2d;
-      }
-      PendingDataReqSerial[5] = uint8_t(posX / 256);
-      PendingDataReqSerial[6] = uint8_t(posX);
-      if (posY >= 0)
-      {
-        PendingDataReqSerial[7] = 0x2b;
-      }
-      else
-      {
-        PendingDataReqSerial[7] = 0x2d;
-      }
-      PendingDataReqSerial[8] = uint8_t(posY / 256);
-      PendingDataReqSerial[9] = uint8_t(posY);
-      PendingDataLenSerial = 0x08; // 6 longueur mini pour la gateway
+      Serial.println(" echo");
+      SendStatus();
 
-      //    SendRFNoSecured();
       break;
     case 0x41: // commande A
 
@@ -523,22 +478,13 @@ void TraitInput(uint8_t cmdInput) {
       Serial.println("Scan");
       pulseNumber = 0;
       InitScan(nbPulse, 0);
-
       actStat = 0x66;
-
       bitWrite(toDo, toDoScan, 1);       // position bit toDo scan
       //      SendRFNoSecured();
       break;
     case 0x6d: // commande m
       AppStat = AppStat & 0x1f;
-
       actStat = 0x68; // moving
-
-      //     SendRFNoSecured();
-      //     for (int i = 0; i < 15; i++) {
-      //       Serial.print(DataInSerial[i], HEX);
-      //       Serial.print("-");
-      //      }
       Serial.print("Move: ");
       bitWrite(toDo, toDoMove, 1);       // position bit toDo move
       reqAng = DataInSerial[4] * 256 + DataInSerial[5];
@@ -567,7 +513,12 @@ void TraitInput(uint8_t cmdInput) {
       break;
     case 0x61: // ack de trame du server
       Serial.print("acq: ");
-      //      Serial.print(DataInSerial[3], HEX);
+      for (int i = 0; i < 5; i++)
+      {
+        Serial.print(DataInSerial[i], HEX);
+        Serial.print(":");
+      }
+      Serial.println();
       lastAckTrameNumber = DataInSerial[3];
       //      Serial.print(":");
       Serial.print(lastAckTrameNumber);
@@ -579,11 +530,7 @@ void TraitInput(uint8_t cmdInput) {
         //        PendingDataReq[0] = 0x00;
         //       Serial.println("noPending");
       }
-      else
-      {
-        //      PendingDataReq[0] = 0x01;
-        //      PendingSecReq =
-      }
+
       //Serial.println(inc);
       break;
     default:
@@ -608,29 +555,17 @@ void TraitInput(uint8_t cmdInput) {
 
 void IncServo(int sens) {  // incremente ou decremente d'un pas le servo-moteur
   valAng = IncPulse(sens );
-  //  Serial.print("valAng:");
-  //  Serial.println (valAng);
   myservo.write(valAng);
-  /*
-  if (vw_have_message())
-   {
-   TrameAnalyzeSlave();
-   }
-   */
+
   delay(1000);
 }
 int IncPulse(int sens) { // calcul du pulse
-  //  Serial.print("sens:");
-  //  Serial.println(sens);
+
   pulseNumber = pulseNumber + sens;
   return (pulseValue[(pulseNumber) % nbPulse]) ;
 
 }
 int PingFront() {
-  /*  for (int i=0;i>=sizeof(pulseValue);i++)
-   {
-   PosServo();
-   */
   int cm;
   unsigned long time1;
   unsigned long time2;
@@ -650,22 +585,10 @@ int PingFront() {
   {
     deltaT = deltaT * 0.905;
   }
-  // Serial.print(lecture_echo);
-  // Serial.print(" deltaT Front:");
-  //  Serial.println(time2 - time1);
 
-  //    cm = lecture_echo / 58 * 1.23 - 3; // 1.25 coeff correction mesuree en reel -8 cm ecart VS roues
-  //    cm = lecture_echo / 58  ; // 1.25 coeff correction mesuree en reel -8 cm ecart VS roues
   cm = deltaT / 58  ;
   //Serial.println(cm);
-  /*
-    Serial.print("Front t1:");
-    Serial.print(time1);
-    Serial.print(" t2:");
-    Serial.print(time2);
-    Serial.print("dT:");
-    Serial.println(deltaT);
-  */
+
   return (cm);
 
 }
@@ -702,17 +625,6 @@ int PingBack() {
   Serial.print("deltaT Back:");
   Serial.println(time2 - time1);
 
-
-
-
-  /*
-  Serial.print("Back t1:");
-  Serial.print(time1);
-  Serial.print(" t2:");
-  Serial.print(time2);
-  Serial.print("dT:");
-  Serial.println(time2 - time1);
-  */
   //    cm = lecture_echo / 58 * 1.25 + 7; // 1.25 coeff correction mesuree en reel +8 ecrat VS roues
   // cm = lecture_echo / 58;   // 1.25 coeff correction mesuree en reel +8 ecrat VS roues
   cm = deltaT / 58  ;
@@ -733,14 +645,7 @@ void InitScan(int nbS, int startingOrientation) {
 }
 
 void ScanPosition() {
-  /*
-    Serial.print("scan:");
-    Serial.print(numStep);
-    Serial.print("-");
-    Serial.print(nbSteps);
-   Serial.print("-");
-    Serial.println(switchFB);
-  */
+
   // if ((millis() - timeScanFront) > delayBetween2Scan && numStep <= abs(nbSteps) - 1 && switchFB == 0 )
   if ((millis() - timeScanBack) > delayBetween2Scan && numStep <= abs(nbSteps) - 1 && switchFB == 0 && pendingAckSerial == 0x00)
   {
@@ -756,11 +661,6 @@ void ScanPosition() {
     timeScanBack = millis();
     switchFB = 0;
     distBSav = ScanOnceBack(numStep);
-    //          vw_rx_start();        // dÃ©marrer la rÃ©ception
-
-    //     PosServo(abs(nbSteps)/nbSteps);
-    // -1 ou +1
-
     SendScanResultSerial(distFSav, distBSav);
     IncServo(1);
     numStep = numStep + 1;
@@ -779,23 +679,9 @@ void ScanPosition() {
 int ScanOnceFront(int numStep)
 {
   int distF = PingFront();
-  //  bool checkFeeback = CheckFeedback();
-  //  servoFeedbackValue = analogRead(servoFeedbackPin);
-  // if ((abs(abs(pulseFeedback[(pulseNumber) % nbPulse] - servoFeedbackValue))) / servoFeedbackValue > 1.1)
-  // if ((abs(abs(pulseFeedback[(pulseNumber) % nbPulse] - servoFeedbackValue)))  >= 1.05)
-  // {
-  //  Serial.print("pb feedback:");
-  //  Serial.print(abs(pulseFeedback[(pulseNumber) % nbPulse] - servoFeedbackValue) / abs(pulseFeedback[(pulseNumber) % nbPulse]));
-  // }
-  // Serial.println();
-  //  Serial.print("AngleF:");
-  // Serial.print(servoFeedbackValue);
-  //      AngleRadian = ((servoFeedbackValue- angleD) * coefAngRead);
-  // AngleRadian = ((servoFeedbackValue - 158) / 128);
+
   AngleRadian = (pulseValue[(pulseNumber) % nbPulse] - pulseValue[0]) * coefAngRef;
   AngleDegre = (AngleRadian / PI) * 180;
-  // Serial.print(AngleRadian);
-  //  Serial.print(";");
   Serial.print(" ");
   Serial.print(AngleDegre);
   Serial.print(" dist front:");
@@ -838,11 +724,9 @@ void SendEndScan()
   PendingDataLenSerial = 0x0a;
 
   PendingReqSerial = PendingReqRefSerial;
-  // DataToSendSerial();
-  //  timeSendSecSerial = millis();
   myservo.write(pulseValue[(nbPulse + 1) / 2]); // remise au centre
   delay(1000);
-  myservo.detach();  // attaches the servo on pin 4 to the servo object
+  // myservo.detach();  // attaches the servo on pin 4 to the servo object
   digitalWrite(power1Pin, LOW);
   numStep = 0;
   // SendRFNoSecured();
@@ -860,8 +744,6 @@ void Move(int orientation, int lenghtToDo)
     bitWrite(toDo, toDoForward, true);       // position bit toDo move
     pendingForward = lenghtToDo;
   }
-
-  //  Rotate(orientation);
 
 }
 void Rotate( int orientation) {
@@ -899,6 +781,7 @@ void Rotate( int orientation) {
 // SendRFNoSecured();
 
 void MoveForward( int lengthToDo) {
+  EchoServoAlign();
   bitWrite(toDo, toDoForward, false);       // position bit toDo move
   unsigned int lentghLeftToDo = 0;
   unsigned int lentghRightToDo = 0;
@@ -917,36 +800,28 @@ void MoveForward( int lengthToDo) {
     {
       bLeftClockwise = bForward;
       bRightClockwise = !bForward;
+      moveFront = false;
+      movePingInit = PingBack();
     }
     else
     {
       bLeftClockwise = !bForward;
       bRightClockwise = bForward;
+      moveFront = true;
+      movePingInit = PingFront();
     }
-
-
-
-    // iLeftRpm  = 100 * revolutionsToDo[0];
-    // lRightCentiRevolutions = 100 * revolutionsToDo[1];
     Serial.println(iLeftCentiRevolutions );
     startMotors();
   }
 
   Serial.println("move ok");
   actStat = 0x69; //" move completed
-
-  // SendRFNoSecured();
 }
 
 
 
 
 unsigned int  RotationCalculation(int orientation) {
-  //  Serial.print("Radian:");
-  // float angleRadian = orientation;
-  // unsigned int distToDo;
-  //  angleRadian = angleRadian / 180 * PI;
-  // Serial.println(angleRadian);
   unsigned int distToDo = ((iRobotWidth * PI / 360) * orientation);
   Serial.print("distRot:");
   Serial.println(distToDo);
@@ -959,9 +834,6 @@ bool CheckFeedback()
   servoFeedbackValue = analogRead(servoFeedbackPin);
   Serial.print(" ");
   Serial.println(servoFeedbackValue);
-  // if ((abs(abs(pulseFeedback[(pulseNumber) % nbPulse] - servoFeedbackValue))) / servoFeedbackValue > 1.1)
-  // if ((abs(abs(pulseFeedback[(pulseNumber) % nbPulse] - servoFeedbackValue)))  >= 1.05)
-  // {
   bool retFeed = true;
   float retCode = abs(pulseFeedback[(pulseNumber) % nbPulse] - servoFeedbackValue);
   retCode = retCode / abs(pulseFeedback[(pulseNumber) % nbPulse]);
@@ -987,36 +859,24 @@ bool CheckFeedback()
   }
   return retFeed;
 }
-/* exemple appel de la remontee data securisee
- PendingReq=0x32; // routage UDP
- PendingDataReq[1]=50+CptSch;  // nÂ° indicateur
- PendingDataReq[2]=Schedul[CptSch];
- UnitInd();
- */
 
 void SendScanResultSerial (int distF, int distB)
 {
   retryCount = 00;
   PendingDataReqSerial[0] = 0x01;
-  PendingDataReqSerial[1] = 0x46; //"B" front
-  PendingDataReqSerial[2] = uint8_t(distF / 256);
-  PendingDataReqSerial[3] = uint8_t(distF);
-  PendingDataReqSerial[4] = 0x42; //"B" back
-  PendingDataReqSerial[5] = uint8_t(distB / 256);
-  PendingDataReqSerial[6] = uint8_t(distB);
-  PendingDataReqSerial[7] = uint8_t(AngleDegre / 256); //1er octet contient les facteurs de 256
-  PendingDataReqSerial[8] = uint8_t(AngleDegre); //2eme octets contient le complement - position = Datareq2*256+Datareq3
-  PendingDataReqSerial[9] = uint8_t(trameNumber % 256);
-  PendingDataLenSerial = 0x0a;
+  PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
+  PendingDataReqSerial[2] = 0x46; //"F" front
+  PendingDataReqSerial[3] = uint8_t(distF / 256);
+  PendingDataReqSerial[4] = uint8_t(distF);
+  PendingDataReqSerial[5] = 0x42; //"B" back
+  PendingDataReqSerial[6] = uint8_t(distB / 256);
+  PendingDataReqSerial[7] = uint8_t(distB);
+  PendingDataReqSerial[8] = uint8_t(AngleDegre / 256); //1er octet contient les facteurs de 256
+  PendingDataReqSerial[9] = uint8_t(AngleDegre); //2eme octets contient le complement - position = Datareq2*256+Datareq3
+  PendingDataReqSerial[10] = uint8_t(trameNumber % 256);
+  PendingDataReqSerial[11] = 0x00;
+  PendingDataLenSerial = 0x0c;
   pendingAckSerial = 0x01;
-  /*
-    for (int i=0;i<10;i++)
-    {
-      Serial.print(PendingDataReqSerial[i],HEX);
-      Serial.print("-");
-    }
-     Serial.println();
-  */
   PendingReqSerial = PendingReqRefSerial;
   // DataToSendSerial();
   SendSecuSerial();
@@ -1027,11 +887,11 @@ void SendScanResultSerial (int distF, int distB)
 void PowerCheck()
 {
   timePower1Check = millis(); //
-  Serial.print("power1:");
+  //  Serial.print("power1:");
   power1Mesurt = 3 * map(analogRead(power1Value), 0, 1023, 0, 467);
-  Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 12v
-  Serial.println("cVolt");
-  Serial.print("power2:");
+  //  Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 12v
+  //  Serial.println("cVolt");
+  //  Serial.print("power2:");
   if (power1Mesurt < 950)
   {
     bitWrite(diagPower, 0, 1);
@@ -1041,8 +901,8 @@ void PowerCheck()
     bitWrite(diagPower, 0, 0);
   }
   power2Mesurt = 2 * map(analogRead(power2Value), 0, 1023, 0, 456);
-  Serial.print(power2Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
-  Serial.println("cV");
+  //  Serial.print(power2Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
+  //  Serial.println("cV");
   if (power2Mesurt < 470)
   {
     bitWrite(diagPower, 1, 1);
@@ -1060,6 +920,11 @@ void PowerCheck()
   {
     bitWrite(diagPower, 2, 0);
   }
+  if (diagPower >= 0x07)
+  {
+    //    StopAll();
+  }
+  /*
   Serial.print("power3:");
   Serial.print(power3Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
   Serial.println("cV");
@@ -1071,21 +936,23 @@ void PowerCheck()
   PendingDataReqSerial[4] = uint8_t(diagPower);
   PendingDataReqSerial[5] = 0x00;
   PendingDataLenSerial = 0x06; // 6 longueur mini pour la gateway
+  */
 
 }
 
 void startMotors()
 {
-  StartLeftWheelSpeedControl();   // pour test
-  StartRightWheelSpeedControl();   // pour test
+  StartLeftWheelSpeedControl();   //
+  StartRightWheelSpeedControl();   //
   bitWrite(pendingAction, pendingLeftMotor, true);
   bitWrite(pendingAction, pendingRightMotor, true);
   Serial.print("reqSpeed:");
   Serial.print(iLeftRevSpeed);
   Serial.print(" ");
-  Serial.println(iLeftRevSpeed);
-  bitWrite(diagMotor, 0, 0);       // position bit diagMotor left motor
-  bitWrite(diagMotor, 1, 0);       // position bit diagMotor right motor
+  Serial.println(iRightRevSpeed);
+  //  bitWrite(diagMotor, 0, 0);       // position bit diagMotor left motor
+  //  bitWrite(diagMotor, 1, 0);       // position bit diagMotor right motor
+  diagMotor = 0x00;
   leftMotor.TurnMotor(bLeftClockwise, iLeftCentiRevolutions, iLeftRevSpeed);
   rightMotor.TurnMotor(bRightClockwise, iRightCentiRevolutions, iRightRevSpeed);
 }
@@ -1094,31 +961,21 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed
 {
 
   float powerAdustment = float (uRefMotorVoltage) / (3 * map(analogRead(power1Value), 0, 1023, 0, 467)); // speed adjustement to power supply
-  // Serial.println(powerAdustment);
-  //  iLeftCentiRevolutions = (iLeftDistance * 100 / iLeftTractionDistPerRev) * powerAdustment; // Centi-revolutions
-  //  iRightCentiRevolutions = ((iRightDistance * 100 / iRightTractionDistPerRev) * powerAdustment) * fMaxrpmAdjustment; // ms
   iLeftCentiRevolutions = (iLeftDistance * 100 / iLeftTractionDistPerRev) ; // Centi-revolutions
   iRightCentiRevolutions = (iRightDistance * 100 / iRightTractionDistPerRev) ; // ms
-  // Serial.println(iLeftSpeed);
-  // Serial.println(iLeftCentiRevolutions);
+
   iLeftRevSpeed = (iLeftSpeed * 60 ) / iLeftTractionDistPerRev; // revolutions per minute
   iRightRevSpeed = (iRightSpeed * 60) / iRightTractionDistPerRev; // revolutions per minute
-  // Serial.println(iLeftRevSpeed);
-  //  Serial.println(iLeftTractionDistPerRev);
-  //  Serial.println(iLeftCentiRevolutions);
-
-  //Serial.println(iRightRevSpeed);
-  //  Serial.println(iRightTractionDistPerRev);
-  //  Serial.println(iRightCentiRevolutions);
 }
 
 void StartLeftWheelSpeedControl()
 {
 
-  for (int i = 0; i < sizeof(instantLeftWheelRevSpeed) / 2; i++)
+  for (int i = 0; i < sizeOfLeftRev; i++)
   {
-    instantLeftWheelRevSpeed[i] = iLeftRevSpeed; // init avec expected speed
+    instantLeftWheelRevSpeed[i] = 0 ; // init avec expected speed iLeftRevSpeed
   }
+  avgLeftWheelSpeed;
   attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), LeftWheelCount, FALLING);
   leftWheelInterrupt = 0;
 }
@@ -1133,10 +990,11 @@ void LeftWheelCount()
 void StartRightWheelSpeedControl()
 {
 
-  for (int i = 0; i < sizeof(instantRightWheelRevSpeed) / 2; i++)
+  for (int i = 0; i < sizeOfRightRev; i++)
   {
-    instantRightWheelRevSpeed[i] = iRightRevSpeed; // init avec expected speed
+    instantRightWheelRevSpeed[i] = 0; // init avec expected speediRightRevSpeed
   }
+  avgRightWheelSpeed = 0;
   attachInterrupt(digitalPinToInterrupt(wheelSpeedRightPin), RightWheelCount, FALLING);
   rightWheelInterrupt = 0;
 }
@@ -1154,9 +1012,9 @@ void SpeedRightWheel()
   prevRightWheelIntTime = millis();
   unsigned int deltaEncoder = rightWheelInterrupt - prevRightWheelInterrupt;
   prevRightWheelInterrupt = rightWheelInterrupt;
-//  Serial.print("right wheel rpm:");
+  //  Serial.print("right wheel rpm:");
   instantRightWheelRevSpeed[rightWheelSpeedCount % sizeOfRightRev] = 60 * (float (deltaEncoder * 1000 / deltaTime) / rightWheelEncoderHoles);
-//  Serial.println(instantRightWheelRevSpeed[rightWheelSpeedCount % sizeof(instantRightWheelRevSpeed) / 2]);
+  //  Serial.println(instantRightWheelRevSpeed[rightWheelSpeedCount % sizeof(instantRightWheelRevSpeed) / 2]);
   rightWheelSpeedCount++;
 }
 void SpeedLeftWheel()
@@ -1165,10 +1023,10 @@ void SpeedLeftWheel()
   prevLeftWheelIntTime = millis();
   unsigned int deltaEncoder = leftWheelInterrupt - prevLeftWheelInterrupt;
   prevLeftWheelInterrupt = leftWheelInterrupt;
- // Serial.print("left wheel rpm:");
+  // Serial.print("left wheel rpm:");
   instantLeftWheelRevSpeed[leftWheelSpeedCount % sizeOfLeftRev] = 60 * (float (deltaEncoder * 1000 / deltaTime) / leftWheelEncoderHoles);
-//  Serial.println(instantLeftWheelRevSpeed[leftWheelSpeedCount % sizeof(instantLeftWheelRevSpeed) / 2]);
-//  Serial.println(leftWheelSpeedCount % sizeOfLeftRev);
+  //  Serial.println(instantLeftWheelRevSpeed[leftWheelSpeedCount % sizeof(instantLeftWheelRevSpeed) / 2]);
+  //  Serial.println(leftWheelSpeedCount % sizeOfLeftRev);
   leftWheelSpeedCount++;
 }
 
@@ -1228,10 +1086,11 @@ void ComputeNewLocalization(boolean last)
 void stopWheelControl()
 {
   boolean last = true;
+  PrintSpeed();
   ComputeNewLocalization(last);
   StopRightWheelSpeedControl();
   StopLeftWheelSpeedControl();
-  PrintSpeed();
+
 }
 
 void PrintSpeed()
@@ -1248,20 +1107,201 @@ void PrintSpeed()
 }
 
 
+void EchoServoAlign()
+{
+  myservo.attach(servoPin);
+  myservo.write(pulseValue[(nbPulse + 1) / 2]);
+  delay(1000);
+  // myservo.detach();
+}
+
+void checkObstacle()
+{
+  int dist = 0;
+  myservo.attach(servoPin);
+  if (moveFront)
+  {
+    dist = PingFront() - 30;
+  }
+  else
+    dist = PingBack();
+  Serial.println(dist);
+  if (dist < 50)
+  {
+    leftMotor.StopMotor();
+    rightMotor.StopMotor();
+    bitWrite(diagMotor, 7, 1);       // position bit diagMotor
+    Serial.println("stop obstacle");
+    delayToStopWheel = millis();
+    bitWrite(pendingAction, pendingLeftMotor, false);
+    bitWrite(pendingAction, pendingRightMotor, false);
+  }
+
+}
+
+void AffLed()
+{
+  if (diagPower == 0x00)
+  {
+    digitalWrite(redLed, 1);
+    redLedOn = true;
+  }
+  else
+  {
+    if (diagPower == 0b00000111)
+    {
+      digitalWrite(redLed, 0);
+      redLedOn = false;
+    }
+    else
+    {
+      redLedOn = !redLedOn;
+      digitalWrite(redLed, redLedOn);
+    }
+  }
+
+  if (diagConnection == 0x00)
+  {
+    digitalWrite(blueLed, 1);
+    blueLedOn = true;
+  }
+  else
+  {
+    blueLedOn = !blueLedOn;
+    digitalWrite(blueLed, blueLedOn);
+  }
+
+  if (diagRobot == 0x00  )
+  {
+    digitalWrite(greenLed, 1);
+    greenLedOn = true;
+  }
+  else
+  {
+    greenLedOn = !greenLedOn;
+    digitalWrite(greenLed, greenLedOn);
+  }
+  if (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true)
+  {
+    if (diagMotor == 0x00)
+    {
+      Serial.println(diagMotor, HEX);
+      digitalWrite(yellowLed, 1);
+      yellowLedOn = true;
+    }
+    else
+    {
+      yellowLedOn = !yellowLedOn;
+      digitalWrite(yellowLed, yellowLedOn);
+    }
+  }
+  else
+  {
+
+    if (diagMotor == 0x00)
+    {
+
+      digitalWrite(yellowLed, 0);
+      yellowLedOn = false;
+    }
+    else
+    {
+      yellowLedOn = !yellowLedOn;
+      digitalWrite(yellowLed, yellowLedOn);
+    }
+  }
+
+}
+
+void SendStatus()
+{
+  PendingReqSerial = PendingReqRefSerial;
+  PendingDataReqSerial[0] = 0x65; //
+  PendingDataReqSerial[1] = AppStat; //
+  PendingDataReqSerial[2] = actStat;
+  PendingDataReqSerial[3] = diagPower;
+  PendingDataReqSerial[4] = diagMotor;
+  PendingDataReqSerial[5] = diagConnection;
+  PendingDataReqSerial[6] = diagRobot;
+  if (posX >= 0)
+  {
+    PendingDataReqSerial[7] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[7] = 0x2d;
+  }
+  PendingDataReqSerial[8] = uint8_t(posX / 256);
+  PendingDataReqSerial[9] = uint8_t(posX);
+  if (posY >= 0)
+  {
+    PendingDataReqSerial[10] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[10] = 0x2d;
+  }
+  PendingDataReqSerial[11] = uint8_t(posY / 256);
+  PendingDataReqSerial[12] = uint8_t(posY);
+  PendingDataLenSerial = 0x0d; // 6 longueur mini pour la gateway
+}
 
 
+void SendPowerValue()
+{
+  Serial.print("power1:");
+  power1Mesurt = 3 * map(analogRead(power1Value), 0, 1023, 0, 467);
+  Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 12v
+  Serial.println("cVolt");
+  Serial.print("power2:");
+  if (power1Mesurt < 950)
+  {
+    bitWrite(diagPower, 0, 1);
+  }
+  else
+  {
+    bitWrite(diagPower, 0, 0);
+  }
+  power2Mesurt = 2 * map(analogRead(power2Value), 0, 1023, 0, 456);
+  Serial.print(power2Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
+  Serial.println("cV");
+  if (power2Mesurt < 470)
+  {
+    bitWrite(diagPower, 1, 1);
+  }
+  else
+  {
+    bitWrite(diagPower, 1, 0);
+  }
+  power3Mesurt = 2 * map(analogRead(power3Value), 0, 1023, 0, 540);
+  if (power3Mesurt < 850)
+  {
+    bitWrite(diagPower, 2, 1);
+  }
+  else
+  {
+    bitWrite(diagPower, 2, 0);
+  }
+  Serial.print("power3:");
+  Serial.print(power3Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
+  Serial.println("cV");
+  PendingReqSerial = PendingReqRefSerial;
+  PendingDataReqSerial[0] = 0x70; //
+  PendingDataReqSerial[1] = uint8_t(power1Mesurt / 10); //
+  PendingDataReqSerial[2] = uint8_t(power2Mesurt / 10);
+  PendingDataReqSerial[3] = uint8_t(power3Mesurt / 10);
+  PendingDataReqSerial[4] = 0x00;
+  PendingDataReqSerial[5] = 0x00;
+  PendingDataLenSerial = 0x06; // 6 longueur mini pour la gateway
 
-
-
-
-
-
-
-
-
-
-
-
+}
+void StopAll()
+{
+  leftMotor.StopMotor();
+  rightMotor.StopMotor();
+  toDo = 0x00;
+  myservo.detach();
+}
 
 
 
