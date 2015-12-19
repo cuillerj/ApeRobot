@@ -106,6 +106,9 @@ uint8_t pendingAction = 0x00; //
 uint8_t sendInfoSwitch = 0x00;
 boolean moveFront;
 int movePingInit;
+long deltaPosX = 0;
+long deltaPosY = 0;
+float alpha = 0;
 long posX = 0;
 long posY = 0;
 long targetX = 0;
@@ -473,6 +476,13 @@ void TraitInput(uint8_t cmdInput) {
     case 0x42: // commande B
 
       break;
+    case 0x49: // commande I
+      Serial.println("init X Y");
+      posX = 0;
+      posY = 0;
+      deltaPosX = 0;
+      deltaPosY = 0;
+      break;
     case 0x2b: // commande +
       AppStat = AppStat & 0xf1;
       Serial.println("Scan");
@@ -785,7 +795,7 @@ void MoveForward( int lengthToDo) {
   bitWrite(toDo, toDoForward, false);       // position bit toDo move
   unsigned int lentghLeftToDo = 0;
   unsigned int lentghRightToDo = 0;
-
+  SendStatus();
   // move Toward
   if (lengthToDo != 0 )
   {
@@ -815,6 +825,7 @@ void MoveForward( int lengthToDo) {
   }
 
   Serial.println("move ok");
+
   actStat = 0x69; //" move completed
 }
 
@@ -871,11 +882,12 @@ void SendScanResultSerial (int distF, int distB)
   PendingDataReqSerial[5] = 0x42; //"B" back
   PendingDataReqSerial[6] = uint8_t(distB / 256);
   PendingDataReqSerial[7] = uint8_t(distB);
-  PendingDataReqSerial[8] = uint8_t(AngleDegre / 256); //1er octet contient les facteurs de 256
-  PendingDataReqSerial[9] = uint8_t(AngleDegre); //2eme octets contient le complement - position = Datareq2*256+Datareq3
-  PendingDataReqSerial[10] = uint8_t(trameNumber % 256);
-  PendingDataReqSerial[11] = 0x00;
-  PendingDataLenSerial = 0x0c;
+  PendingDataReqSerial[8] = 0x4; //"A" angle
+  PendingDataReqSerial[9] = uint8_t(AngleDegre / 256); //1er octet contient les facteurs de 256
+  PendingDataReqSerial[10] = uint8_t(AngleDegre); //2eme octets contient le complement - position = Datareq2*256+Datareq3
+  PendingDataReqSerial[11] = uint8_t(trameNumber % 256);
+  PendingDataReqSerial[12] = 0x00;
+  PendingDataLenSerial = 0x0d;
   pendingAckSerial = 0x01;
   PendingReqSerial = PendingReqRefSerial;
   // DataToSendSerial();
@@ -892,7 +904,7 @@ void PowerCheck()
   //  Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 12v
   //  Serial.println("cVolt");
   //  Serial.print("power2:");
-  if (power1Mesurt < 950)
+  if (power1Mesurt < 900)
   {
     bitWrite(diagPower, 0, 1);
   }
@@ -903,7 +915,7 @@ void PowerCheck()
   power2Mesurt = 2 * map(analogRead(power2Value), 0, 1023, 0, 456);
   //  Serial.print(power2Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
   //  Serial.println("cV");
-  if (power2Mesurt < 470)
+  if (power2Mesurt < 450)
   {
     bitWrite(diagPower, 1, 1);
   }
@@ -912,7 +924,7 @@ void PowerCheck()
     bitWrite(diagPower, 1, 0);
   }
   power3Mesurt = 2 * map(analogRead(power3Value), 0, 1023, 0, 540);
-  if (power3Mesurt < 850)
+  if (power3Mesurt < 800)
   {
     bitWrite(diagPower, 2, 1);
   }
@@ -922,7 +934,7 @@ void PowerCheck()
   }
   if (diagPower >= 0x07)
   {
-    //    StopAll();
+    StopAll();
   }
   /*
   Serial.print("power3:");
@@ -1051,7 +1063,7 @@ void ComputeNewLocalization(boolean last)
 
 
   float deltaRight = ((float (rightWheelInterrupt) - saveRightWheelInterrupt) * PI * iRightWheelDiameter / rightWheelEncoderHoles);
-  float alpha = 0;
+  float deltaAlpha = 0;
 
   if ((deltaLeft != 0 && deltaRight != 0) || last == true)
   {
@@ -1068,19 +1080,32 @@ void ComputeNewLocalization(boolean last)
     float deltaC = (deltaLeft + deltaRight) / 2;
     if (deltaRight != 0)
     {
-      alpha = (deltaLeft - deltaRight) / deltaRight;
+      deltaAlpha = (deltaLeft - deltaRight) / deltaRight;
     }
     else {
-      alpha = deltaLeft / (PI * iLeftWheelDiameter);
+      deltaAlpha = deltaLeft / (PI * iLeftWheelDiameter);
     }
+    alpha = deltaAlpha + alpha;
     Serial.print(deltaC);
+    Serial.print(" ");
     Serial.println(alpha);
-    posX = posX + deltaC * (1 - (alpha * alpha) / 2);
-    posY = posY + deltaC * alpha;
-    Serial.print("poX:");
+    deltaPosX = deltaPosX + deltaC * (1 - (deltaAlpha * deltaAlpha) / 2);
+    deltaPosY = deltaPosY + deltaC * deltaAlpha;
+    Serial.print("deltaPosX:");
+    Serial.print(deltaPosX);
+    Serial.print(" deltaPosY:");
+    Serial.println(deltaPosY);
+  }
+  if (last == true)
+  {
+    posX = posX + deltaPosX;
+    posY = posY + deltaPosY;
+    Serial.print("new pox X:");
     Serial.print(posX);
-    Serial.print(" posY:");
-    Serial.println(posY);
+    Serial.print(" Y:");
+    Serial.print(posY);
+    Serial.print(" angle:");
+    Serial.println(alpha);
   }
 }
 void stopWheelControl()
@@ -1220,40 +1245,73 @@ void SendStatus()
   PendingDataReqSerial[1] = AppStat; //
   PendingDataReqSerial[2] = actStat;
   PendingDataReqSerial[3] = diagPower;
-  PendingDataReqSerial[4] = diagMotor;
-  PendingDataReqSerial[5] = diagConnection;
-  PendingDataReqSerial[6] = diagRobot;
+  PendingDataReqSerial[4] = 0x00; // no more than 3 conscutives non asccii bytes
+  PendingDataReqSerial[5] = diagMotor;
+  PendingDataReqSerial[6] = diagConnection;
+  PendingDataReqSerial[7] = diagRobot;
   if (posX >= 0)
   {
-    PendingDataReqSerial[7] = 0x2b;
+    PendingDataReqSerial[8] = 0x2b;
   }
   else
   {
-    PendingDataReqSerial[7] = 0x2d;
+    PendingDataReqSerial[8] = 0x2d;
   }
-  PendingDataReqSerial[8] = uint8_t(posX / 256);
-  PendingDataReqSerial[9] = uint8_t(posX);
+  PendingDataReqSerial[9] = uint8_t(abs(posX) / 256);
+  PendingDataReqSerial[10] = uint8_t(abs(posX));
   if (posY >= 0)
   {
-    PendingDataReqSerial[10] = 0x2b;
+    PendingDataReqSerial[11] = 0x2b;
   }
   else
   {
-    PendingDataReqSerial[10] = 0x2d;
+    PendingDataReqSerial[11] = 0x2d;
   }
-  PendingDataReqSerial[11] = uint8_t(posY / 256);
-  PendingDataReqSerial[12] = uint8_t(posY);
-  PendingDataLenSerial = 0x0d; // 6 longueur mini pour la gateway
+  PendingDataReqSerial[12] = uint8_t(abs(posY) / 256);
+  PendingDataReqSerial[13] = uint8_t(abs(posY));
+
+  if (deltaPosX >= 0)
+  {
+    PendingDataReqSerial[14] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[14] = 0x2d;
+  }
+  PendingDataReqSerial[15] = uint8_t(abs(deltaPosX) / 256);
+  PendingDataReqSerial[16] = uint8_t(abs(deltaPosX));
+  if (deltaPosY >= 0)
+  {
+    PendingDataReqSerial[17] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[17] = 0x2d;
+  }
+  PendingDataReqSerial[18] = uint8_t(abs(deltaPosY) / 256);
+  PendingDataReqSerial[19] = uint8_t(abs(deltaPosY));
+
+  if (alpha >= 0)
+  {
+    PendingDataReqSerial[20] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[20] = 0x2d;
+  }
+  int angle = alpha;
+  Serial.println(angle);
+  PendingDataReqSerial[21] = uint8_t(abs(angle) / 256);
+  PendingDataReqSerial[22] = uint8_t(abs(angle));
+  PendingDataLenSerial = 0x17; // 6 longueur mini pour la gateway
 }
-
-
 void SendPowerValue()
 {
   Serial.print("power1:");
   power1Mesurt = 3 * map(analogRead(power1Value), 0, 1023, 0, 467);
   Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 12v
-  Serial.println("cVolt");
-  Serial.print("power2:");
+  // Serial.println("cVolt");
+  Serial.print(" power2:");
   if (power1Mesurt < 950)
   {
     bitWrite(diagPower, 0, 1);
@@ -1264,7 +1322,7 @@ void SendPowerValue()
   }
   power2Mesurt = 2 * map(analogRead(power2Value), 0, 1023, 0, 456);
   Serial.print(power2Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
-  Serial.println("cV");
+  Serial.print("cV ");
   if (power2Mesurt < 470)
   {
     bitWrite(diagPower, 1, 1);
@@ -1282,7 +1340,7 @@ void SendPowerValue()
   {
     bitWrite(diagPower, 2, 0);
   }
-  Serial.print("power3:");
+  Serial.print( "power3:");
   Serial.print(power3Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
   Serial.println("cV");
   PendingReqSerial = PendingReqRefSerial;
