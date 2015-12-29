@@ -301,8 +301,8 @@ void setup() {
 void loop() {
 
   if (millis() - delayCheckSpeed > 250 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
-  {
-    SpeedRightWheel();
+  {  // Compute left and right wheels average speed over past seconds (sizeOfLeftRev*250 seconds). Updated every 250 milliseconds
+    SpeedRightWheel(); 
     SpeedLeftWheel();
 
     delayCheckSpeed = millis();
