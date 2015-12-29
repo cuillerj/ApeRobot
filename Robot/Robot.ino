@@ -29,7 +29,7 @@ int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum re
 float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
 int iLeftWheelDiameter = 65; //(in mm - used to measure robot moves)
 int iRightWheelDiameter = iLeftWheelDiameter; //(in mm - used to measure robot moves)
-float iLeftMotorDemultiplierPercent = (100*9)/12; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel) used to fit speed encoder rotation to wheel rotation (motor 12 pinion teeth wheel 9 pinion teeth)
+float iLeftMotorDemultiplierPercent = (100*12)/9; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel) used to fit speed encoder rotation to wheel rotation (motor 12 pinion teeth wheel 9 pinion teeth)
 float iRightMotorDemultiplierPercent = iLeftMotorDemultiplierPercent; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel)
 unsigned int iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) * 100 / (iLeftMotorDemultiplierPercent);
 unsigned int iRightTractionDistPerRev = (PI * iRightWheelDiameter) * 100 / (iRightMotorDemultiplierPercent);
@@ -1277,11 +1277,9 @@ void ComputeNewLocalization(uint8_t param)
       float deltaC = (deltaLeft + deltaRight) / 2; // Move of center of robot (middle of the 2 wheels) in centimeters.
       //      float moveLeft = (deltaLeft * PI * iLeftWheelDiameter)/leftWheelEncoderHoles;
       //     float moveRight = (deltaRight * PI * iRightWheelDiameter)/rightWheelEncoderHoles;
-<<<<<<< HEAD
+
       deltaAlpha = asin((deltaRight - deltaLeft) / (iRobotWidth )); //
-=======
-      deltaAlpha = atan((deltaRight - deltaLeft) / (iRobotWidth )); 
->>>>>>> origin/master
+
       /*
       if (deltaRight != 0)
       {
