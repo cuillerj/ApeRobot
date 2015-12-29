@@ -301,7 +301,7 @@ void setup() {
 void loop() {
 
   if (millis() - delayCheckSpeed > 250 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
-  {  // Compute left and right wheels average speed over past seconds (sizeOfLeftRev*250 seconds). Updated every 250 milliseconds
+  {  // Compute left and right wheels average speed over past seconds (sizeOfLeftRev*250 seconds). Updated every 250 milliseconds.
     SpeedRightWheel(); 
     SpeedLeftWheel();
 
@@ -321,7 +321,7 @@ void loop() {
 
   }
   if (millis() - delayCheckPosition > 200 && (prevLeftWheelInterrupt != leftWheelInterrupt || prevRightWheelInterrupt != rightWheelInterrupt) && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
-  {
+  { // Compute new position every 200 milliseconds.
     delayCheckPosition = millis();
   //  CheckMoveSynchronisation();
     ComputeNewLocalization(0x00);
@@ -1243,13 +1243,12 @@ void CheckMoveSynchronisation()
 }
 void ComputeNewLocalization(uint8_t param)
 {
-  float deltaAlpha = 0;
-  float deltaLeft = ((float (leftWheelInterrupt) - saveLeftWheelInterrupt) * PI * iLeftWheelDiameter / leftWheelEncoderHoles);
-  float deltaRight = ((float (rightWheelInterrupt) - saveRightWheelInterrupt) * PI * iRightWheelDiameter / rightWheelEncoderHoles);
+  float deltaAlpha = 0; // modification of robot angles (in degres) since last call of the function
+  float deltaLeft = ((float (leftWheelInterrupt) - saveLeftWheelInterrupt) * PI * iLeftWheelDiameter / leftWheelEncoderHoles); // number of centimeters done by left wheel since last call of the function
+  float deltaRight = ((float (rightWheelInterrupt) - saveRightWheelInterrupt) * PI * iRightWheelDiameter / rightWheelEncoderHoles); // number of centimeters done by right wheel since last call of the function
 
   if (bitRead(currentMove, toDoStraight) == true )
-
-  {
+  { // if robot is supposed to go straight.
 
     if (bLeftClockwise == true)
     {
@@ -1275,10 +1274,10 @@ void ComputeNewLocalization(uint8_t param)
       Serial.println(" ");
       saveLeftWheelInterrupt = leftWheelInterrupt;
       saveRightWheelInterrupt = rightWheelInterrupt;
-      float deltaC = (deltaLeft + deltaRight) / 2;
+      float deltaC = (deltaLeft + deltaRight) / 2; // Move of center of robot (middle of the 2 wheels) in centimeters.
       //      float moveLeft = (deltaLeft * PI * iLeftWheelDiameter)/leftWheelEncoderHoles;
       //     float moveRight = (deltaRight * PI * iRightWheelDiameter)/rightWheelEncoderHoles;
-      deltaAlpha = atan((deltaRight - deltaLeft) / (iRobotWidth )); //
+      deltaAlpha = atan((deltaRight - deltaLeft) / (iRobotWidth )); 
       /*
       if (deltaRight != 0)
       {
