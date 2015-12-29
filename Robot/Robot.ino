@@ -1278,17 +1278,8 @@ void ComputeNewLocalization(uint8_t param)
       //      float moveLeft = (deltaLeft * PI * iLeftWheelDiameter)/leftWheelEncoderHoles;
       //     float moveRight = (deltaRight * PI * iRightWheelDiameter)/rightWheelEncoderHoles;
 
-      deltaAlpha = asin((deltaRight - deltaLeft) / (iRobotWidth )); //
+      deltaAlpha = asin((deltaRight - deltaLeft) / (iRobotWidth )); // Compute the modification of the angle since last call of the function
 
-      /*
-      if (deltaRight != 0)
-      {
-        deltaAlpha = (deltaLeft - deltaRight) / deltaRight;
-      }
-      else {
-        deltaAlpha = deltaLeft / (PI * iLeftWheelDiameter);
-      }
-      */
       Serial.print("delta alpha:");
       Serial.print(deltaAlpha);
       Serial.print(" deltaC:");
