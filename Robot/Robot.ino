@@ -29,11 +29,11 @@ int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum re
 float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
 int iLeftWheelDiameter = 65; //(in mm - used to measure robot moves)
 int iRightWheelDiameter = iLeftWheelDiameter; //(in mm - used to measure robot moves)
-float iLeftMotorDemultiplierPercent = 100; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel) used to fit speed encoder rotation to wheel rotation
+float iLeftMotorDemultiplierPercent = (100*9)/12; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel) used to fit speed encoder rotation to wheel rotation (motor 12 pinion teeth wheel 9 pinion teeth)
 float iRightMotorDemultiplierPercent = iLeftMotorDemultiplierPercent; // (1 revolution of motor correspons to ileftMotorDemultiplierPercent/100 revolutions of wheel)
 unsigned int iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) * 100 / (iLeftMotorDemultiplierPercent);
 unsigned int iRightTractionDistPerRev = (PI * iRightWheelDiameter) * 100 / (iRightMotorDemultiplierPercent);
-int iRobotWidth = 450; // distance beetwen the 2 wheels mm
+int iRobotWidth = 455; // distance beetwen the 2 wheels mm
 float coeffGlissementRotation = 1.;
 
 //-- power control --
@@ -57,7 +57,7 @@ int rightMotorIN3 = 2; // Arduino pin
 int rightMotorIN4 = 4; // Arduino pin
 
 //-- motors control --
-#define iLeftSlowPMW 120 // PMW value to slowdown motor at the end of the run
+#define iLeftSlowPMW 180 // PMW value to slowdown motor at the end of the run
 #define pendingLeftMotor 0
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPMW);
 #define iRightSlowPMW iLeftSlowPMW   // 
@@ -1278,7 +1278,7 @@ void ComputeNewLocalization(uint8_t param)
       float deltaC = (deltaLeft + deltaRight) / 2;
       //      float moveLeft = (deltaLeft * PI * iLeftWheelDiameter)/leftWheelEncoderHoles;
       //     float moveRight = (deltaRight * PI * iRightWheelDiameter)/rightWheelEncoderHoles;
-      deltaAlpha = atan((deltaRight - deltaLeft) / (iRobotWidth )); //
+      deltaAlpha = asin((deltaRight - deltaLeft) / (iRobotWidth )); //
       /*
       if (deltaRight != 0)
       {
