@@ -2,7 +2,7 @@
 #include <Arduino.h>
 
 #define PI 3.14159
-
+unsigned long savleftWheelInterrupt;
 //-- General Robot parameters --
 //int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
 //int iRightMotorMaxrpm = iLeftMotorMaxrpm; // (Value unknown so far - Maximum revolutions per minute for left motor)
@@ -33,9 +33,9 @@ boolean bForward = true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 boolean firstCycle = true;
-unsigned long iDistance = 0; // mm
-int iSpeedLeft = 408; // mm/s 408.4 maxi
-int iSpeedRight = 408; // mm/s 408.4 maxi
+unsigned long iDistance = 50000; // mm
+int iSpeedLeft = 204; // mm/s 408.4 maxi
+int iSpeedRight = 204; // mm/s 408.4 maxi
 unsigned long iLeftCentiRevolutions;
 unsigned long iRightCentiRevolutions;
 unsigned long restartedDelay;
@@ -47,7 +47,7 @@ int iLeftRevSpeed;
 int iRightRevSpeed;
 float avgRightWheelSpeed = 0;
 float avgLeftWheelSpeed = 0;
-#define sizeOfLeftRev 8
+#define sizeOfLeftRev 4
 #define sizeOfRightRev 8
 unsigned int instantLeftWheelRevSpeed[sizeOfLeftRev];
 unsigned int instantRightWheelRevSpeed[sizeOfRightRev];
@@ -56,11 +56,16 @@ uint8_t leftWheelSpeedCount = 0x00;
 uint8_t rightWheelSpeedCount = 0x00;
 unsigned long prevLeftWheelInterrupt = 0;
 volatile unsigned long leftWheelInterrupt = 0;
+volatile unsigned long copyleftWheelInterrupt = 0;
+volatile unsigned long leftTimeInt=0;
 unsigned long prevRightWheelInterrupt = 0;
 volatile unsigned long rightWheelInterrupt = 0;
 unsigned long saveLeftWheelInterrupt = 0;
 unsigned long saveRightWheelInterrupt = 0;
+unsigned long delayInterrupt;
 boolean motorsOn = false;
+boolean interLeftOn = false;
+boolean pause = false;
 #define iLeftSlowPMW 30 // PMW value to slowdown motor at the end of the run
 #define iRightSlowPMW iLeftSlowPMW   // 
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPMW);
@@ -84,85 +89,130 @@ void setup() {
   Serial.println(sizeOfLeftRev);
   pinMode(wheelSpeedLeftPin, INPUT);
   pinMode(wheelSpeedRightPin, INPUT);
+  pinMode(46, INPUT);
+  digitalWrite(46, 0);
+  Serial.print("int n:");
+  Serial.println(digitalPinToInterrupt(wheelSpeedLeftPin));
   //  startMotors();
 }
 
 void loop() {
   // Serial.print("millis: ");
   //  Serial.println(millis());
-  if (millis() - delayCheckSpeed > 250 && motorsOn == true)
+  /*
+  if (millis() - delayInterrupt > 20 && interLeftOn == false)
   {
-    SpeedRightWheel();
-    SpeedLeftWheel();
-
-    delayCheckSpeed = millis();
-    avgLeftWheelSpeed = 0;
-    for (int i = 0; i < sizeOfLeftRev; i++)
+    Serial.println("att");
+    attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), LeftWheelCount, FALLING);
+    interLeftOn = true;
+    delayInterrupt = millis();
+  }
+  */
+  /*
+  if (copyleftWheelInterrupt + 1 != leftWheelInterrupt && leftWheelInterrupt!=0)
+  {
+    digitalWrite(46, 1);
+    Serial.print("incoh ");
+    Serial.print (copyleftWheelInterrupt);
+        Serial.print(" ");
+    Serial.print (leftWheelInterrupt);
+  }
+  */
+  if (pause == false)
+  {
+    if (leftWheelInterrupt - savleftWheelInterrupt > 1)
     {
-      avgLeftWheelSpeed = instantLeftWheelRevSpeed[i] + avgLeftWheelSpeed;
+      Serial.print("prev:");
+      Serial.print(savleftWheelInterrupt);
+      Serial.print("curr:");
+      Serial.print(leftWheelInterrupt);
+      Serial.print("millis:");
+      Serial.println(millis());
     }
-    avgLeftWheelSpeed = avgLeftWheelSpeed / sizeOfLeftRev;
-    avgRightWheelSpeed = 0;
-    for (int i = 0; i < sizeOfRightRev; i++)
+    savleftWheelInterrupt = leftWheelInterrupt;
+    if (millis() - delayCheckSpeed > 250 && motorsOn == true)
     {
-      avgRightWheelSpeed = avgRightWheelSpeed + instantRightWheelRevSpeed[i]  ;
+      SpeedRightWheel();
+      SpeedLeftWheel();
+
+      delayCheckSpeed = millis();
+      avgLeftWheelSpeed = 0;
+      for (int i = 0; i < sizeOfLeftRev; i++)
+      {
+        avgLeftWheelSpeed = instantLeftWheelRevSpeed[i] + avgLeftWheelSpeed;
+      }
+      avgLeftWheelSpeed = avgLeftWheelSpeed / sizeOfLeftRev;
+      avgRightWheelSpeed = 0;
+      for (int i = 0; i < sizeOfRightRev; i++)
+      {
+        avgRightWheelSpeed = avgRightWheelSpeed + instantRightWheelRevSpeed[i]  ;
+      }
+      avgRightWheelSpeed = avgRightWheelSpeed / sizeOfRightRev;
     }
-    avgRightWheelSpeed = avgRightWheelSpeed / sizeOfRightRev;
 
-  }
-  if (millis() - delayPrintSpeed > 1000)
-  {
+    if (millis() - delayPrintSpeed > 500)
+    {
+      if (avgLeftWheelSpeed > 300)
+      {
+        digitalWrite(46, 1);
+        Serial.print("to high ");
+        Serial.println(millis());
+        leftMotor.StopMotor();
+        rightMotor.StopMotor();
+        pause = true;
+      }
+      Serial.print("leftAvpSpeed:");
+      Serial.print(avgLeftWheelSpeed);
+      Serial.print(" rightAvpSpeed:");
+      Serial.println(avgRightWheelSpeed);
+      delayPrintSpeed = millis();
+      Serial.print(leftWheelInterrupt );
+      Serial.print(" ");
+      Serial.print(rightWheelInterrupt);
+      Serial.print(" ");
+      Serial.println(millis());
+    }
 
-    Serial.print("leftAvpSpeed:");
-    Serial.print(avgLeftWheelSpeed);
-    Serial.print(" rightAvpSpeed:");
-    Serial.println(avgRightWheelSpeed);
-    delayPrintSpeed = millis();
-    Serial.print(((leftWheelInterrupt * 100) / leftWheelEncoderHoles) * iLeftMotorDemultiplierPercent / 100);
-    Serial.print(" ");
-    Serial.println(((rightWheelInterrupt * 100) / rightWheelEncoderHoles) * iRightMotorDemultiplierPercent / 100);
-  }
 
+    int iLeftFeedBack = leftMotor.CheckMotor( (avgLeftWheelSpeed * iLeftMotorDemultiplierPercent) / 100, ((leftWheelInterrupt * 100) / leftWheelEncoderHoles) * iLeftMotorDemultiplierPercent / 100);
+    int iRightFeedBack = rightMotor.CheckMotor((avgRightWheelSpeed * iRightMotorDemultiplierPercent) / 100  , ((rightWheelInterrupt * 100) / rightWheelEncoderHoles) * iRightMotorDemultiplierPercent / 100 );
+    if (iLeftFeedBack == -2)
+    {
+      Serial.println("leftMotor Pb");
 
-  int iLeftFeedBack = leftMotor.CheckMotor( (avgLeftWheelSpeed * iLeftMotorDemultiplierPercent) / 100, ((leftWheelInterrupt * 100) / leftWheelEncoderHoles) * iLeftMotorDemultiplierPercent / 100);
-  int iRightFeedBack = rightMotor.CheckMotor((avgRightWheelSpeed * iRightMotorDemultiplierPercent) / 100  , ((rightWheelInterrupt * 100) / rightWheelEncoderHoles) * iRightMotorDemultiplierPercent / 100 );
-  if (iLeftFeedBack == -2)
-  {
-    Serial.println("leftMotor Pb");
+    }
+    if (iRightFeedBack == -2)
+    {
+      Serial.println("RightMotor Pb");
+    }
+    if (iLeftFeedBack <= 0 || iRightFeedBack <= 0)
+    {
+      //   motorsOn = false;
+    }
+    // Serial.print(iLeftRpm);
+    //  Serial.print(" - ");
+    //  Serial.println(iRightRpm);
 
+    if (firstCycle == true)
+    {
+      startMotors();
+      Serial.println("start");
+      firstCycle = false;
+    }
+    if (millis() - restartedDelay >= 3000000 & iDistance != 0)
+    {
+      startMotors();
+      restartedDelay = millis();
+      Serial.println("re-start");
+    }
+    // delay(100);
   }
-  if (iRightFeedBack == -2)
-  {
-    Serial.println("RightMotor Pb");
-  }
-  if (iLeftFeedBack <= 0 || iRightFeedBack <= 0)
-  {
-    motorsOn = false;
-  }
-  // Serial.print(iLeftRpm);
-  //  Serial.print(" - ");
-  //  Serial.println(iRightRpm);
-
-  if (firstCycle == true)
-  {
-    startMotors();
-    Serial.println("start");
-    firstCycle = false;
-  }
-  if (millis() - restartedDelay >= 30000 & iDistance !=0)
-  {
-    startMotors();
-    restartedDelay = millis();
-    Serial.println("re-start");
-  }
-  // delay(100);
 }
-
 void startMotors() {
   StartLeftWheelSpeedControl();   // pour test
-  StartRightWheelSpeedControl();   // pour test
+  // StartRightWheelSpeedControl();   // pour test
   leftMotor.TurnMotor(bLeftClockwise, iLeftCentiRevolutions, iLeftRevSpeed);
-  rightMotor.TurnMotor(bRightClockwise, iRightCentiRevolutions, iRightRevSpeed);
+  //  rightMotor.TurnMotor(bRightClockwise, iRightCentiRevolutions, iRightRevSpeed);
   motorsOn = true;
 }
 
@@ -189,7 +239,7 @@ void StartLeftWheelSpeedControl()
   {
     instantLeftWheelRevSpeed[i] = 0; // init avec expected speed
   }
-  attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), LeftWheelCount, FALLING);
+  attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), LeftWheelCount, CHANGE);
   leftWheelInterrupt = 0;
 }
 void StopLeftWheelSpeedControl()
@@ -198,7 +248,20 @@ void StopLeftWheelSpeedControl()
 }
 void LeftWheelCount()
 {
-  leftWheelInterrupt++;
+  if (millis()-leftTimeInt>5)
+  {
+  //   noInterrupts();
+  // detachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin));
+  //    unsigned long savleftWheelInterrupt=leftWheelInterrupt;
+  copyleftWheelInterrupt = leftWheelInterrupt;
+  leftWheelInterrupt = leftWheelInterrupt + 1;
+  //   interrupts();
+
+  //   attachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin), LeftWheelCount, CHANGE);
+  // interLeftOn = false;
+  }
+    digitalWrite(44, digitalRead(wheelSpeedLeftPin));
+  leftTimeInt=millis();
 }
 void StartRightWheelSpeedControl()
 {
@@ -216,7 +279,9 @@ void StopRightWheelSpeedControl()
 }
 void RightWheelCount()
 {
+  noInterrupts();
   rightWheelInterrupt++;
+  interrupts();
 }
 void SpeedRightWheel()
 {
@@ -235,10 +300,10 @@ void SpeedLeftWheel()
   prevLeftWheelIntTime = millis();
   unsigned int deltaEncoder = leftWheelInterrupt - prevLeftWheelInterrupt;
   prevLeftWheelInterrupt = leftWheelInterrupt;
-  // Serial.print("left wheel rpm:");
+  //  Serial.print("left wheel rpm:");
   instantLeftWheelRevSpeed[leftWheelSpeedCount % sizeOfLeftRev] = 60 * (float (deltaEncoder * 1000 / deltaTime) / leftWheelEncoderHoles);
   //  Serial.println(instantLeftWheelRevSpeed[leftWheelSpeedCount % sizeof(instantLeftWheelRevSpeed) / 2]);
-  //  Serial.println(leftWheelSpeedCount % sizeOfLeftRev);
+  //    Serial.println(leftWheelSpeedCount % sizeOfLeftRev);
   leftWheelSpeedCount++;
 }
 
