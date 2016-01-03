@@ -47,14 +47,13 @@ int power2Mesurt = 0;
 int power3Mesurt = 0;
 
 //-- left Motor connection --
-int leftMotorENA = 6; // Arduino pin (sortie pwm)
-int leftMotorIN1 = 5; // Arduino pin
-int leftMotorIN2 = 7; // Arduino pin
-
+#define leftMotorENA 6 // Arduino pin must be PWM
+#define leftMotorIN1 26 // arduino pin for rotation control
+#define leftMotorIN2 27  // arduino pin for rotation control
 //-- right Motor connection --
-int rightMotorENB = 3; // Arduino pin (Sortie pwm)
-int rightMotorIN3 = 2; // Arduino pin
-int rightMotorIN4 = 4; // Arduino pin
+#define rightMotorENB 3 // Arduino pin must be PWM
+#define rightMotorIN3 25 // arduino pin for rotation control
+#define rightMotorIN4 24  // arduino pin for rotation control
 
 //-- motors control --
 #define iLeftSlowPMW 150 // PMW value to slowdown motor at the end of the run
@@ -69,7 +68,7 @@ Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm,
 #define wheelSpeedLeftPin 19   // arduino pin connected to IR receiver
 #define leftWheelEncoderHoles 8  // number of holes of the encoder wheel
 #define rightWheelEncoderHoles leftWheelEncoderHoles // number of holes of the encoder wheel
-#define minInterruptDuration 35 // used to avoid entering more than one time in the interrupt void
+#define minInterruptDuration 35 // 35 used to avoid entering more than one time in the interrupt void
 float avgRightWheelSpeed = 0;
 float avgLeftWheelSpeed = 0;
 int iLeftRevSpeed;
@@ -111,9 +110,9 @@ int reqMove = 0;         // requested move
 #define STEPS 64
 #define servoPin 9    // stepper
 #define toDoScan 0    // toDo bit for scan request
-#define echoFront 24  // arduino pin for mesuring echo delay for front 
-#define trigF  25     // arduino pin for trigerring front echo
-#define echoBack  22  // arduino pin for mesuring echo delay for back 
+#define echoFront 20 //24  // arduino pin for mesuring echo delay for front 
+#define trigF  22 //25     // arduino pin for trigerring front echo
+#define echoBack  21 //22  // arduino pin for mesuring echo delay for back 
 #define trigB  23    // arduino pin for trigerring back echo
 #define nbPulse 15    // nb of servo positions for a 360° scan
 int numStep = 0;
@@ -134,6 +133,11 @@ float AngleRadian;
 float AngleDegre;
 unsigned long lecture_echo;
 int scanOrientation = 0;
+volatile unsigned long prevMicros = 0; // used during move to dynamicaly avoid obstacles
+volatile unsigned int lastMicro = 0; // used during move to dynamicaly avoid obstacles
+uint8_t echoCurrent = 0; // used during move to determine which front or back is used
+uint8_t trigCurrent = 0; // used during move to determine which front or back is used
+boolean trigOn = false;
 
 //-- timers --
 unsigned long timeAppli; // cycle applicatif
@@ -157,6 +161,7 @@ unsigned long serialAliveTimer;  //  for serial link communication
 unsigned long serialTimer;       //   for serial link communication
 unsigned long checkObstacleTimer;     // to regurarly ckeck obstacle when moving
 unsigned long durationMaxEcho = 25000; // en us
+//unsigned int durationMaxEchoMillis =durationMaxEcho/1000; // en us
 unsigned long timeSendInfo;
 #define delayBetween2Scan 1500 // pour laisser le temps de positionner le servo et remonter data
 #define delayBetweenScanFB 700  // delai entre 2 pulses
@@ -258,17 +263,22 @@ void loop() {
   if (millis() - delayCheckPosition > 200 && (prevLeftWheelInterrupt != leftWheelInterrupt || prevRightWheelInterrupt != rightWheelInterrupt) && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
   { // Compute new position every 200 milliseconds.
     delayCheckPosition = millis();
-    CheckMoveSynchronisation();
+    //  CheckMoveSynchronisation();
     ComputeNewLocalization(0x00);
   }
   if (millis() - delayPrintSpeed > 1000 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
   {
     PrintSpeed();
   }
-  if (millis() - checkObstacleTimer > 1000 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
+  if ((millis() - checkObstacleTimer) > (durationMaxEcho / 1000) && trigOn == true)
   {
-    //       checkObstacle();
-    checkObstacleTimer = millis();
+    CheckObstacle();
+    //    checkObstacleTimer = millis();
+  }
+  if (millis() - checkObstacleTimer > 750 && echoCurrent != 0 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
+  {
+    CheckObstacle();
+    //    checkObstacleTimer = millis();
   }
   if (saveCurrentMove != currentMove && bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false ) // detect end of move
   {
@@ -282,13 +292,14 @@ void loop() {
     {
       Serial.println("end of straight");
       ComputeNewLocalization(0xff);
-
+      StopEchoInterrupt();
       // stopWheelControl();
     }
     if (currentMove == 0x00)
     {
       //  ComputeNewLocalization(0xff);
       Serial.println("eofmove");
+      StopEchoInterrupt();
       currentMove = 0x00;
       actStat = 0x69; //" move completed
     }
@@ -330,10 +341,12 @@ void loop() {
           if (movePingInit < 0)
           {
             newDist = -PingBack();
+
           }
           else
           {
             newDist = PingFront();
+
           }
           Serial.print("dist:");
           Serial.print(newDist);
@@ -380,6 +393,7 @@ void loop() {
           if (movePingInit < 0)
           {
             newDist = -PingBack();
+
           }
           else
           {
@@ -934,6 +948,9 @@ void MoveForward( int lengthToDo) {
       bRightClockwise = !bForward;
       moveFront = false;
       movePingInit = -PingBack();
+      echoCurrent = echoBack;
+      trigCurrent = trigB;
+      StartEchoInterrupt();
     }
     else
     {
@@ -941,6 +958,9 @@ void MoveForward( int lengthToDo) {
       bRightClockwise = bForward;
       moveFront = true;
       movePingInit = PingFront();
+      echoCurrent = echoFront;
+      trigCurrent = trigF;
+      StartEchoInterrupt();
     }
     Serial.print("dist obs:");
     Serial.println(movePingInit);
@@ -1360,7 +1380,7 @@ void EchoServoAlign()
   delay(1000);
   // myservo.detach();
 }
-
+/*
 void checkObstacle()
 {
   int dist = 0;
@@ -1384,7 +1404,7 @@ void checkObstacle()
   }
 
 }
-
+*/
 void AffLed()
 {
   if (diagPower == 0x00)
@@ -1559,11 +1579,73 @@ void StopAll()
   toDo = 0x00;
   myservo.detach();
 }
+void StartEchoInterrupt()
+{
+  Serial.println("start echo interrupt");
+  lastMicro = 0;
+  trigOn = false;
+  attachInterrupt(digitalPinToInterrupt(echoCurrent), EchoInterrupt, CHANGE);
+}
+void StopEchoInterrupt()
+{
+  detachInterrupt(digitalPinToInterrupt(echoCurrent));
+  echoCurrent = 0;
+  trigCurrent = 0;
+  trigOn = false;
+}
+void EchoInterrupt()
+{
+  Serial.println(micros());
+  if (digitalRead(echoCurrent) == 1)
+  {
+    prevMicros = micros();
+  }
+  else
+  {
+    //      Serial.print("change:");
+    lastMicro = micros() - prevMicros;
+  }
+  //   detachInterrupt(echoFront);
+  //  attachInterrupt(echoFront,echoOut,FALLING);
+}
 
 
-
-
-
+void CheckObstacle()
+{
+  if (trigOn == true)
+  {
+    Serial.print("echo:");
+    unsigned int dist = lastMicro / 58;
+    Serial.println(dist);
+  }
+  else {
+    digitalWrite(trigCurrent, LOW);  // ajoute le 24/12/2015 a avlider
+    delayMicroseconds(2);      //
+    digitalWrite(trigCurrent, HIGH);
+    delayMicroseconds(15); // 10 micro sec mini
+  }
+  trigOn = !trigOn;
+  checkObstacleTimer = millis();
+  /*
+  if (moveFront)
+  {
+    dist = PingFront() - 30;
+  }
+  else
+    dist = PingBack();
+  Serial.println(dist);
+  if (dist < 50)
+  {
+    leftMotor.StopMotor();
+    rightMotor.StopMotor();
+    bitWrite(diagRobot, 0, 1);       // position bit diagRobot
+    Serial.println("stop obstacle");
+    delayToStopWheel = millis();
+    bitWrite(pendingAction, pendingLeftMotor, false);
+    bitWrite(pendingAction, pendingRightMotor, false);
+  }
+  */
+}
 
 
 
