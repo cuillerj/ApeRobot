@@ -1,4 +1,13 @@
 String Version = "RobotV0-4";
+// uncomment #define debug to get log on serial link
+#define debugScanOn true
+#define debugMoveOn true
+#define debugObstacleOn true
+//#define debugLocalizationOn true
+//#define debugMotorsOn true
+//#define debugWheelControlOn true
+
+
 // passage sur GitHub
 //#include <ServoTimer2.h>
 #include <Servo.h>  // the servo library
@@ -138,6 +147,7 @@ volatile unsigned int lastMicro = 0; // used during move to dynamicaly avoid obs
 uint8_t echoCurrent = 0; // used during move to determine which front or back is used
 uint8_t trigCurrent = 0; // used during move to determine which front or back is used
 boolean trigOn = false;
+unsigned int scanNumber = 0;
 
 //-- timers --
 unsigned long timeAppli; // cycle applicatif
@@ -266,10 +276,12 @@ void loop() {
     //  CheckMoveSynchronisation();
     ComputeNewLocalization(0x00);
   }
+#if defined(debugWheelContolOn)
   if (millis() - delayPrintSpeed > 1000 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
   {
     PrintSpeed();
   }
+#endif
   if ((millis() - checkObstacleTimer) > (durationMaxEcho / 1000) && trigOn == true)
   {
     CheckObstacle();
@@ -284,13 +296,17 @@ void loop() {
   {
     if (bitRead(saveCurrentMove, toDoRotation) == true && bitRead(currentMove, toDoRotation) == false && bitRead(currentMove, toDoStraight) == false)
     {
+#if defined(debugMoveOn)
       Serial.println("end of rotation only");
+#endif
       ComputeNewLocalization(0x01);
       //    stopWheelControl();
     }
     if (bitRead(saveCurrentMove, toDoStraight) == true && bitRead(currentMove, toDoStraight) == false )
     {
+#if defined(debugMoveOn)
       Serial.println("end of straight");
+#endif
       ComputeNewLocalization(0xff);
       StopEchoInterrupt();
       // stopWheelControl();
@@ -298,7 +314,9 @@ void loop() {
     if (currentMove == 0x00)
     {
       //  ComputeNewLocalization(0xff);
+#if defined(debugMoveOn)
       Serial.println("eofmove");
+#endif
       StopEchoInterrupt();
       currentMove = 0x00;
       actStat = 0x69; //" move completed
@@ -317,7 +335,9 @@ void loop() {
         leftMotor.StopMotor();
         rightMotor.StopMotor();
         bitWrite(diagMotor, 0, 1);       // position bit diagMotor
+#if defined(debugMotorsOn)
         Serial.println("left motor pb");
+#endif
         delayToStopWheel = millis();
         bitWrite(pendingAction, pendingLeftMotor, false);
         toDo = toDo & (~currentMove & B00001100); // remove current move bit from toDo
@@ -333,10 +353,12 @@ void loop() {
         {
           bitWrite(pendingAction, pendingLeftMotor, false);
           toDo = toDo & (~currentMove & B00001100);  // remove current move bit from toDo
+#if defined(debugMoveOn)
           Serial.print("todo Left 0x");
           Serial.print(toDo, HEX);
           Serial.print(" curr 0x");
           Serial.println(currentMove, HEX);
+#endif
           int newDist = 0;
           if (movePingInit < 0)
           {
@@ -348,10 +370,12 @@ void loop() {
             newDist = PingFront();
 
           }
+#if defined(debugScanOn)
           Serial.print("dist:");
           Serial.print(newDist);
           Serial.print(" ");
           Serial.println(movePingInit);
+#endif
           break;
         }
       default:
@@ -370,7 +394,9 @@ void loop() {
         rightMotor.StopMotor();
         leftMotor.StopMotor();
         bitWrite(diagMotor, 1, 1);       // position bit diagMotor
+#if defined(debugMotorsOn)
         Serial.println("right motor pb");
+#endif
         delayToStopWheel = millis();
         bitWrite(pendingAction, pendingRightMotor, false);
         toDo = toDo & (~currentMove & B00001100); // remove current move bit from toDo
@@ -385,10 +411,12 @@ void loop() {
         {
           bitWrite(pendingAction, pendingRightMotor, false);
           toDo = toDo & (~currentMove & B00001100); // remove current move bit from toDo
+#if defined(debugMoveOn)
           Serial.print("todo Right ox");
           Serial.print(toDo, HEX);
           Serial.print(" curr 0x");
           Serial.println(currentMove, HEX);
+#endif
           int newDist = 0;
           if (movePingInit < 0)
           {
@@ -399,11 +427,12 @@ void loop() {
           {
             newDist = PingFront();
           }
+#if defined(debugScanOn)
           Serial.print("dist:");
           Serial.print(newDist);
           Serial.print(" ");
           Serial.println(movePingInit);
-
+#endif
           break;
         }
       default:
@@ -416,7 +445,9 @@ void loop() {
   {
     if ( bitRead(currentMove, toDoRotation) == true )  // end of first move step (rotation) move forward to be done
     {
+#if defined(debugMoveOn)
       Serial.println("end rotation still straight move todo");
+#endif
       delayToStopWheel = 0; // to avoid pending wheel stopping
       ComputeNewLocalization(0x01);
 
@@ -510,8 +541,6 @@ void loop() {
   }
 
 }
-
-
 
 void TraitInput(uint8_t cmdInput) {
   //  Serial.println("serialInput");
@@ -1102,10 +1131,12 @@ void startMotors()
 
   bitWrite(pendingAction, pendingLeftMotor, true);
   bitWrite(pendingAction, pendingRightMotor, true);
+#if defined(debugMotorsOn)
   Serial.print("reqSpeed:");
   Serial.print(iLeftRevSpeed);
   Serial.print(" ");
   Serial.println(iRightRevSpeed);
+#endif
   //  bitWrite(diagMotor, 0, 0);       // position bit diagMotor left motor
   //  bitWrite(diagMotor, 1, 0);       // position bit diagMotor right motor
   diagMotor = 0x00;
@@ -1129,7 +1160,9 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, int iLeftSpeed
 
 void StartLeftWheelSpeedControl()
 {
+#if defined(debugWheelControlOn)
   Serial.println("startlefttctrl");
+#endif
   for (int i = 0; i < sizeOfLeftRev; i++)
   {
     instantLeftWheelRevSpeed[i] = 0 ; // init avec expected speed iLeftRevSpeed
@@ -1165,7 +1198,9 @@ void LeftWheelCount()
 }
 void StartRightWheelSpeedControl()
 {
+#if defined(debugWheelControlOn)
   Serial.println("startRightctrl");
+#endif
   for (int i = 0; i < sizeOfRightRev; i++)
   {
     instantRightWheelRevSpeed[i] = 0; // init avec expected speediRightRevSpeed
@@ -1268,6 +1303,7 @@ void ComputeNewLocalization(uint8_t param)
 
     if (((deltaLeft != 0 && deltaRight != 0) ) )
     {
+#if defined(debugWheelControlOn)
       Serial.print("newInt:");
       Serial.print(leftWheelInterrupt);
       Serial.print(" ");
@@ -1277,6 +1313,7 @@ void ComputeNewLocalization(uint8_t param)
       Serial.print(" ");
       Serial.print(saveRightWheelInterrupt);
       Serial.println(" ");
+#endif
       saveLeftWheelInterrupt = leftWheelInterrupt;
       saveRightWheelInterrupt = rightWheelInterrupt;
       float deltaC = (deltaLeft + deltaRight) / 2; // Move of center of robot (middle of the 2 wheels) in centimeters.
@@ -1284,13 +1321,13 @@ void ComputeNewLocalization(uint8_t param)
       //     float moveRight = (deltaRight * PI * iRightWheelDiameter)/rightWheelEncoderHoles;
 
       deltaAlpha = asin((deltaRight - deltaLeft) / (iRobotWidth )); // Compute the modification of the angle since last call of the function
-
-      Serial.print("delta alpha:");
-      Serial.print(deltaAlpha);
-      Serial.print(" deltaC:");
       deltaPosX = deltaPosX + deltaC * cos(alpha * PI / 180);
       deltaPosY = deltaPosY + deltaC * sin(alpha * PI / 180);
       alpha = (deltaAlpha + alpha);
+#if defined(debugLocalizationOn)
+      Serial.print("delta alpha:");
+      Serial.print(deltaAlpha);
+      Serial.print(" deltaC:");
       Serial.print(deltaC);
       Serial.print(" ");
       Serial.print(" alpha:");
@@ -1302,6 +1339,7 @@ void ComputeNewLocalization(uint8_t param)
       Serial.print(deltaPosX);
       Serial.print(" deltaPosY:");
       Serial.println(deltaPosY);
+#endif
     }
 
   }
@@ -1314,6 +1352,7 @@ void ComputeNewLocalization(uint8_t param)
       deltaAlpha = -deltaAlpha;
     }
     alpha = deltaAlpha + alpha;
+#if defined(debugLocalizationOn)
     Serial.print("new pox X:");
     Serial.print(posX);
     Serial.print(" Y:");
@@ -1322,7 +1361,7 @@ void ComputeNewLocalization(uint8_t param)
     Serial.print(deltaAlpha);
     Serial.print(" alpha:");
     Serial.println(alpha);
-
+#endif
   }
   if (param == 0xff )
   {
@@ -1339,19 +1378,22 @@ void ComputeNewLocalization(uint8_t param)
       posX = posX + deltaPosX;
       posY = posY + deltaPosY;
     }
+#if defined(debugLocalizationOn)
     Serial.print("new pox X:");
     Serial.print(posX);
     Serial.print(" Y:");
     Serial.print(posY);
     Serial.print(" angle:");
     Serial.println(alpha);
-
+#endif
   }
 }
 void stopWheelControl()
 {
+#if defined(debugWheelControlOn)
   Serial.println("stopwheelcontrol");
   PrintSpeed();
+#endif
   ComputeNewLocalization(0xff);
   currentMove = currentMove & 0xf9;
   StopRightWheelSpeedControl();
@@ -1581,21 +1623,30 @@ void StopAll()
 }
 void StartEchoInterrupt()
 {
+#if defined(debugObstacleOn)
   Serial.println("start echo interrupt");
+#endif
+  prevMicros = 0;
   lastMicro = 0;
   trigOn = false;
+  scanNumber = 0;
   attachInterrupt(digitalPinToInterrupt(echoCurrent), EchoInterrupt, CHANGE);
 }
 void StopEchoInterrupt()
 {
+#if defined(debugObstacleOn)
+  Serial.println("stop echo interrupt");
+#endif
   detachInterrupt(digitalPinToInterrupt(echoCurrent));
   echoCurrent = 0;
   trigCurrent = 0;
+  prevMicros = 0;
+  lastMicro = 0;
   trigOn = false;
 }
 void EchoInterrupt()
 {
-  Serial.println(micros());
+  // Serial.println(micros());
   if (digitalRead(echoCurrent) == 1)
   {
     prevMicros = micros();
@@ -1612,14 +1663,23 @@ void EchoInterrupt()
 
 void CheckObstacle()
 {
-  if (trigOn == true)
+  if (trigOn == true )
   {
-    Serial.print("echo:");
-    unsigned int dist = lastMicro / 58;
-    Serial.println(dist);
+    if (scanNumber > 1)
+    {
+
+      unsigned int dist = lastMicro / 58;
+#if defined(debugObstacleOn)
+      Serial.print("echo:");
+      Serial.print(scanNumber);
+      Serial.print(" ");
+      Serial.println(dist);
+#endif
+    }
   }
   else {
-    digitalWrite(trigCurrent, LOW);  // ajoute le 24/12/2015 a avlider
+    scanNumber++;
+    digitalWrite(trigCurrent, LOW);  //
     delayMicroseconds(2);      //
     digitalWrite(trigCurrent, HIGH);
     delayMicroseconds(15); // 10 micro sec mini
