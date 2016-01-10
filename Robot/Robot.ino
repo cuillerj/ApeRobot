@@ -1,15 +1,12 @@
-String Version = "RobotV0-4";
+String Version = "RobotV0";
 // uncomment #define debug to get log on serial link
 #define debugScanOn true
 #define debugMoveOn true
 #define debugObstacleOn true
-//#define debugLocalizationOn true
-//#define debugMotorsOn true
-//#define debugWheelControlOn true
-
-
-// passage sur GitHub
-//#include <ServoTimer2.h>
+#define debugLocalizationOn true
+#define debugMotorsOn true
+#define debugWheelControlOn true
+#define debugConnection true
 #include <Servo.h>  // the servo library
 #include <math.h>
 #include <EEPROM.h>  // 
@@ -27,12 +24,14 @@ uint8_t PendingSecReqRef = 0xbf; // pending request (if 0x00 none)- copy fo retr
 uint8_t PendingReqRefSerial = 0xbf; // pending request (if 0x00 none)
 uint8_t PendingSecReqRefSerial = 0xbf; // pending request (if 0x00 none)- copy fo retry
 byte cycleRetrySendUnit = 0; // cycle retry check unitary command - used in case of acknowledgement needed from the Linux server
-uint8_t trameNumber = 0;
-uint8_t lastAckTrameNumber = 0;
-uint8_t pendingAck = 0;
-uint8_t pendingAckSerial = 0;
+uint8_t trameNumber = 0;     // frame number to send
+uint8_t lastAckTrameNumber = 0;  // last frame number acknowledged by the server
+//uint8_t pendingAck = 0;
+uint8_t pendingAckSerial = 0;    // flag waiting for acknowledged
+int retryCount = 0;            // number of retry for sending
 
 //-- General Robot parameters --
+boolean reboot = true;
 int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
 int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
 float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
@@ -44,6 +43,10 @@ unsigned int iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) * 100 / (iLeft
 unsigned int iRightTractionDistPerRev = (PI * iRightWheelDiameter) * 100 / (iRightMotorDemultiplierPercent);
 int iRobotWidth = 455; // distance beetwen the 2 wheels mm
 float coeffGlissementRotation = 1.;
+#define frontLenght  35 // from echo system
+#define backLenght  12 // from echo system
+#define securityLenght 50 // minimal obstacle distance 
+#define rebootDuration 10000 // delay to completly start arduino
 
 //-- power control --
 int uRefMotorVoltage = 1200; // mVolt for maxRPM
@@ -51,9 +54,12 @@ int uRefMotorVoltage = 1200; // mVolt for maxRPM
 #define power1Value A15  // 12v power for motors
 #define power2Value A14  // 9v power for arduino mega
 #define power3Value A13  // 5V power for esp8266 and components
-int power1Mesurt = 0;
-int power2Mesurt = 0;
-int power3Mesurt = 0;
+#define power1LowLimit 750   // minimum centi volt before warning
+#define power2LowLimit 450   // minimum centi volt before warning
+#define power3LowLimit 750  // minimum centi volt before warning
+int power1Mesurt = 0;   // current power1 value
+int power2Mesurt = 0;   // current power2 value
+int power3Mesurt = 0;   // current power3 value
 
 //-- left Motor connection --
 #define leftMotorENA 6 // Arduino pin must be PWM
@@ -65,12 +71,12 @@ int power3Mesurt = 0;
 #define rightMotorIN4 24  // arduino pin for rotation control
 
 //-- motors control --
-#define iLeftSlowPMW 150 // PMW value to slowdown motor at the end of the run
-#define pendingLeftMotor 0
-Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPMW);
-#define iRightSlowPMW iLeftSlowPMW   // 
-#define pendingRightMotor 1
-Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPMW);
+#define iLeftSlowPMW 150        // PMW value to slowdown motor at the end of the run
+#define pendingLeftMotor 0      // define pendingAction bit used for left motor
+Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPMW); // define left Motor
+#define iRightSlowPMW iLeftSlowPMW   // PMW value to slowdown motor at the end of the run
+#define pendingRightMotor 1    // define pendingAction bit used for right motor
+Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPMW); // define right Motor
 
 //-- wheel control --
 #define wheelSpeedRightPin 18  // arduino pin connected to IR receiver
@@ -78,26 +84,26 @@ Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm,
 #define leftWheelEncoderHoles 8  // number of holes of the encoder wheel
 #define rightWheelEncoderHoles leftWheelEncoderHoles // number of holes of the encoder wheel
 #define minInterruptDuration 35 // 35 used to avoid entering more than one time in the interrupt void
-float avgRightWheelSpeed = 0;
-float avgLeftWheelSpeed = 0;
-int iLeftRevSpeed;
-int iRightRevSpeed;
+float avgRightWheelSpeed = 0;    // average right wheel speed
+float avgLeftWheelSpeed = 0;    // average left wheel speed
+int iLeftRevSpeed;              // instant left wheel speed
+int iRightRevSpeed;             // instant right wheel speed
 #define sizeOfLeftRev 8 // size of the array containing latest revolution wheel speed
 #define sizeOfRightRev 8 // size of the array containing latest revolution wheel speed
-unsigned int instantLeftWheelRevSpeed[sizeOfLeftRev];  // array containing latest revolution wheel speed
-unsigned int instantRightWheelRevSpeed[sizeOfRightRev]; // array containing latest revolution wheel speed
-uint8_t leftWheelSpeedCount = 0x00;
-uint8_t rightWheelSpeedCount = 0x00;
-unsigned long prevLeftWheelInterrupt = 0;
-volatile unsigned long leftWheelInterrupt = 0;
-volatile unsigned long leftTimeInterrupt = 0;
-unsigned long prevRightWheelInterrupt = 0;
-volatile unsigned long rightWheelInterrupt = 0;
-volatile unsigned long rightTimeInterrupt = 0;
-unsigned long saveLeftWheelInterrupt = 0;
-unsigned long saveRightWheelInterrupt = 0;
-int iSpeed = 408; // default expected robot speed mm/s (408 maxi)
-int retryCount = 0;
+unsigned int instantLeftWheelRevSpeed[sizeOfLeftRev];  // array containing latest revolution left wheel speed
+unsigned int instantRightWheelRevSpeed[sizeOfRightRev]; // array containing latest revolution right wheel speed
+uint8_t leftWheelSpeedCount = 0x00;                    // pointer to instantLeftWheelRevSpeed position
+uint8_t rightWheelSpeedCount = 0x00;                   // pointer to instantRightWheelRevSpeed position
+unsigned long prevLeftWheelInterrupt = 0;              // copy of previous left wheel interrupt count
+volatile unsigned long leftWheelInterrupt = 0;         // number of interrupts for the left encoder (uptated by interrupt >> volatile)
+volatile unsigned long leftTimeInterrupt = 0;          // last time left encoder interrupt taken into account (uptated by interrupt >> volatile)
+unsigned long prevRightWheelInterrupt = 0;              // copy of previous right wheel interrupt count
+volatile unsigned long rightWheelInterrupt = 0;        // number of interrupts for the right encoder (uptated by interrupt >> volatile)
+volatile unsigned long rightTimeInterrupt = 0;         // last time right encoder interrupt taken into account (uptated by interrupt >> volatile)
+unsigned long saveLeftWheelInterrupt = 0;             // copy of previous number of interrupts for the left encoder
+unsigned long saveRightWheelInterrupt = 0;            // copy of previous number of interrupts for the right encoder
+int iSpeed = 408;                                     // default expected robot speed mm/s (408 maxi)
+
 
 //-- move control --
 # define bForward  true; //Used to drive traction chain forward
@@ -105,49 +111,49 @@ boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left mot
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 unsigned long iLeftCentiRevolutions;  // nmuber of done revolutions * 100
 unsigned long iRightCentiRevolutions; // nmuber of done revolutions * 100
-#define toDoMove 1
-#define toDoRotation 2
-#define toDoStraight 3
-#define toDoBackward 4
-#define toDoClockwise 5
-unsigned long iDistance = 0; // mm
-int pendingForward = 0;
+#define toDoMove 1      // something  to do
+#define toDoRotation 2  // rotation to do
+#define toDoStraight 3  // straight move to do
+#define toDoBackward 4  // straight move to do is backward
+#define toDoClockwise 5 // rotate clockwise
+#define toDoWait 1    // wait before moving
+#define toDoEndPause 2     // could restart
+#define toDoPause 3     // move to be temporaly paused
+//unsigned long iDistance = 0; // mm
+int pendingStraight = 0;   // copy of straight distance to be done
 int reqAng = 0;          // requested rotation
 int reqMove = 0;         // requested move
+uint8_t resumeCount = 0; // nb of echo check before resume move
+int movePingInit;     // echo value mesured before moving
 
 //-- scan control --
-#define STEPS 64
 #define servoPin 9    // stepper
 #define toDoScan 0    // toDo bit for scan request
 #define echoFront 20 //24  // arduino pin for mesuring echo delay for front 
-#define trigF  22 //25     // arduino pin for trigerring front echo
+#define trigFront  22 //25     // arduino pin for trigerring front echo
 #define echoBack  21 //22  // arduino pin for mesuring echo delay for back 
-#define trigB  23    // arduino pin for trigerring back echo
+#define trigBack  23    // arduino pin for trigerring back echo
 #define nbPulse 15    // nb of servo positions for a 360° scan
-int numStep = 0;
-int nbSteps = 0;
-boolean switchFB = 0;  // switch front back
-int movePingInit;     // echo value mesured before moving
-float coefAngRef;
+int numStep = 0;     // current scan step number
+int nbSteps = 0;     // number of steps to be done for a scan
+boolean switchFB = 0;  // switch front back scan
+//float coefAngRef;
 #define nbPulse 15    // nb of servo positions for a 360° scan
-int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165};
-//int pulseFeedback[15] = {294, 319, 344, 367, 389, 410, 435, 456, 482, 503, 525, 544, 565, 588, 611}; // valeurs relevees
-//int pulseFeedback[nbPulse] = {240, 258, 278, 298, 317, 336, 355, 373, 392, 409, 428, 445, 463, 481, 495}; // valeurs relevees avec alim a 580mv
-//int angleD = pulseFeedback[0];
-uint8_t pulseNumber = 0;
-int distFSav = 0;
-int distBSav = 0;
+int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 360° split in 15 steps
+float coefAngRef = PI / (pulseValue[14] - pulseValue[0]);  // angle value beetwen 2 pulses
+uint8_t pulseNumber = 0;  // pointer to pulseValue array
+int distFSav = 0;     // saved front echo distance in cm
+int distBSav = 0;      // saved back echo distance in cm
 int valAng;  // servo orientation
-float AngleRadian;
-float AngleDegre;
-unsigned long lecture_echo;
+float AngleRadian;  // echo servo orientation in radian
+float AngleDegre;    // echo servo orientation in degre
 int scanOrientation = 0;
 volatile unsigned long prevMicros = 0; // used during move to dynamicaly avoid obstacles
 volatile unsigned int lastMicro = 0; // used during move to dynamicaly avoid obstacles
 uint8_t echoCurrent = 0; // used during move to determine which front or back is used
 uint8_t trigCurrent = 0; // used during move to determine which front or back is used
-boolean trigOn = false;
-unsigned int scanNumber = 0;
+boolean trigOn = false;  // flag for asynchronous echo to know if trigger has been activated
+unsigned int scanNumber = 0;   // count number of scan retry for asynchronous echo
 
 //-- timers --
 unsigned long timeAppli; // cycle applicatif
@@ -156,77 +162,79 @@ unsigned long timeNetwStat; // cycle affichage des stat RF433 sur serial
 unsigned long timeRTC;  // cycle demande heure
 unsigned long timeScanFront;  // cycle demande heure
 unsigned long timeScanBack;  // cycle demande heure
-unsigned long timeSendSec;  //
-unsigned long timeSendSecSerial;  //
-unsigned long timeReceiveSerial;  //
-unsigned long timePower1Check;  //
-unsigned long delayToStopWheel = 0;
-unsigned long prevLeftWheelIntTime;
-unsigned long prevRightWheelIntTime;
-unsigned long delayCheckSpeed;
-unsigned long delayCheckPosition;
-unsigned long delayPrintSpeed;
-unsigned long timeAffLed;
+//unsigned long timeSendSec;  //
+unsigned long timeSendSecSerial;  // used to check for acknowledgment of secured frames
+unsigned long timeReceiveSerial;  // used to regularly check for received message
+unsigned long timePower1Check;  // used to regularly check for power values
+unsigned long delayToStopWheel = 0; // used to postpone a little bit the wheels control after stopping motors
+unsigned long prevLeftWheelIntTime;  // last time of the previuous left wheel interrupt
+unsigned long prevRightWheelIntTime; // last time of the previuous right wheel interrupt
+unsigned long delayCheckSpeed;       // when moving used to regularly compute speed of wheels
+unsigned long delayCheckPosition;    // when moving used to regularly compute localization
+unsigned long delayPrintSpeed;        // when moving used to regularly print speed for debug
+unsigned long timeAffLed;        // used to regularly update LED status
 unsigned long serialAliveTimer;  //  for serial link communication
 unsigned long serialTimer;       //   for serial link communication
-unsigned long checkObstacleTimer;     // to regurarly ckeck obstacle when moving
-unsigned long durationMaxEcho = 25000; // en us
-//unsigned int durationMaxEchoMillis =durationMaxEcho/1000; // en us
-unsigned long timeSendInfo;
-#define delayBetween2Scan 1500 // pour laisser le temps de positionner le servo et remonter data
-#define delayBetweenScanFB 700  // delai entre 2 pulses
-#define delayBetweenInfo 5000
-#define delayPowerCheck 5000
-#define delaySendStatus 60000
+unsigned long checkObstacleTimer;     // to regurarly check obstacle when moving
+unsigned long durationMaxEcho = 25000; // maximum scan echo duration en us
+unsigned long timeSendInfo;     // to regurarly send information to th server
+#define delayBetween2Scan 1500  // delay between to scan steps - must take into account the transmission duration
+#define delayBetweenScanFB 700  // delay between front and back scan of the same step
+#define delayBetweenInfo 5000   // delay before sending new status to the server  
+#define delayPowerCheck 5000    // delay before next checking of power
 
 //-- robot status & diagnostics
 uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
 uint8_t diagPower = 0x00;   // bit 0 power1, 1 power2, 2 power3 0 Ok 1 Ko
 uint8_t diagConnection = 0x01;   // bit 0 pending serial link
-uint8_t diagRobot = 0x00;     //
+uint8_t diagRobot = 0xff;     // to be cleared after complete reboot
 uint8_t toDo = 0x00;          // flag kind of move to do
+uint8_t waitFlag = 0x00;     // used to pause and waiting before starting
+
 uint8_t currentMove = 0x00;   // flag kind of current move
 uint8_t pendingAction = 0x00; // flag pending action to be started
 uint8_t sendInfoSwitch = 0x00;
 uint8_t saveCurrentMove = 0x00;   // flag last kind of current move
-boolean moveFront;
+boolean moveForward;           // flag to indicate if requested move is forward or backward
 uint8_t AppStat = 0xff; // statut code application 00 active ff stopped 1er demi octet mouvement 2eme demi scan
 uint8_t actStat = 0xff; // staut action en cours
 
 //-- space localizarion --
-long deltaPosX = 0;
-long deltaPosY = 0;
-float alpha = 0;
-long posX = 0;
-long posY = 0;
-long targetX = 0;
-long targetY = 0;
+float alpha = 0; // current orientation
+long posX = 0;   // current x position
+long posY = 0;   // current y position
+float targetAlpha = 0; // orientation target position after moving
+long targetX = 0;  // x target position after moving
+long targetY = 0;// x target position after moving
+long deltaPosX = 0;  // incremental x move
+long deltaPosY = 0;  // incremental y move
+
 
 //-- LED --
-#define blueLed 50    // red LED
-#define yellowLed 51    // red LED
-#define greenLed 52  // green LED
-#define redLed 53    // red LED
-boolean blueLedOn =  true;
-boolean yellowLedOn = true;
-boolean greenLedOn =  true;
-boolean redLedOn = true;
+#define blueLed 50    // blue LED PIN
+#define yellowLed 51    // yellow LED PIN
+#define greenLed 52  // green LED PIN
+#define redLed 53    // red LED PN
+boolean blueLedOn =  true;  //  status of the LED on/off
+boolean yellowLedOn = true; //  status of the LED on/off
+boolean greenLedOn =  false; //  status of the LED on/off
+boolean redLedOn = true;    //  status of the LED on/off
 
 //
 void setup() {
-  Serial.begin(38400);
-  Serial2.begin(SpeedNetwSerial);
+  Serial.begin(38400);            // for debug
+  Serial2.begin(SpeedNetwSerial); // to communicate with the server through a serial Udp gateway
   Serial.println(Version);
   int addrEeprom = 0;
   byte valueEeprom;
-  valueEeprom = EEPROM.read(addrEeprom);
-  Serial.print("ID=");
-  Serial.print(valueEeprom, DEC);
-  Serial.println();
-  pinMode(trigF, OUTPUT);
-  digitalWrite(trigB, LOW);
-  pinMode(trigB, OUTPUT);
-  digitalWrite(trigF, LOW);
+  valueEeprom = EEPROM.read(addrEeprom);  // id of the arduino stored in eeprom
+  Serial.print("ArduinoID=");
+  Serial.println(valueEeprom, DEC);
+  // define gpio mode
+  pinMode(trigFront, OUTPUT);
+  digitalWrite(trigBack, LOW);
+  pinMode(trigBack, OUTPUT);
+  digitalWrite(trigFront, LOW);
   pinMode(echoFront, INPUT);
   pinMode(echoBack, INPUT);
   pinMode(servoPin, OUTPUT);
@@ -237,41 +245,28 @@ void setup() {
   pinMode(redLed, OUTPUT);
   pinMode(wheelSpeedLeftPin, INPUT);
   pinMode(wheelSpeedRightPin, INPUT);
+  // set initial LED
   digitalWrite(power1Pin, LOW);
-  coefAngRef = PI / (pulseValue[14] - pulseValue[0]);
-  myservo.attach(servoPin);
-  myservo.write(pulseValue[(nbPulse + 1) / 2]);  // set servo at the middle position
+  digitalWrite(blueLed, HIGH);
+  digitalWrite(yellowLed, HIGH);
+  digitalWrite(greenLed, LOW);
+  digitalWrite(redLed, HIGH);
+  //
+  //  coefAngRef = PI / (pulseValue[14] - pulseValue[0]);
+  myservo.attach(servoPin);                       // attach the echo servo
+  myservo.write(pulseValue[(nbPulse + 1) / 2]);  // set echo servo at the middle position
   delay(1000); // time fot the servo to reach the right position
   myservo.detach();
-  //Serial.print("iLeftTractionDistPerRev:");
-  // Serial.println(iLeftTractionDistPerRev);
-
 }
 
 void loop() {
-
+  CheckEndOfReboot();
   if (millis() - delayCheckSpeed > 250 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
   { // Compute left and right wheels average speed over past seconds (sizeOfLeftRev*250 seconds). Updated every 250 milliseconds.
-    SpeedRightWheel();
-    SpeedLeftWheel();
-
-    delayCheckSpeed = millis();
-    avgLeftWheelSpeed = 0;
-    for (int i = 0; i < sizeOfLeftRev; i++)
-    {
-      avgLeftWheelSpeed = instantLeftWheelRevSpeed[i] + avgLeftWheelSpeed;
-    }
-    avgLeftWheelSpeed = avgLeftWheelSpeed / sizeOfLeftRev;
-    avgRightWheelSpeed = 0;
-    for (int i = 0; i < sizeOfRightRev; i++)
-    {
-      avgRightWheelSpeed = avgRightWheelSpeed + instantRightWheelRevSpeed[i]  ;
-    }
-    avgRightWheelSpeed = avgRightWheelSpeed / sizeOfRightRev;
-
+    ComputeAverageWheelsSpeed();
   }
   if (millis() - delayCheckPosition > 200 && (prevLeftWheelInterrupt != leftWheelInterrupt || prevRightWheelInterrupt != rightWheelInterrupt) && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
-  { // Compute new position every 200 milliseconds.
+  { // Compute new robot position
     delayCheckPosition = millis();
     //  CheckMoveSynchronisation();
     ComputeNewLocalization(0x00);
@@ -282,7 +277,22 @@ void loop() {
     PrintSpeed();
   }
 #endif
-  if ((millis() - checkObstacleTimer) > (durationMaxEcho / 1000) && trigOn == true)
+  if (bitRead(waitFlag, toDoPause) == 1 && (millis() - checkObstacleTimer) > 2000 ) // robot in pause status
+  {
+
+    CheckObstacle();
+
+    if ( bitRead(waitFlag, toDoEndPause) == 1 ) // no more obstacle
+    {
+      //       resumeCount=0;
+      ResumeMove();
+      bitWrite(waitFlag, toDoPause, 0);
+      bitWrite(waitFlag, toDoEndPause, 0);
+      bitWrite(waitFlag, toDoWait, 0);       //
+    }
+
+  }
+  if ((millis() - checkObstacleTimer) > (durationMaxEcho / 1000) && trigOn == true && bitRead(waitFlag, toDoPause) != 1) // triger >> on get result
   {
     CheckObstacle();
     //    checkObstacleTimer = millis();
@@ -294,61 +304,36 @@ void loop() {
   }
   if (saveCurrentMove != currentMove && bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false ) // detect end of move
   {
-    if (bitRead(saveCurrentMove, toDoRotation) == true && bitRead(currentMove, toDoRotation) == false && bitRead(currentMove, toDoStraight) == false)
-    {
-#if defined(debugMoveOn)
-      Serial.println("end of rotation only");
-#endif
-      ComputeNewLocalization(0x01);
-      //    stopWheelControl();
-    }
-    if (bitRead(saveCurrentMove, toDoStraight) == true && bitRead(currentMove, toDoStraight) == false )
-    {
-#if defined(debugMoveOn)
-      Serial.println("end of straight");
-#endif
-      ComputeNewLocalization(0xff);
-      StopEchoInterrupt();
-      // stopWheelControl();
-    }
-    if (currentMove == 0x00)
-    {
-      //  ComputeNewLocalization(0xff);
-#if defined(debugMoveOn)
-      Serial.println("eofmove");
-#endif
-      StopEchoInterrupt();
-      currentMove = 0x00;
-      actStat = 0x69; //" move completed
-    }
-    saveCurrentMove = currentMove;
+    DetectEndOfMove();
   }
 
-  if (bitRead(pendingAction, pendingLeftMotor) == true)
+  if (bitRead(pendingAction, pendingLeftMotor) == true && bitRead(waitFlag, toDoWait) == 0)     //
   {
-
-    //   Serial.println(avgLeftWheelSpeed);
     int feedBackLeftMotor = leftMotor.CheckMotor( (avgLeftWheelSpeed * iLeftMotorDemultiplierPercent) / 100, ((leftWheelInterrupt * 100) / leftWheelEncoderHoles) * iLeftMotorDemultiplierPercent / 100 );
     switch (feedBackLeftMotor)
     {
       case -2:   // motor is stopped
-        leftMotor.StopMotor();
-        rightMotor.StopMotor();
-        bitWrite(diagMotor, 0, 1);       // position bit diagMotor
+        {
+          leftMotor.StopMotor();
+          rightMotor.StopMotor();
+          bitWrite(diagMotor, 0, 1);       // position bit diagMotor
 #if defined(debugMotorsOn)
-        Serial.println("left motor pb");
+          Serial.println("left motor pb");
 #endif
-        delayToStopWheel = millis();
-        bitWrite(pendingAction, pendingLeftMotor, false);
-        toDo = toDo & (~currentMove & B00001100); // remove current move bit from toDo
-        break;
+          delayToStopWheel = millis();
+          bitWrite(pendingAction, pendingLeftMotor, false);
+          toDo = toDo & (~currentMove & B00001100); // remove current move bit from toDo
+          break;
+        }
       case -1:  // motor end of move
-        bitWrite(pendingAction, pendingLeftMotor, false);
-        rightMotor.StopMotor();  // stop synchrone des 2 moteurs
-        delayToStopWheel = millis();
-        toDo = toDo & (~currentMove & B00001100); // remove current move bit from toDo
+        {
+          bitWrite(pendingAction, pendingLeftMotor, false);
+          rightMotor.StopMotor();  // stop synchrone des 2 moteurs
+          delayToStopWheel = millis();
+          toDo = toDo & (~currentMove & B00001100); // remove current move bit from toDo
 
-        break;
+          break;
+        }
       case 0:
         {
           bitWrite(pendingAction, pendingLeftMotor, false);
@@ -359,23 +344,6 @@ void loop() {
           Serial.print(" curr 0x");
           Serial.println(currentMove, HEX);
 #endif
-          int newDist = 0;
-          if (movePingInit < 0)
-          {
-            newDist = -PingBack();
-
-          }
-          else
-          {
-            newDist = PingFront();
-
-          }
-#if defined(debugScanOn)
-          Serial.print("dist:");
-          Serial.print(newDist);
-          Serial.print(" ");
-          Serial.println(movePingInit);
-#endif
           break;
         }
       default:
@@ -383,7 +351,7 @@ void loop() {
     }
 
   }
-  if (bitRead(pendingAction, pendingRightMotor) == true)
+  if (bitRead(pendingAction, pendingRightMotor) == true && bitRead(waitFlag, toDoWait) == 0)
   {
 
     //    Serial.println(avgRightWheelSpeed );
@@ -417,22 +385,6 @@ void loop() {
           Serial.print(" curr 0x");
           Serial.println(currentMove, HEX);
 #endif
-          int newDist = 0;
-          if (movePingInit < 0)
-          {
-            newDist = -PingBack();
-
-          }
-          else
-          {
-            newDist = PingFront();
-          }
-#if defined(debugScanOn)
-          Serial.print("dist:");
-          Serial.print(newDist);
-          Serial.print(" ");
-          Serial.println(movePingInit);
-#endif
           break;
         }
       default:
@@ -450,61 +402,47 @@ void loop() {
 #endif
       delayToStopWheel = 0; // to avoid pending wheel stopping
       ComputeNewLocalization(0x01);
-
-      //  leftMotor.StopMotor();
-      //  rightMotor.StopMotor();
-      //   startMotors();
-      //   stopWheelControl();
-      //     ComputeNewLocalization(0xff);
     }
-    MoveForward(pendingForward) ;
+    MoveForward(pendingStraight) ;
   }
-  if (delayToStopWheel != 0 && (millis() - delayToStopWheel) > 80 && toDo == 0x00 ) // delay to completely stop robot
+  //  if (delayToStopWheel != 0 && (millis() - delayToStopWheel) > 80 && toDo == 0x00 ) // delay to completely stop robot
+  if (delayToStopWheel != 0 && (millis() - delayToStopWheel) > 80  ) // delay to completely stop robot
   {
     stopWheelControl();
     delayToStopWheel = 0;
     SendStatus();
   }
-  int getSerial = Serial_have_message();
-  if (getSerial > 0)
-  {
 
-    TraitInput(DataInSerial[2]);
-  }
-
-
-  if (PendingReqSerial != 0x00 )
-  {
-
-    DataToSendSerial(); //
-    timeSendSecSerial = millis();
-  }
-
-  if ((millis() - timeStatut) >= (delaySendStatus  + random(0, 10000))) // regularly send status to server
-  {
-    timeStatut = millis();
-  }
   if ((millis() - timePower1Check) >= delayPowerCheck ) // regularly check power values
   {
     PowerCheck();
 
   }
 
-  if (bitRead(toDo, toDoScan) == 1)
+  if (bitRead(toDo, toDoScan) == 1)          // check if for scan request
   {
-
     ScanPosition();
-
   }
 
 
-  if (bitRead(toDo, toDoMove) == 1) {
+  if (bitRead(toDo, toDoMove) == 1) {         // check if for move request
     //  Serial.println("move");
-    Move(reqAng, reqMove);
+    Move(reqAng, reqMove);                    // move according to the request first rotation and the straight move
     AppStat = AppStat | 0xf0;
   }
 
+  // ***  keep in touch with the server
+  int getSerial = Serial_have_message();  // check if we have received a message
+  if (getSerial > 0)                      // we got a message
+  {
 
+    TraitInput(DataInSerial[2]);          // analyze the message
+  }
+  if (PendingReqSerial != 0x00 )           // check if we have a message to send
+  {
+    DataToSendSerial();                    // send message on the serial link
+    timeSendSecSerial = millis();          // reset timer
+  }
   if (retryCount >= 3)
   {
     pendingAckSerial = 0x00;
@@ -512,92 +450,84 @@ void loop() {
   }
   if ( millis() - timeSendSecSerial >= 5000 && pendingAckSerial != 0x00 && retryCount < 3) {
     ReSendSecuSerial();
+#if defined(debugConnection)
     Serial.println("retry");
+#endif
     timeSendSecSerial = millis();
     retryCount = retryCount + 1;
-  }
-  if (millis() - timeAffLed > 1000)
-  {
-    AffLed();
-    timeAffLed = millis();
   }
   if (millis() - timeReceiveSerial >= 30000)
   {
     //   Serial.println(timeReceiveSerial);
     bitWrite(diagConnection, 1, 0);       // established connection
   }
-  if (millis() - timeSendInfo >= delayBetweenInfo && toDo == 0x00)
+
+  if (millis() - timeSendInfo >= delayBetweenInfo && toDo == 0x00)  // alternatively send status and power to the server
   {
     if (sendInfoSwitch % 2 == 0)
     {
-      SendStatus();
+      SendStatus();                 // send robot status to the server
     }
     if (sendInfoSwitch % 2 == 1)
     {
-      SendPowerValue();
+      SendPowerValue();             // send power info to the server
     }
     sendInfoSwitch = sendInfoSwitch + 1;
     timeSendInfo = millis();
   }
-
+  // *** refresh LED
+  if (millis() - timeAffLed > 1000)
+  {
+    AffLed();
+    timeAffLed = millis();
+  }
 }
 
-void TraitInput(uint8_t cmdInput) {
+void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   //  Serial.println("serialInput");
-  bitWrite(diagConnection, 0, 0);       // established connection
-  timeReceiveSerial = millis();
-
-  switch (cmdInput) {
-
-    case 0x73: // commande s
+  bitWrite(diagConnection, 0, 0);       // connection is active
+  timeReceiveSerial = millis();         // reset check receive timer
+  switch (cmdInput) {                   // first byte of input is the command type
+    case 0x73: // commande s means stop
       Serial.println("cmd stop");
       AppStat = 0xff;
       leftMotor.StopMotor();
       rightMotor.StopMotor();
       toDo = 0x00;
       break;
-    case 0x78: // commande x
+    case 0x78: // commande x menas start
       Serial.println("cmd start");
       AppStat = 0x00;
       break;
-    case 0x65: // commande e
-      //    Serial.println(" echo");
-      SendStatus();
-
+    case 0x65: // commande e server request for robot status
+      SendStatus();                                     // send robot status to server
       break;
-    case 0x41: // commande A
-
-      break;
-    case 0x42: // commande B
-
-      break;
-    case 0x49: // commande I
-      Serial.print("init X Y Alpha:");
-
-      posX = DataInSerial[4] * 256 + DataInSerial[5];
-
-      if (DataInSerial[3] == 0x2d) {
+    case 0x49: // commande I init robot postion
+      posX = DataInSerial[4] * 256 + DataInSerial[5]; // received X cm position on 3 bytes including 1 byte for sign
+      if (DataInSerial[3] == 0x2d) {                  // check sign + or -
         posX = -posX;
       }
-      posY = DataInSerial[7] * 256 + DataInSerial[8];
-
-      if (DataInSerial[6] == 0x2d) {
+      posY = DataInSerial[7] * 256 + DataInSerial[8]; //received Y cm position on 3 bytes including 1 byte for sign
+      if (DataInSerial[6] == 0x2d) {                 // check sign + or -
         posY = -posY;
       }
-      alpha = DataInSerial[10] * 256 + DataInSerial[11];
+      alpha = DataInSerial[10] * 256 + DataInSerial[11]; //received orientation (degre) on 3 bytes including 1 byte for sign
 
-      if (DataInSerial[9] == 0x2d) {
+      if (DataInSerial[9] == 0x2d) {                 // check sign + or -
         alpha = -alpha;
       }
       deltaPosX = 0;
       deltaPosY = 0;
+#if defined(debugLocalizationOn)
+      Serial.print("init X Y Alpha:");
       Serial.print(posX);
       Serial.print(" ");
       Serial.print(posY);
       Serial.print(" ");
       Serial.println(alpha);
+#endif
       break;
-    case 0x2b: // commande +
+    case 0x2b: // commande + means scan 360
       AppStat = AppStat & 0xf1;
       Serial.println("Scan");
       pulseNumber = 0;
@@ -606,7 +536,7 @@ void TraitInput(uint8_t cmdInput) {
       bitWrite(toDo, toDoScan, 1);       // position bit toDo scan
       //      SendRFNoSecured();
       break;
-    case 0x6d: // commande m
+    case 0x6d: // commande m means move
       AppStat = AppStat & 0x1f;
       actStat = 0x68; // moving
       Serial.print("Move: ");
@@ -629,46 +559,41 @@ void TraitInput(uint8_t cmdInput) {
       if (reqMove > 0)
       {
         bitWrite(toDo, toDoStraight, true);
-        bitWrite(toDo, toDoBackward, false);
+        bitWrite(toDo, toDoBackward, false);   // to go forward
         //       bitWrite(currentMove, toDoClockwise, true);
         //        bitWrite(saveCurrentMove, toDoClockwise, true);
       }
       if (reqMove < 0)
       {
         bitWrite(toDo, toDoStraight, true);
-        bitWrite(toDo, toDoBackward, false);
+        bitWrite(toDo, toDoBackward, true);  // to go backward
         //       bitWrite(currentMove, toDoClockwise, false);
         //       bitWrite(saveCurrentMove, toDoClockwise, false);
       }
+#if defined(debugMoveOn)
       Serial.print(" ");
       Serial.println(reqMove);
       Serial.print("todo 0x");
       Serial.println(toDo, HEX);
+#endif
       //   Serial.println(inc);
       break;
-    case 0x53: // commande S
-      Serial.print("Status: ");
-      //Serial.println(inc);
-
-      break;
-    case 0x54: // commande T
-      Serial.println("Demande Stat: ");
-      //Serial.println(inc);
-
-      break;
-    case 0x61: // ack de trame du server
-      Serial.print("acq: ");
+    case 0x61: // we receiver a ack from the server
+      lastAckTrameNumber = DataInSerial[3];
+#if defined(debugConnection)
+      Serial.print("ack: ");
       for (int i = 0; i < 5; i++)
       {
         Serial.print(DataInSerial[i], HEX);
         Serial.print(":");
       }
       Serial.println();
-      lastAckTrameNumber = DataInSerial[3];
+
       //      Serial.print(":");
       Serial.print(lastAckTrameNumber);
       Serial.print(":");
       Serial.println(trameNumber);
+#endif
       if (lastAckTrameNumber <= trameNumber )
       {
         pendingAckSerial = 0x00;
@@ -712,15 +637,16 @@ int IncPulse(int sens) { // calcul du pulse
 }
 int PingFront() {
   int cm;
+  unsigned long lecture_echo;   //
   unsigned long time1;
   unsigned long time2;
   unsigned long deltaT;
-  digitalWrite(trigF, LOW);  // ajoute le 24/12/2015 a avlider
+  digitalWrite(trigFront, LOW);  // ajoute le 24/12/2015 a avlider
   delayMicroseconds(2);      //
-  digitalWrite(trigF, HIGH);
+  digitalWrite(trigFront, HIGH);
   delayMicroseconds(15); // 10 micro sec mini
   time1 = micros();
-  digitalWrite(trigF, LOW);
+  digitalWrite(trigFront, LOW);
   lecture_echo = pulseIn(echoFront, HIGH, durationMaxEcho);
   time2 = micros();
   deltaT = (time2 - time1);
@@ -741,6 +667,7 @@ int PingFront() {
 }
 int PingBack() {
   int cm;
+  unsigned long lecture_echo;   //
   unsigned long time1;
   unsigned long time2;
   unsigned long deltaT;
@@ -748,13 +675,13 @@ int PingBack() {
    {
    */
   //    PosServo();
-  digitalWrite(trigB, LOW);  // ajoute le 24/12/2015 a avlider
+  digitalWrite(trigBack, LOW);  // ajoute le 24/12/2015 a avlider
   delayMicroseconds(2);      //
-  digitalWrite(trigB, HIGH);
+  digitalWrite(trigBack, HIGH);
 
   delayMicroseconds(15); // 10 micro sec mini
   time1 = micros();
-  digitalWrite(trigB, LOW);
+  digitalWrite(trigBack, LOW);
   lecture_echo = pulseIn(echoBack, HIGH, durationMaxEcho);
   time2 = micros();
   deltaT = (time2 - time1);
@@ -815,7 +742,6 @@ void ScanPosition() {
     numStep = numStep + 1;
   }
 
-
   if (pendingAckSerial == 0x00 && numStep >= abs(nbSteps)  )
   {
     Serial.println("scanEnd");
@@ -825,6 +751,7 @@ void ScanPosition() {
     SendEndScan();
   }
 }
+
 int ScanOnceFront(int numStep)
 {
   int distF = PingFront();
@@ -878,10 +805,12 @@ void SendEndScan()
   // myservo.detach();  // attaches the servo on pin 4 to the servo object
   digitalWrite(power1Pin, LOW);
   numStep = 0;
-  // SendRFNoSecured();
+
 }
 void Move(int orientation, int lenghtToDo)
 {
+
+  ComputeTargetLocalization(orientation, lenghtToDo);
   bitWrite(toDo, toDoMove, false);       // position bit toDo move
   if (orientation != 0)
   {
@@ -892,8 +821,9 @@ void Move(int orientation, int lenghtToDo)
   if (lenghtToDo != 0)
   {
     //   bitWrite(toDo, toDoStraight, true);       // position bit toDo move
-    pendingForward = lenghtToDo;
+    pendingStraight = lenghtToDo;
   }
+  /*
   if (lenghtToDo < 0)
   {
     //   bitWrite(toDo, toDoBackward, true);       // position bit
@@ -902,6 +832,7 @@ void Move(int orientation, int lenghtToDo)
   {
     //    bitWrite(toDo, toDoBackward, false);       // position bit
   }
+  */
 }
 void Rotate( int orientation) {
 
@@ -951,7 +882,6 @@ void Rotate( int orientation) {
 
 void MoveForward( int lengthToDo) {
   EchoServoAlign();
-
   bitWrite(toDo, toDoStraight, false);       // position bit toDo move
   //  currentMove = 0x00;
   bitWrite(currentMove, toDoStraight, true);
@@ -975,20 +905,20 @@ void MoveForward( int lengthToDo) {
     {
       bLeftClockwise = bForward;
       bRightClockwise = !bForward;
-      moveFront = false;
+      moveForward = false;
       movePingInit = -PingBack();
       echoCurrent = echoBack;
-      trigCurrent = trigB;
+      trigCurrent = trigBack;
       StartEchoInterrupt();
     }
     else
     {
       bLeftClockwise = !bForward;
       bRightClockwise = bForward;
-      moveFront = true;
+      moveForward = true;
       movePingInit = PingFront();
       echoCurrent = echoFront;
-      trigCurrent = trigF;
+      trigCurrent = trigFront;
       StartEchoInterrupt();
     }
     Serial.print("dist obs:");
@@ -1108,7 +1038,7 @@ void PowerCheck()
   }
   if (diagPower >= 0x07)
   {
-    StopAll();
+    //  StopAll();
   }
   /*
   Serial.print("power3:");
@@ -1187,10 +1117,10 @@ void StopLeftWheelSpeedControl()
 {
   detachInterrupt(digitalPinToInterrupt(wheelSpeedLeftPin));
 }
-void LeftWheelCount()
+void LeftWheelCount() // count right encoder interrupt
 {
 
-  if (millis() - leftTimeInterrupt > minInterruptDuration)
+  if (millis() - leftTimeInterrupt > minInterruptDuration) // check minimum time between 2 "interrupt"
   {
     leftWheelInterrupt++;
   }
@@ -1225,15 +1155,15 @@ void StopRightWheelSpeedControl()
 {
   detachInterrupt(digitalPinToInterrupt(wheelSpeedRightPin));
 }
-void RightWheelCount()
+void RightWheelCount()        // count right encoder interrupt
 {
-  if (millis() - rightTimeInterrupt > minInterruptDuration)
+  if (millis() - rightTimeInterrupt > minInterruptDuration) // check minimum time between 2 "interrupt"
   {
     rightWheelInterrupt++;
   }
   rightTimeInterrupt = millis();
 }
-void SpeedRightWheel()
+void SpeedRightWheel()       // compute right wheel speed according to encoder interrupt and store values in instantRightWheelRevSpeed table
 {
   unsigned int deltaTime = millis() - prevRightWheelIntTime;
   prevRightWheelIntTime = millis();
@@ -1244,7 +1174,7 @@ void SpeedRightWheel()
   //  Serial.println(instantRightWheelRevSpeed[rightWheelSpeedCount % sizeof(instantRightWheelRevSpeed) / 2]);
   rightWheelSpeedCount++;
 }
-void SpeedLeftWheel()
+void SpeedLeftWheel()             // compute left wheel speed according to encoder interrupt and store values in instantLeftWheelRevSpeed table
 {
   unsigned int deltaTime = millis() - prevLeftWheelIntTime;
   prevLeftWheelIntTime = millis();
@@ -1257,7 +1187,7 @@ void SpeedLeftWheel()
   leftWheelSpeedCount++;
 }
 
-void CheckMoveSynchronisation()
+void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at the same pace
 {
   float deltaMove = abs(leftWheelInterrupt - rightWheelInterrupt);
   bitWrite(diagMotor, 3, 0);       // position bit diagMotor
@@ -1270,7 +1200,7 @@ void CheckMoveSynchronisation()
     Serial.print(deltaMove);
     Serial.print(" ");
     Serial.println(abs(deltaMove / leftWheelInterrupt));
-    if (bitRead(currentMove, toDoRotation == true))
+    if (bitRead(currentMove, toDoRotation) == true)
     {
       ComputeNewLocalization(0x01);
     }
@@ -1281,7 +1211,7 @@ void CheckMoveSynchronisation()
     toDo = 0x00;
   }
 }
-void ComputeNewLocalization(uint8_t param)
+void ComputeNewLocalization(uint8_t param)  // compute localization according to the wheels rotation
 {
   float deltaAlpha = 0; // modification of robot angles (in degres) since last call of the function
   float deltaLeft = ((float (leftWheelInterrupt) - saveLeftWheelInterrupt) * PI * iLeftWheelDiameter / leftWheelEncoderHoles); // number of centimeters done by left wheel since last call of the function
@@ -1388,7 +1318,7 @@ void ComputeNewLocalization(uint8_t param)
 #endif
   }
 }
-void stopWheelControl()
+void stopWheelControl()       // stop monitoring wheels rotation
 {
 #if defined(debugWheelControlOn)
   Serial.println("stopwheelcontrol");
@@ -1415,38 +1345,14 @@ void PrintSpeed()
 }
 
 
-void EchoServoAlign()
+void EchoServoAlign()    // to align echo servo motor with robot
 {
   myservo.attach(servoPin);
-  myservo.write(pulseValue[(nbPulse + 1) / 2]);
+  myservo.write(pulseValue[(nbPulse + 1) / 2]);  // select the middle of the pulse range
   delay(1000);
   // myservo.detach();
 }
-/*
-void checkObstacle()
-{
-  int dist = 0;
-  myservo.attach(servoPin);
-  if (moveFront)
-  {
-    dist = PingFront() - 30;
-  }
-  else
-    dist = PingBack();
-  Serial.println(dist);
-  if (dist < 50)
-  {
-    leftMotor.StopMotor();
-    rightMotor.StopMotor();
-    bitWrite(diagRobot, 0, 1);       // position bit diagRobot
-    Serial.println("stop obstacle");
-    delayToStopWheel = millis();
-    bitWrite(pendingAction, pendingLeftMotor, false);
-    bitWrite(pendingAction, pendingRightMotor, false);
-  }
 
-}
-*/
 void AffLed()
 {
   if (diagPower == 0x00)
@@ -1493,7 +1399,7 @@ void AffLed()
   {
     if (diagMotor == 0x00)
     {
-      Serial.println(diagMotor, HEX);
+      //    Serial.println(diagMotor, HEX);
       digitalWrite(yellowLed, 1);
       yellowLedOn = true;
     }
@@ -1573,7 +1479,7 @@ void SendPowerValue()
   //  Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 12v
   // Serial.println("cVolt");
   //Serial.print(" power2:");
-  if (power1Mesurt < 950)
+  if (power1Mesurt < power1LowLimit)
   {
     bitWrite(diagPower, 0, 1);
   }
@@ -1584,7 +1490,7 @@ void SendPowerValue()
   power2Mesurt = 2 * map(analogRead(power2Value), 0, 1023, 0, 456);
   //  Serial.print(power2Mesurt); // calibre avec 1+1 resitances 1Mg ohm 5v
   //  Serial.print("cV ");
-  if (power2Mesurt < 470)
+  if (power2Mesurt < power2LowLimit)
   {
     bitWrite(diagPower, 1, 1);
   }
@@ -1593,7 +1499,7 @@ void SendPowerValue()
     bitWrite(diagPower, 1, 0);
   }
   power3Mesurt = 2 * map(analogRead(power3Value), 0, 1023, 0, 540);
-  if (power3Mesurt < 850)
+  if (power3Mesurt < power3LowLimit)
   {
     bitWrite(diagPower, 2, 1);
   }
@@ -1620,6 +1526,7 @@ void StopAll()
   rightMotor.StopMotor();
   toDo = 0x00;
   myservo.detach();
+  SendStatus();
 }
 void StartEchoInterrupt()
 {
@@ -1665,18 +1572,51 @@ void CheckObstacle()
 {
   if (trigOn == true )
   {
-    if (scanNumber > 1)
+    boolean switchPause = bitRead(waitFlag, toDoPause);
+    if (scanNumber > 1)   // first echo non significative
     {
-
       unsigned int dist = lastMicro / 58;
+      //      Serial.println(trigCurrent);
+      //      Serial.println(toDo, HEX);
+      int deltaSecurity = 0;
+      if (trigCurrent == trigFront)
+
+      {
+        deltaSecurity = frontLenght + securityLenght;
+      }
+      else
+      {
+        deltaSecurity = backLenght + securityLenght;
+      }
+
+      if (dist < deltaSecurity)
+      {
+        bitWrite(waitFlag, toDoPause, 1);       // position bit pause on
+      }
+      else
+      {
+        bitWrite(waitFlag, toDoEndPause, 1);     // position bit pause to end
+      }
+      //     Serial.println(toDo, HEX);
+
+
 #if defined(debugObstacleOn)
-      Serial.print("echo:");
+      Serial.print("dist obstacle:");
       Serial.print(scanNumber);
       Serial.print(" ");
       Serial.println(dist);
+      if (bitRead(waitFlag, toDoPause) == 1 && switchPause == false)
+      {
+        Serial.println("pause due to obstacle");
+      }
 #endif
+      if (bitRead(waitFlag, toDoPause) == 1 && switchPause == false)
+      {
+        PauseMove();
+      }
     }
   }
+
   else {
     scanNumber++;
     digitalWrite(trigCurrent, LOW);  //
@@ -1686,38 +1626,161 @@ void CheckObstacle()
   }
   trigOn = !trigOn;
   checkObstacleTimer = millis();
-  /*
-  if (moveFront)
+}
+void PauseMove()
+{
+  leftMotor.StopMotor();
+  rightMotor.StopMotor();
+  bitWrite(diagRobot, 0, 1);       // position bit diagRobot
+  Serial.println("stop obstacle");
+  delayToStopWheel = millis();
+  bitWrite(pendingAction, pendingLeftMotor, false);
+  bitWrite(pendingAction, pendingRightMotor, false);
+  ComputeNewLocalization(0xff);
+  deltaPosX = 0;
+  deltaPosY = 0;
+}
+
+void ResumeMove()  // no more obstacle resume moving
+{
+
+  Serial.println("resume move");
+  long deltaX = targetX - posX;   // compute move to do to reach target
+  //  Serial.println(deltaX);
+  long deltaY = targetY - posY; // compute move to do to reach target
+  //  Serial.println(deltaY);
+  float deltaAlpha = atan(deltaY / deltaX); // compute move to do to reach target
+  int rotation = alpha - deltaAlpha;
+  int lenToDo = sqrt(pow(deltaX, 2) + pow(deltaY, 2));
+  if (targetX < posX)
   {
-    dist = PingFront() - 30;
+    lenToDo = -lenToDo;
+  }
+#if defined(debugLocalizationOn)
+  Serial.print("rotation:");
+  Serial.print(rotation);
+  Serial.print(" dist:");
+  Serial.println(lenToDo);
+#endif
+  if (rotation != 0)
+  {
+    bitWrite(toDo, toDoRotation, 1);
+  }
+  if (lenToDo > 0)
+  {
+    bitWrite(toDo, toDoStraight, true);
+    bitWrite(toDo, toDoBackward, false);
+    //       bitWrite(currentMove, toDoClockwise, true);
+    //        bitWrite(saveCurrentMove, toDoClockwise, true);
+  }
+  if (lenToDo < 0)
+  {
+    bitWrite(toDo, toDoStraight, true);
+    bitWrite(toDo, toDoBackward, true);
+    //       bitWrite(currentMove, toDoClockwise, false);
+    //       bitWrite(saveCurrentMove, toDoClockwise, false);
+  }
+  Move(rotation, lenToDo);
+}
+
+void ComputeTargetLocalization(int rotation, int lenghtToDo)
+{
+  targetAlpha = alpha + rotation;           // target orientation = current orientation + requested rotation
+  targetX = posX + cos(targetAlpha * PI / 180) * lenghtToDo;
+  targetY = posY + sin(targetAlpha * PI / 180) * lenghtToDo;
+#if defined(debugLocalizationOn)
+  Serial.print("target orient:");
+  Serial.print(targetAlpha);
+  Serial.print(" x:");
+  Serial.print(targetX);
+  Serial.print(" y:");
+  Serial.println(targetY);
+#endif
+}
+
+void CheckBeforeStart()
+{
+  int newDist = 0;
+  Serial.print("check before start");
+  if (movePingInit < 0)
+  {
+    newDist = -PingBack();
+    if (abs(newDist) < backLenght + securityLenght)
+    {
+      bitWrite(waitFlag, toDoWait, 1);       // position bit pause on
+      //     PauseMove();
+    }
   }
   else
-    dist = PingBack();
-  Serial.println(dist);
-  if (dist < 50)
   {
-    leftMotor.StopMotor();
-    rightMotor.StopMotor();
-    bitWrite(diagRobot, 0, 1);       // position bit diagRobot
-    Serial.println("stop obstacle");
-    delayToStopWheel = millis();
-    bitWrite(pendingAction, pendingLeftMotor, false);
-    bitWrite(pendingAction, pendingRightMotor, false);
+    newDist = PingFront();
+    if (abs(newDist) < frontLenght + securityLenght)
+    {
+      bitWrite(waitFlag, toDoWait, 1);       // position bit pause on
+      //     PauseMove();
+    }
   }
-  */
 }
 
 
+void CheckEndOfReboot()
+{
+  if (reboot == true && millis() > rebootDuration)  // end of arduino reboot
+  {
+    diagRobot = 0x00;
+    reboot = false;
+  }
+}
 
+void ComputeAverageWheelsSpeed()
+{
+  SpeedRightWheel();
+  SpeedLeftWheel();
+  delayCheckSpeed = millis();
+  avgLeftWheelSpeed = 0;
+  for (int i = 0; i < sizeOfLeftRev; i++)
+  {
+    avgLeftWheelSpeed = instantLeftWheelRevSpeed[i] + avgLeftWheelSpeed;
+  }
+  avgLeftWheelSpeed = avgLeftWheelSpeed / sizeOfLeftRev;
+  avgRightWheelSpeed = 0;
+  for (int i = 0; i < sizeOfRightRev; i++)
+  {
+    avgRightWheelSpeed = avgRightWheelSpeed + instantRightWheelRevSpeed[i]  ;
+  }
+  avgRightWheelSpeed = avgRightWheelSpeed / sizeOfRightRev;
+}
 
-
-
-
-
-
-
-
-
+void DetectEndOfMove()
+{
+  if (bitRead(saveCurrentMove, toDoRotation) == true && bitRead(currentMove, toDoRotation) == false && bitRead(currentMove, toDoStraight) == false)
+  {
+#if defined(debugMoveOn)
+    Serial.println("end of rotation only");
+#endif
+    ComputeNewLocalization(0x01);  // compute after end of rotation
+    //    stopWheelControl();
+  }
+  if (bitRead(saveCurrentMove, toDoStraight) == true && bitRead(currentMove, toDoStraight) == false )
+  {
+#if defined(debugMoveOn)
+    Serial.println("end of straight");
+#endif
+    ComputeNewLocalization(0xff); // compute after end of straight move
+    StopEchoInterrupt();          // stop obstacle detection
+    // stopWheelControl();
+  }
+  if (currentMove == 0x00)        // no more rotation or move to do
+  {
+    //  ComputeNewLocalization(0xff);
+#if defined(debugMoveOn)
+    Serial.println("eofmove");
+#endif
+    StopEchoInterrupt();        // stop obstacle detection
+    actStat = 0x69;            // status move completed
+  }
+  saveCurrentMove = currentMove;
+}
 
 
 
