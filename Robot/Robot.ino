@@ -396,11 +396,15 @@ void loop() {
 
       if ( bitRead(waitFlag, toEndPause) == 1 ) // no more obstacle
       {
-        //       resumeCount=0;
-        ResumeMove();
-        bitWrite(waitFlag, toPause, 0);
-        bitWrite(waitFlag, toEndPause, 0);
-        bitWrite(waitFlag, toWait, 0);       //
+        resumeCount++;
+        if (resumeCount > 3)
+        {
+          ResumeMove();
+          resumeCount = 0;
+          bitWrite(waitFlag, toPause, 0);
+          bitWrite(waitFlag, toEndPause, 0);
+          bitWrite(waitFlag, toWait, 0);       //
+        }
       }
 
     }
@@ -470,15 +474,17 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   switch (cmdInput) {                   // first byte of input is the command type
     case 0x73: // commande s means stop
       Serial.println("cmd stop");
-      appStat = 0xff;       // update robot status
-      actStat = 0x00;       // clear action status
       leftMotor.StopMotor(); // stop motor
       rightMotor.StopMotor(); // stop motor
+      stopWheelControl();
+      appStat = 0xff;       // update robot status
+      actStat = 0x00;       // clear action status
       toDo = 0x00;           // cleat toDo byte
       currentMove = 0x00;    // clear current move
       saveCurrentMove = 0x00; // clear saveCurrent move
       pendingAckSerial = 0x00; // clear pending acknowledgement
       myservo.detach();    // detach servo motor
+
       break;
     case 0x78: // commande x menas start
       Serial.println("cmd start");
@@ -1437,7 +1443,13 @@ void stopWheelControl()       // stop monitoring wheels rotation
   Serial.println("stopwheelcontrol");
   PrintSpeed();
 #endif
-  ComputeNewLocalization(0xff);
+  if (bitRead(currentMove, toDoRotation) == true)
+  {
+    ComputeNewLocalization(0x01);
+  }
+  else {
+    ComputeNewLocalization(0xff);
+  }
   currentMove = currentMove & 0xf9;
   StopRightWheelSpeedControl();
   StopLeftWheelSpeedControl();
@@ -1655,13 +1667,13 @@ void StartEchoInterrupt(boolean frontOn, boolean backOn)
     Serial.print( " back");
   }
   Serial.println();
+  scanNumber = 0;
 #endif
   if (frontOn == true)
   {
     prevFrontMicros = 0;
     lastFrontMicro = 0;
     trigOn = false;
-    scanNumber = 0;
     attachInterrupt(digitalPinToInterrupt(echoFront), EchoFrontInterrupt, CHANGE);
   }
   if (backOn == true)
@@ -1669,7 +1681,6 @@ void StartEchoInterrupt(boolean frontOn, boolean backOn)
     prevBackMicros = 0;
     lastBackMicro = 0;
     trigOn = false;
-    scanNumber = 0;
     attachInterrupt(digitalPinToInterrupt(echoBack), EchoBackInterrupt, CHANGE);
   }
 }
@@ -1736,6 +1747,7 @@ void CheckObstacle()
 {
   unsigned int dist = 0;
   unsigned int lastMicro;
+  int deltaSecurity = 0;
   if (trigOn == true )         // echo trigger has been activated
   {
 
@@ -1753,19 +1765,23 @@ void CheckObstacle()
         deltaSecurity = backLenght + securityLenght;    // compute back security distance
       }
       dist = lastMicro / 58; // compute distance in cm
-      int deltaSecurity = 0;
-      if (dist != 0 && dist < deltaSecurity)                 // compare echo with security distance
-      {
-        bitWrite(waitFlag, toPause, true);       // position bit pause on
-        timeBetweenOnOffObstacle = millis();     // use to compute delay between obstacle detection sitch on off
-      }
-      else
-      {
-        if (millis() - timeBetweenOnOffObstacle > delayBeforeRestartAfterAbstacle)
-        {
-          bitWrite(waitFlag, toEndPause, true);     // position bit pause to end
-        }
 
+      if (dist != 0)
+      {
+
+        if ( dist < deltaSecurity)                 // compare echo with security distance
+        {
+          bitWrite(waitFlag, toPause, true);       // position bit pause on
+          timeBetweenOnOffObstacle = millis();     // use to compute delay between obstacle detection sitch on off
+        }
+        else
+        {
+          if (millis() - timeBetweenOnOffObstacle > delayBeforeRestartAfterAbstacle)
+          {
+            bitWrite(waitFlag, toEndPause, true);     // position bit pause to end
+          }
+
+        }
       }
       //     Serial.println(toDo, HEX);
 
