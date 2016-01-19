@@ -1,4 +1,4 @@
-String Version = "RobotV0";
+String Version = "RobotV1";
 // uncomment #define debug to get log on serial link
 #define debugScanOn true
 //#define debugMoveOn true
@@ -8,12 +8,12 @@ String Version = "RobotV0";
 //#define debugWheelControlOn true
 //#define debugConnection true
 //#define wheelEncoderDebugOn true
-#include <Servo.h>  // the servo library
+#include <Servo.h>  // the servo library use timer 5 with atmega
 #include <math.h>
 #include <EEPROM.h>  // 
 #include <Stepper.h>
 #include <SoftwareSerial.h>
-//ServoTimer2 myservo;  // create servo object to control a servo
+#include <EchoObstacleDetection.h>
 Servo myservo;  // create servo object to control a servo
 
 //-- comunication --
@@ -63,11 +63,11 @@ int power2Mesurt = 0;   // current power2 value
 int power3Mesurt = 0;   // current power3 value
 
 //-- left Motor connection --
-#define leftMotorENA 6 // Arduino pin must be PWM
+#define leftMotorENA 5 // Arduino pin must be PWM  use timer 3
 #define leftMotorIN1 26 // arduino pin for rotation control
 #define leftMotorIN2 27  // arduino pin for rotation control
 //-- right Motor connection --
-#define rightMotorENB 3 // Arduino pin must be PWM
+#define rightMotorENB 3 // Arduino pin must be PWM use timer 3
 #define rightMotorIN3 25 // arduino pin for rotation control
 #define rightMotorIN4 24  // arduino pin for rotation control
 
@@ -148,6 +148,17 @@ int movePingInit;     // echo value mesured before moving
 #define echoBack  21   // arduino pin for mesuring echo delay for back 
 #define trigBack  23    // arduino pin for trigerring back echo
 #define nbPulse 15    // nb of servo positions for a 360Â° scan
+#define echo3 false  // does not exit
+#define echo3Alert false  // does not exit
+#define echo4 false  // does not exit
+#define echo4Alert false  // does not exit
+#define echoPinInterrupt 2  // pin 2 dedicated to software usage 
+boolean toDoEchoFront = true;
+boolean echoFrontAlertOn = true; // does not exit
+boolean toDoEchoBack = true;
+boolean echoBackAlertOn = true; // does not exit
+float echoCycleDuration = 0.5;
+EchoObstacleDetection echo(echoFront, trigFront, echoBack, trigBack, 0, 0, 0, 0, echoPinInterrupt);
 int numStep = 0;     // current scan step number
 int nbSteps = 0;     // number of steps to be done for a scan
 boolean switchFB = 0;  // switch front back scan
@@ -162,10 +173,10 @@ int valAng;  // servo orientation
 float AngleRadian;  // echo servo orientation in radian
 float AngleDegre;    // echo servo orientation in degre
 int scanOrientation = 0;
-volatile unsigned long prevFrontMicros = 0; // used during move to dynamicaly avoid obstacles
-volatile unsigned int lastFrontMicro = 0; // used during move to dynamicaly avoid obstacles
-volatile unsigned long prevBackMicros = 0; // used during move to dynamicaly avoid obstacles
-volatile unsigned int lastBackMicro = 0; // used during move to dynamicaly avoid obstacles
+//volatile unsigned long prevFrontMicros = 0; // used during move to dynamicaly avoid obstacles
+//volatile unsigned int lastFrontMicro = 0; // used during move to dynamicaly avoid obstacles
+//volatile unsigned long prevBackMicros = 0; // used during move to dynamicaly avoid obstacles
+//volatile unsigned int lastBackMicro = 0; // used during move to dynamicaly avoid obstacles
 uint8_t echoCurrent = 0; // used during move to determine which front or back is used
 uint8_t trigCurrent = 0; // used during move to determine which front or back is used
 boolean trigOn = false;  // flag for asynchronous echo to know if trigger has been activated
@@ -282,6 +293,11 @@ void setup() {
   myservo.write(pulseValue[(nbPulse + 1) / 2]);  // set echo servo at the middle position
   delay(1000); // time fot the servo to reach the right position
   myservo.detach();
+  //  attachInterrupt(digitalPinToInterrupt(echoPinInterrupt), obstacleInterrupt, RISING);
+  // echo.StartDetection(toDoEchoFront, toDoEchoBack, echo3, echo4, echoCycleDuration);
+  // echo.SetAlertOn(echoFrontAlertOn, 20, echoBackAlertOn, 10, echo3Alert, 0, echo4Alert, 0);
+
+
 }
 
 void loop() {
@@ -393,6 +409,7 @@ void loop() {
     {
 
       CheckObstacle();
+      checkObstacleTimer = millis();
 
       if ( bitRead(waitFlag, toEndPause) == 1 ) // no more obstacle
       {
@@ -410,12 +427,12 @@ void loop() {
     }
     if ((millis() - checkObstacleTimer) > (durationMaxEcho / 1000) && trigOn == true && bitRead(waitFlag, toPause) != 1) // triger >> on get result
     {
-      CheckObstacle();
-      //    checkObstacleTimer = millis();
+      //    CheckObstacle();
+      //     checkObstacleTimer = millis();
     }
     if (millis() - checkObstacleTimer > 500 && echoCurrent != 0 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
     {
-      CheckObstacle();
+      //     CheckObstacle();
       //    checkObstacleTimer = millis();
     }
     // *** end of loop checking obstacles
@@ -446,6 +463,7 @@ void loop() {
 #endif
         delayToStopWheel = 0; // to avoid pending wheel stopping
         ComputeNewLocalization(0x01);  // compute new localization after end of rotation
+
       }
       MoveForward(pendingStraight) ;
     }
@@ -1032,6 +1050,7 @@ void PowerCheck()
   if (power2Mesurt < 450)
   {
     bitWrite(diagPower, 1, 1);
+    myservo.detach();
   }
   else
   {
@@ -1046,9 +1065,9 @@ void PowerCheck()
   {
     bitWrite(diagPower, 2, 0);
   }
-  if (diagPower >= 0x07)
+  if (diagPower >= 0x07 && appStat != 0xff)
   {
-    //  StopAll();
+    StopAll();
   }
   /*
   Serial.print("power3:");
@@ -1652,6 +1671,7 @@ void StopAll()
   toDo = 0x00;
   myservo.detach();
   StopEchoInterrupt(true, true);
+  appStat = 0xff;
   SendStatus();
 }
 void StartEchoInterrupt(boolean frontOn, boolean backOn)
@@ -1669,44 +1689,39 @@ void StartEchoInterrupt(boolean frontOn, boolean backOn)
   Serial.println();
   scanNumber = 0;
 #endif
-  if (frontOn == true)
-  {
-    prevFrontMicros = 0;
-    lastFrontMicro = 0;
-    trigOn = false;
-    attachInterrupt(digitalPinToInterrupt(echoFront), EchoFrontInterrupt, CHANGE);
-  }
-  if (backOn == true)
-  {
-    prevBackMicros = 0;
-    lastBackMicro = 0;
-    trigOn = false;
-    attachInterrupt(digitalPinToInterrupt(echoBack), EchoBackInterrupt, CHANGE);
-  }
+  //  digitalWrite(echoPinInterrupt, LOW);
+  attachInterrupt(digitalPinToInterrupt(echoPinInterrupt), obstacleInterrupt, RISING);
+  echo.StartDetection(frontOn, backOn, echo3, echo4, echoCycleDuration);
+  echo.SetAlertOn(frontOn, (frontLenght + securityLenght), backOn, (backLenght + securityLenght), echo3Alert, 0, echo4Alert, 0);
+  /*
+   if (frontOn == true)
+   {
+     prevFrontMicros = 0;
+     lastFrontMicro = 0;
+     trigOn = false;
+  //    attachInterrupt(digitalPinToInterrupt(echoFront), EchoFrontInterrupt, CHANGE);
+   }
+   if (backOn == true)
+   {
+     prevBackMicros = 0;
+     lastBackMicro = 0;
+     trigOn = false;
+  //    attachInterrupt(digitalPinToInterrupt(echoBack), EchoBackInterrupt, CHANGE);
+   }
+   */
 }
 void StopEchoInterrupt(boolean frontOff, boolean backOff)
 {
 #if defined(debugObstacleOn)
   Serial.println("stop echo interrupt");
 #endif
+  echo.StopDetection(!frontOff, !backOff, echo3, echo4);
   echoCurrent = 0;
   trigCurrent = 0;
-  if (frontOff == true)
-  {
-    detachInterrupt(digitalPinToInterrupt(echoFront));
-    prevFrontMicros = 0;
-    lastFrontMicro = 0;
-    trigOn = false;
-    scanNumber = 0;
-  }
-  if (backOff == true)
-  {
-    detachInterrupt(digitalPinToInterrupt(echoBack));
-    prevBackMicros = 0;
-    lastBackMicro = 0;
-    trigOn = false;
-  }
+  scanNumber = 0;
+
 }
+/*
 void EchoFrontInterrupt()
 {
   Serial.print("echo front int:");
@@ -1742,93 +1757,59 @@ void EchoBackInterrupt()
   //   detachInterrupt(echoFront);
   //  attachInterrupt(echoFront,echoOut,FALLING);
 }
-
+*/
 void CheckObstacle()
 {
   unsigned int dist = 0;
   unsigned int lastMicro;
   int deltaSecurity = 0;
-  if (trigOn == true )         // echo trigger has been activated
+
+  boolean switchPause = bitRead(waitFlag, toPause);   // detect if we are already in pause status
+
+  dist = echo.GetDistance(echo.GetAlertEchoNumber());
+  //    digitalWrite(echoPinInterrupt, LOW);
+  if (dist != 0)
   {
-
-    boolean switchPause = bitRead(waitFlag, toPause);   // detect if we are already in pause status
-    if (scanNumber > 1)   // first echo non significative
+    if ( dist < echo.GetEchoThreshold(echo.GetAlertEchoNumber()))                 // compare echo with security distance
     {
-      if (trigCurrent == trigFront)    // test whether current trigger is front o back
+      bitWrite(waitFlag, toPause, true);       // position bit pause on
+      timeBetweenOnOffObstacle = millis();     // use to compute delay between obstacle detection sitch on off
+    }
+    else
+    {
+      if (millis() - timeBetweenOnOffObstacle > delayBeforeRestartAfterAbstacle)
       {
-        lastMicro = lastFrontMicro;
-        deltaSecurity = frontLenght + securityLenght;   // compute front security distance
+        bitWrite(waitFlag, toEndPause, true);     // position bit pause to end
+        digitalWrite(echoPinInterrupt, LOW);      // to reactivate echo interrupt
       }
-      else
-      {
-        lastMicro = lastBackMicro;
-        deltaSecurity = backLenght + securityLenght;    // compute back security distance
-      }
-      dist = lastMicro / 58; // compute distance in cm
+    }
+  }
 
-      if (dist != 0)
-      {
 
-        if ( dist < deltaSecurity)                 // compare echo with security distance
-        {
-          bitWrite(waitFlag, toPause, true);       // position bit pause on
-          timeBetweenOnOffObstacle = millis();     // use to compute delay between obstacle detection sitch on off
-        }
-        else
-        {
-          if (millis() - timeBetweenOnOffObstacle > delayBeforeRestartAfterAbstacle)
-          {
-            bitWrite(waitFlag, toEndPause, true);     // position bit pause to end
-          }
-
-        }
-      }
-      //     Serial.println(toDo, HEX);
-
+  //     Serial.println(toDo, HEX);
+  checkObstacleTimer = millis();  // reset timer
 
 #if defined(debugObstacleOn)
-      Serial.print(" obstacle:");
-      Serial.print(scanNumber);
-      Serial.print(" trigger:");
-      Serial.print(trigCurrent);
-      Serial.print(" dist:");
-      Serial.println(dist);
-      if (bitRead(waitFlag, toPause) == true && switchPause == false)
-      {
-        Serial.println("pause due to obstacle");
-      }
+  // Serial.print(" obstacle:");
+  // Serial.print(scanNumber);
+  if (bitRead(waitFlag, toPause) == true && switchPause == false)
+  {
+    Serial.println("pause due to obstacle");
+  }
+  Serial.print(" echo number:");
+  Serial.print(echo.GetAlertEchoNumber());
+  Serial.print(" dist:");
+  Serial.print(dist);
+  Serial.print(" threshold:");
+  Serial.println(echo.GetEchoThreshold(echo.GetAlertEchoNumber()));
 #endif
-      if (bitRead(waitFlag, toPause) == true && switchPause == false)  // a new pause required
-      {
-        PauseMove();
-      }
-    }
-  }
 
-  else {               // activate echo trigger
-    scanNumber++;
-    if (trigBoth == true)      // we need to check obstacle both front and back
-    {
-      if (trigCurrent == trigFront)
-      {
-        trigCurrent = trigBack;
-        echoCurrent = echoBack;
-      }
-      else
-      {
-        trigCurrent = trigFront;
-        echoCurrent = echoFront;
-      }
-    }
-    digitalWrite(trigCurrent, LOW);  //
-    delayMicroseconds(2);      //
-    digitalWrite(trigCurrent, HIGH);
-    delayMicroseconds(15); // 10 micro sec mini
-    digitalWrite(trigCurrent, LOW);  //
-  }
-  trigOn = !trigOn;     // switch trigger flag
-  checkObstacleTimer = millis();  // reset timer
 }
+
+
+
+
+
 
 void PauseMove()
 {
@@ -1968,6 +1949,7 @@ void DetectEndOfMove()
     Serial.println("end of rotation only");
 #endif
     ComputeNewLocalization(0x01);  // compute after end of rotation
+    StopEchoInterrupt(1, 1);
     //    stopWheelControl();
   }
   if (bitRead(saveCurrentMove, toDoStraight) == true && bitRead(currentMove, toDoStraight) == false && waitFlag == 0x00 )
@@ -2072,7 +2054,14 @@ void MonitorRightMotor()
   }
 }
 
-
+void obstacleInterrupt()
+{
+  Serial.print("obstacle:");
+  Serial.println(echo.GetDistance(echo.GetAlertEchoNumber()));
+  bitWrite(waitFlag, toPause, true);     // position bit pause to end
+  //  digitalWrite(echoPinInterrupt, LOW);
+  PauseMove();
+}
 
 
 
