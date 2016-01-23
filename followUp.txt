@@ -1,6 +1,7 @@
 16/01/2016 power split in 2 parts 12v each - one dedicated to motors
 15/01/2016 renewal of wheel speed control - it seams reliable
 10/01/2016 dynamic scan added during move (with interrupt)
+30/12/2015 use a samsung mobile and IP Webcam software + VLC to remotly drive the robot
 22/11/2015 homemade wheel encoders
 14/11/2015 localization tools now works 360° - 
 03/11/2015 introduction de la dimension angulaire dans les outils de localisation
