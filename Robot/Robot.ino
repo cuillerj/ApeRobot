@@ -7,7 +7,7 @@ String Version = "RobotV1";
 #define debugMotorsOn true
 #define debugWheelControlOn true
 //#define debugConnection true
-#define debugPowerOn true
+//#define debugPowerOn true
 #define wheelEncoderDebugOn true
 #include <Servo.h>  // the servo library use timer 5 with atmega
 #include <math.h>
@@ -38,7 +38,7 @@ boolean reboot = true;
 int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
 int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
 float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
-int iLeftWheelDiameter = 64; //(in mm - used to measure robot moves)  65mn a vid
+int iLeftWheelDiameter = 65; //(in mm - used to measure robot moves)  65mn a vid
 int iRightWheelDiameter = iLeftWheelDiameter; //(in mm - used to measure robot moves)
 unsigned int iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) ;
 unsigned int iRightTractionDistPerRev = (PI * iRightWheelDiameter);
@@ -194,6 +194,7 @@ unsigned long checkObstacleTimer;     // to regurarly check obstacle when moving
 unsigned long durationMaxEcho = 25000; // maximum scan echo duration en us
 unsigned long timeSendInfo;     // to regurarly send information to th server
 unsigned long timeBetweenOnOffObstacle;  // use to compute delay between obstacle detection sitch on off
+unsigned long timeMotorStarted;          // set to time motors started
 #define delayBetween2Scan 1500  // delay between to scan steps - must take into account the transmission duration
 #define delayBetweenScanFB 700  // delay between front and back scan of the same step
 #define delayBetweenInfo 5000   // delay before sending new status to the server  
@@ -223,8 +224,8 @@ long posY = 0;   // current y position
 float targetAlpha = 0; // orientation target position after moving
 long targetX = 0;  // x target position after moving
 long targetY = 0;// x target position after moving
-long deltaPosX = 0;  // incremental x move
-long deltaPosY = 0;  // incremental y move
+float deltaPosX = 0;  // incremental x move
+float deltaPosY = 0;  // incremental y move
 
 
 //-- LED --
@@ -350,18 +351,21 @@ void loop() {
 
     // *** wheels speed control and localization
 
-    if (millis() - delayCheckPosition > 200  && bitRead(currentMove, toDoStraight) == true && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
+    if ( millis() - delayCheckPosition > 200  && bitRead(currentMove, toDoStraight) == true && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
     { // Update robot position
       delayCheckPosition = millis();  // reset timer
-      //  CheckMoveSynchronisation();
+      if ((millis() - timeMotorStarted) > 500 )   // wait for motors to run enough
+      {
+        CheckMoveSynchronisation();
+      }
       ComputeNewLocalization(0x00);   // compute dynamic localization
     }
-    //#if defined(debugWheelControlOn)
-    if (millis() - delayPrintSpeed > 1000 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
+#if defined(debugWheelControlOn)
+    if (millis() - delayPrintSpeed > 500 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
     {
       PrintSpeed();
     }
-    //#endif
+#endif
     // *** end of loop wheels control speed and localization
 
     // *** checking for obstacles
@@ -458,6 +462,32 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
       //      SendRFNoSecured();
       break;
+    case 0x67: // commande goto X Y position
+      {
+
+        int reqX = DataInSerial[4] * 256 + DataInSerial[5];
+
+        if (DataInSerial[3] == 0x2d) {
+          reqX = -reqX;
+        }
+
+        int reqY = DataInSerial[7] * 256 + DataInSerial[8];
+        if (DataInSerial[6] == 0x2d) {
+          reqY = -reqY;
+        }
+        Serial.println("goto X");
+        Serial.print(reqX);
+        Serial.print(" Y:");
+        Serial.println(reqY);
+        targetX = reqX;
+        targetY = reqY;
+        toDo = 0x00;
+        bitWrite(toDo, toDoMove, 1);       // position bit toDo move
+        appStat = appStat & 0x1f;
+        actStat = 0x68; // moving
+        ResumeMove();
+        break;
+      }
     case 0x6d: // commande m means move
       if (appStat != 0xff)
       {
@@ -862,7 +892,7 @@ void PowerCheck()
   {
     bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
   }
-  power2Mesurt = 2 * map(analogRead(power2Value), 0, 1023, 0, 490);    // read power2 analog value and map to fit real voltage
+  power2Mesurt = 2 * map(analogRead(power2Value), 0, 1023, 0, 500);    // read power2 analog value and map to fit real voltage
 #if defined(debugPowerOn)
   Serial.print(analogRead(power1Value));
   Serial.print(" ");
@@ -910,6 +940,7 @@ void startMotors()
     Wheels.StartWheelControl(true, true, iLeftCentiRevolutions , true, true, iRightCentiRevolutions , false, false, 0, false, false, 0);
     rightMotor.RunMotor(bRightClockwise,  iRightRevSpeed);
     leftMotor.RunMotor(bLeftClockwise,  iLeftRevSpeed);
+    timeMotorStarted = millis();
   }
 }
 
@@ -934,10 +965,24 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
 {
   float deltaMove = abs(Wheels.GetCurrentHolesCount(0) - Wheels.GetCurrentHolesCount(1));
   bitWrite(diagMotor, 3, 0);       // position bit diagMotor
-  if ( deltaMove > 2 && deltaMove / Wheels.GetCurrentHolesCount(0) > 0.05)
+  boolean pbSynchro = false;
+  if (Wheels.GetCurrentHolesCount(0) != 0)
+  {
+    if ( (deltaMove > 2 && deltaMove / Wheels.GetCurrentHolesCount(0) > 0.05)  )
+    {
+      pbSynchro = true;
+    }
+  }
+  else
+  {
+    pbSynchro = true;
+  }
+  if (pbSynchro == true)
   {
     leftMotor.StopMotor();
     rightMotor.StopMotor();
+    StopEchoInterrupt(true, true);                    // stop obstacles detection
+    Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
     bitWrite(diagMotor, 3, 1);       // position bit diagMotor
     Serial.print("move synchro pb:");
     Serial.print(deltaMove);
@@ -952,6 +997,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     }
   }
 }
+
 void ComputeNewLocalization(uint8_t param)  // compute localization according to the wheels rotation
 {
   unsigned int currentLeftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
@@ -961,7 +1007,7 @@ void ComputeNewLocalization(uint8_t param)  // compute localization according to
   float deltaRight = ((float (currentRightHoles) - saveRightWheelInterrupt) * PI * iRightWheelDiameter / rightWheelEncoderHoles); // number of centimeters done by right wheel since last call of the function
 
   if (bitRead(currentMove, toDoStraight) == true )  // is robot  supposed to go straight ?
-  { 
+  {
 
     if (bLeftClockwise == true)
     {
@@ -1050,14 +1096,14 @@ void ComputeNewLocalization(uint8_t param)  // compute localization according to
 void PrintSpeed()
 {
   delayPrintSpeed = millis();
-  Serial.print("leftRPM:");
-  Serial.print(Wheels.GetLastTurnSpeed(0) * 60);
+  Serial.print("leftRPS:");
+  Serial.print(Wheels.GetLastTurnSpeed(0));
   Serial.print(" ");
-  Serial.print(Wheels.Get2LastTurnSpeed(0) * 60);
-  Serial.print(" rightRPM:");
-  Serial.print(Wheels.GetLastTurnSpeed(0) * 60);
+  Serial.print(Wheels.Get2LastTurnSpeed(0));
+  Serial.print(" rightRPS:");
+  Serial.print(Wheels.GetLastTurnSpeed(1));
   Serial.print(" ");
-  Serial.print(Wheels.Get2LastTurnSpeed(1) * 60);
+  Serial.print(Wheels.Get2LastTurnSpeed(1));
   Serial.print(" leftHoles:");
   Serial.print(Wheels.GetCurrentHolesCount(0));
   Serial.print(" rightHoles:");
@@ -1321,6 +1367,7 @@ void PauseMove()                  //
 
 void ResumeMove()  // no more obstacle resume moving
 {
+  bitWrite(diagRobot, 0, 0);       // position bit diagRobot
   Serial.println("resume move");
   long deltaX = targetX - posX;     // compute move to do to reach target
   //  Serial.println(deltaX);
