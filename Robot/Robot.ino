@@ -4,10 +4,10 @@ String Version = "RobotV1";
 #define debugMoveOn true
 //#define debugObstacleOn true
 #define debugLocalizationOn true
-#define debugMotorsOn true
+//#define debugMotorsOn true
 #define debugWheelControlOn true
 #define debugConnection true
-#define debugPowerOn true
+//#define debugPowerOn true
 #define wheelEncoderDebugOn true
 #include <Servo.h>  // the servo library use timer 5 with atmega
 #include <math.h>
@@ -43,9 +43,9 @@ unsigned int iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) ;
 unsigned int iRightTractionDistPerRev = (PI * iRightWheelDiameter);
 int iRobotWidth = 455; // distance beetwen the 2 wheels mm
 float coeffGlissementRotation = 1.;
-#define frontLenght  35 // from echo system
-#define backLenght  12 // from echo system
-#define securityLenght 25 // minimal obstacle distance 
+#define frontLenght  35 // from echo system cm
+#define backLenght  12 // from echo system  cm
+#define securityLenght 30 // minimal obstacle distance  cm
 #define rebootDuration 10000 // delay to completly start arduino
 
 //-- power control --
@@ -112,7 +112,7 @@ WheelControl Wheels(leftWheelEncoderHoles, leftIncoderHighValue, leftIncoderLowV
                     rightWheelEncoderHoles, rightIncoderHighValue , rightIncoderLowValue, rightAnalogEncoderInput,
                     0, 0, 0, 0,
                     0, 0, 0, 0,
-                    wheelPinInterrupt,delayMiniBetweenHoles);
+                    wheelPinInterrupt, delayMiniBetweenHoles);
 //-- move control --
 # define bForward  true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
@@ -360,7 +360,7 @@ void loop() {
       delayCheckPosition = millis();  // reset timer
       if ((millis() - timeMotorStarted) > 500 )   // wait for motors to run enough
       {
-//        CheckMoveSynchronisation();
+        //       CheckMoveSynchronisation();
       }
       ComputeNewLocalization(0x00);   // compute dynamic localization
     }
@@ -474,7 +474,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       {
 
         int reqX = DataInSerial[4] * 256 + DataInSerial[5];
-
+        moveForward=true;             // goto forward
         if (DataInSerial[3] == 0x2d) {
           reqX = -reqX;
         }
@@ -837,7 +837,6 @@ void MoveForward( int lengthToDo) {
       trigCurrent = trigBack;
       doEchoFront = false;
       doEchoBack = true;
-      //   StartEchoInterrupt();
     }
     else
     {
@@ -849,12 +848,11 @@ void MoveForward( int lengthToDo) {
       trigCurrent = trigFront;
       doEchoBack = false;
       doEchoFront = true;
-      //    StartEchoInterrupt();
     }
     trigBoth == false;
     Serial.print("Starting obstacle distance:");
     Serial.println(movePingInit);
-//    StartEchoInterrupt(doEchoFront, doEchoBack);
+    StartEchoInterrupt(doEchoFront, doEchoBack);
     startMotors();
   }
 }
@@ -895,8 +893,9 @@ void PowerCheck()
 {
   timePowerCheck = millis();                       // reset timer
   //  Serial.print("power1:");
-  power1Mesurt =  map(analogRead(power1Value), 0, 1023, 0, 1110);    // read power1 analog value and map to fit real voltage
-  //  Serial.print("power2:");
+  unsigned int power1 = analogRead(power1Value); // read power1 analog value and map to fit real voltage
+  power1 = analogRead(power1Value);              // read twice to get a better value
+  power1Mesurt = (power1 * float (1010) / 1023);  // map to fit real voltage
   if (power1Mesurt < power1LowLimit)                                    // check power voltage is over minimum threshold
   {
     bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
@@ -905,13 +904,15 @@ void PowerCheck()
   {
     bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
   }
-  power2Mesurt =  map(analogRead(power2Value), 0, 1023, 0, 960);    // read power2 analog value and map to fit real voltage
+  unsigned int power2 = analogRead(power2Value); // read power1 analog value and map to fit real voltage
+  power2 = analogRead(power2Value);               // read twice to get a better value
+  power2Mesurt = (power2 * float (975) / 1023);  // map to fit real voltage
 #if defined(debugPowerOn)
-  Serial.print(analogRead(power1Value));
+  Serial.print(power1);
   Serial.print(" ");
   Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 9v
   Serial.println("cV 1");
-  Serial.print(analogRead(power2Value)); // calibre avec 1+1 resitances 1Mg ohm 5v
+  Serial.print(power2); // calibre avec 1+1 resitances 1Mg ohm 5v
   Serial.print(" ");
   Serial.print(power2Mesurt);
   Serial.println("cV 2");
@@ -1016,7 +1017,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
     //    bitWrite(pendingAction, pendingLeftMotor) == true
     bitWrite(pendingAction, pendingLeftMotor, false);
-    bitWrite(pendingAction, pendingLeftMotor, true);
+    bitWrite(pendingAction, pendingLeftMotor, false);
     if (bitRead(currentMove, toDoRotation) == true)
     {
       ComputeNewLocalization(0x01);
@@ -1073,7 +1074,6 @@ void ComputeNewLocalization(uint8_t param)  // compute localization according to
       saveLeftWheelInterrupt = currentLeftHoles;
       saveRightWheelInterrupt = currentRightHoles;
       float deltaD = (deltaRight - deltaLeft);
-      Serial.println(deltaD);
       if (deltaD != 0)
       {
         ComputeAngleAndPosition(deltaD, deltaLeft, deltaRight, param);
@@ -1185,12 +1185,11 @@ void ComputeAngleAndPosition(float deltaD, float deltaLeft, float deltaRight, ui
   deltaPosX = deltaPosX + arcCenter * cos(alphaRadian + deltaAlphaRadian);
   deltaPosY = deltaPosY + arcCenter * sin(alphaRadian + deltaAlphaRadian);
   alpha = (deltaAlphaRadian * 2 * 180 / PI + alpha);
-  Serial.println(deltaAlphaRadian);
-  Serial.println(rayon);
-  Serial.println(arcCenter);
+#if defined(debugLocalizationOn)
   Serial.print("delta alpha:");
   Serial.print(deltaAlphaRadian * 2 * 180 / PI);
   Serial.print(" ");
+#endif
 }
 
 void PrintSpeed()
@@ -1469,21 +1468,38 @@ void ResumeMove()  // no more obstacle resume moving
 {
   bitWrite(diagRobot, 0, 0);       // position bit diagRobot
   Serial.println("resume move");
-  long deltaX = targetX - posX;     // compute move to do to reach target
+  float deltaX = targetX - posX;     // compute move to do to reach target
   //  Serial.println(deltaX);
-  long deltaY = targetY - posY;     // compute move to do to reach target
+  float deltaY = targetY - posY;     // compute move to do to reach target
   //  Serial.println(deltaY);
   float deltaAlpha = atan(deltaY / deltaX) * 180 / PI; // compute move to do to reach target
-  int rotation =  deltaAlpha-alpha;
-  int lenToDo = sqrt(pow(deltaX, 2) + pow(deltaY, 2));
-  if (targetX < posX)
+  int rotation =  deltaAlpha - alpha;
+  int lenToDo = 0;
+  if (moveForward == true)
   {
-    lenToDo = -lenToDo;
+    if (deltaX < 0)
+    {
+      rotation = 180 + rotation;
+      if (rotation > 180)
+      {
+        rotation = rotation - 360;   // to optimize move
+      }
+    }
+    lenToDo = sqrt(pow(deltaX, 2) + pow(deltaY, 2));
   }
+  else                               // was going straight back
+  {
+    lenToDo = -sqrt(pow(deltaX, 2) + pow(deltaY, 2));
+    rotation = 0;
+  }
+  // if (targetX < posX)
+  // {
+  //    lenToDo = -lenToDo;
+  //  }
 #if defined(debugLocalizationOn)
-  Serial.print("deltaxy:");
+  Serial.print("delta X:");
   Serial.print(deltaX);
-  Serial.print(" ");
+  Serial.print(" Y:");
   Serial.println(deltaY);
   Serial.print("rotation:");
   Serial.print(rotation);

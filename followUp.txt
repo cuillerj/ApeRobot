@@ -1,3 +1,6 @@
+01/02/2016 power breadboard replaced by welded card
+28/01/2016 wheels and motors calibration tool development
+20/01/2016 goto(X,Y) development
 16/01/2016 power split in 2 parts 12v each - one dedicated to motors
 15/01/2016 renewal of wheel speed control - it seams reliable
 10/01/2016 dynamic scan added during move (with interrupt)
