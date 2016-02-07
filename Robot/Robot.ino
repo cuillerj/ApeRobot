@@ -198,7 +198,7 @@ unsigned long durationMaxEcho = 25000; // maximum scan echo duration en us
 unsigned long timeSendInfo;     // to regurarly send information to th server
 unsigned long timeBetweenOnOffObstacle;  // use to compute delay between obstacle detection sitch on off
 unsigned long timeMotorStarted;          // set to time motors started
-#define delayBetween2Scan 1500  // delay between to scan steps - must take into account the transmission duration
+#define delayBetween2Scan 2500  // delay between to scan steps - must take into account the transmission duration
 #define delayBetweenScanFB 700  // delay between front and back scan of the same step
 #define delayBetweenInfo 5000   // delay before sending new status to the server  
 #define delayPowerCheck 5000    // delay before next checking of power
@@ -288,7 +288,7 @@ void loop() {
     DataToSendSerial();                    // send message on the serial link
     timeSendSecSerial = millis();          // reset timer
   }
-  if (retryCount >= 3)                    // check retry overflow
+  if (retryCount >= 5)                    // check retry overflow
   {
     pendingAckSerial = 0x00;               // clear retry flag
     retryCount = 0;                       // clear retry count

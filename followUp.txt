@@ -1,3 +1,4 @@
+06/05/2016 first octave/java integration (java components as objects)
 01/02/2016 power breadboard replaced by welded card
 28/01/2016 wheels and motors calibration tool development
 20/01/2016 goto(X,Y) development
