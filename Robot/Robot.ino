@@ -23,7 +23,7 @@ Servo myservo;  // create servo object to control a servo
 //-- comunication --
 #include <SerialNetworkVariable.h>   // needed for communication with esp8266 gateway
 #include <SerialNetworkVoid.h>  // needed for communication with esp8266 gateway
-#include <motorControl2342L.h>  // library for motors control
+
 uint8_t PendingReqRef = 0xbf; // pending request (if 0x00 none)
 uint8_t PendingSecReqRef = 0xbf; // pending request (if 0x00 none)- copy fo retry
 uint8_t PendingReqRefSerial = 0xbf; // pending request (if 0x00 none)
@@ -74,6 +74,7 @@ int power2Mesurt = 0;   // current power2 value
 #define rightMotorIN4 24  // arduino pin for rotation control
 #define rightMotorId 1    // used to identify right motor inside the code
 //-- motors control --
+#include <motorControl2342L.h>  // library for motors control
 #define iLeftSlowPWM 125        // PMW value to slowdown motor at the end of the run
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPWM); // define left Motor
@@ -204,6 +205,7 @@ unsigned long serialTimer;       //   for serial link communication
 unsigned long checkObstacleTimer;     // to regurarly check obstacle when moving
 unsigned long durationMaxEcho = 25000; // maximum scan echo duration en us
 unsigned long timeSendInfo;     // to regurarly send information to th server
+unsigned long delayAfterStopMotors;     // to avoid I2C perturbations
 unsigned long timeBetweenOnOffObstacle;  // use to compute delay between obstacle detection sitch on off
 unsigned long timeMotorStarted;          // set to time motors started
 unsigned long timerHorn   ;          // set to time horn started
@@ -227,7 +229,7 @@ uint8_t sendInfoSwitch = 0x00;  // flag to switch between different data to send
 uint8_t saveCurrentMove = 0x00;   // flag last kind of current move
 boolean moveForward;           // flag to indicate if requested move is forward or backward
 uint8_t appStat = 0xff; // statut code application 00 active ff stopped 1er demi octet mouvement 2eme demi scan
-uint8_t actStat = 0xff; // staut action en cours
+uint8_t actStat = 0xff; // statut action en cours
 
 //-- space localizarion --
 float alpha = 0; // current orientation
@@ -238,6 +240,7 @@ long targetX = 0;  // x target position after moving
 long targetY = 0;// x target position after moving
 float deltaPosX = 0;  // incremental x move
 float deltaPosY = 0;  // incremental y move
+uint8_t currentLocProb = 0;
 
 
 //-- LED --
@@ -282,6 +285,12 @@ void setup() {
   Wire.begin();
   compass.init();
   compass.enableDefault();
+  compass.m_min = (LSM303::vector<int16_t>) {   // compass calibration
+    -3076, -3378, -2796
+  };
+  compass.m_max = (LSM303::vector<int16_t>) {
+    +2654, +2189, +2991
+  };
   //     compass.read();
   //    refAccX=abs(compass.a.x)*1.1;
   EchoServoAlign();                               // adjust servo motor to center position
@@ -295,7 +304,6 @@ void loop() {
   int getSerial = Serial_have_message();  // check if we have received a message
   if (getSerial > 0)                      // we got a message
   {
-
     TraitInput(DataInSerial[2]);          // analyze the message
   }
   if (PendingReqSerial != 0x00 )           // check if we have a message to send
@@ -331,11 +339,11 @@ void loop() {
 
   if (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66)  // alternatively send status and power to the server
   {
-    if (sendInfoSwitch % 5 != 0)
+    if (sendInfoSwitch % 5 != 4)
     {
       SendStatus();                 // send robot status to the server
     }
-    if (sendInfoSwitch % 5 == 0)
+    if (sendInfoSwitch % 5 == 4)
     {
       SendPowerValue();             // send power info to the server
     }
@@ -479,6 +487,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
       deltaPosX = 0;
       deltaPosY = 0;
+      currentLocProb = DataInSerial[13];   // localisation probability
       SendStatus();
 #if defined(debugConnection)
       Serial.print("init X Y Alpha:");
@@ -882,7 +891,7 @@ void MoveForward( int lengthToDo) {
     trigBoth == false;
     Serial.print("Starting obstacle distance:");
     Serial.println(movePingInit);
-    StartEchoInterrupt(doEchoFront, doEchoBack);
+    //    StartEchoInterrupt(doEchoFront, doEchoBack);
     startMotors();
   }
 }
@@ -1331,6 +1340,8 @@ void AffLed()
 
 void SendStatus()
 {
+
+  Serial.println("status");
   PendingReqSerial = PendingReqRefSerial;
   PendingDataReqSerial[0] = 0x65; //
   PendingDataReqSerial[1] = appStat; //
@@ -1373,13 +1384,20 @@ void SendStatus()
   PendingDataReqSerial[15] = uint8_t(abs(angle) / 256);
   PendingDataReqSerial[16] = uint8_t(abs(angle));
   PendingDataReqSerial[17] = 0x00;
-  int northOrientation = NorthOrientation();
-   PendingDataReqSerial[18] = uint8_t(northOrientation / 256);
+  int northOrientation = -1;
+  if (toDo == 0x00 && (actStat != 0x66 && actStat != 0x68) && millis() - delayAfterStopMotors > 1000 )
+  {
+    northOrientation = NorthOrientation();
+  }
+  PendingDataReqSerial[18] = uint8_t(northOrientation / 256);
   PendingDataReqSerial[19] = uint8_t(northOrientation);
-  PendingDataLenSerial = 0x14; // 6 longueur mini pour la gateway
+  PendingDataReqSerial[20] = 0x00;
+  PendingDataReqSerial[21] = currentLocProb;
+  PendingDataLenSerial = 0x16; // 6 longueur mini max 25 pour la gateway
 }
 void SendPowerValue()
 {
+
   PendingReqSerial = PendingReqRefSerial;
   PendingDataReqSerial[0] = 0x70; //
   PendingDataReqSerial[1] = uint8_t(power1Mesurt / 10); //
@@ -1387,7 +1405,7 @@ void SendPowerValue()
   PendingDataReqSerial[3] = 0x00;
   PendingDataReqSerial[4] = 0x00;
   PendingDataReqSerial[5] = 0x00;
-  PendingDataLenSerial = 0x06; // 6 longueur mini pour la gateway
+  PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gateway
 
 }
 void StopAll()
@@ -1658,6 +1676,7 @@ void WheelThresholdReached( uint8_t wheelId)
   rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
   unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
   unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
+  delayAfterStopMotors = millis();
   //  Serial.println(leftWheeelCumulative - rightWheeelCumulative);
   /*
   if (leftHoles != rightHoles)
@@ -1806,36 +1825,7 @@ void Horn(boolean hornOn, unsigned int hornDuration)  //
 int NorthOrientation()
 {
   compass.read();
-
-  X = compass.m.x;
-  Y = compass.m.y;
-  float northOrientation;
-  double at = atan(Y / X) * 180 / PI;
-  if (X > 0 && Y >= 0)
-  {
-    northOrientation = (atan(Y / X) * 180 / PI);
-    //    Serial.print(atan(Y / X) * 180 / PI);
-  }
-  if (X < 0)
-  {
-    northOrientation = (180 + atan(Y / X) * 180 / PI);
-    //    Serial.print(180 + atan(Y / X) * 180 / PI);
-  }
-  if (X > 0 && Y <= 0)
-  {
-    northOrientation = (360 + atan(Y / X) * 180 / PI);
-    //   Serial.print(360 + atan(Y / X) * 180 / PI);
-  }
-  if (X = 0 && Y < 0)
-  {
-    northOrientation = (90 + atan(Y / X) * 180 / PI);
-    //    Serial.print(90 + atan(Y / X) * 180 / PI);
-  }
-  if (X = 0 && Y > 0)
-  {
-    northOrientation = (270 + atan(Y / X) * 180 / PI);
-    //   Serial.print(270 + atan(Y / X) * 180 / PI);
-  }
+  float northOrientation = compass.heading();
 #if defined(debugLocalizationOn)
   Serial.print(" magneto orientation: ");
   Serial.println(northOrientation);
