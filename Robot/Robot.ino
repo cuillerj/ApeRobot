@@ -4,7 +4,7 @@ String Version = "RobotV1";
 #define debugMoveOn true
 //#define debugObstacleOn true
 #define debugLocalizationOn true
-//#define debugMotorsOn true
+#define debugMotorsOn true
 #define debugWheelControlOn true
 //#define debugConnection true
 //#define debugPowerOn true
@@ -1061,6 +1061,26 @@ void startMotors()
   }
 }
 
+void pulseMotors(unsigned int pulseNumber)
+{
+
+  bitWrite(pendingAction, pendingLeftMotor, true);
+  bitWrite(pendingAction, pendingRightMotor, true);
+#if defined(debugMotorsOn)
+  Serial.print("reqSpeed:");
+  Serial.print(leftMotorPWM);
+  Serial.print(" ");
+  Serial.println(rightMotorPWM);
+#endif
+  diagMotor = 0x00;
+  digitalWrite(wheelPinInterrupt, LOW);
+  attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+  Wheels.StartWheelPulse(pulseNumber);
+  leftMotor.RunMotor(bLeftClockwise,  leftMotorPWM);
+  rightMotor.RunMotor(bRightClockwise,  rightMotorPWM);
+  timeMotorStarted = millis();
+
+}
 void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int leftMotorPWM, unsigned long iRightDistance, int rightMotorPWM)
 {
 
@@ -1715,78 +1735,90 @@ void obstacleInterrupt()        // Obstacles detection system set a softare inte
 void WheelInterrupt()   // wheel controler set a software interruption due to threshold reaching
 {
   uint8_t wheelId = Wheels.GetLastWheelInterruptId();  // get which wheel Id reached the threshold
-  Wheels.ClearThershold(wheelId);                      // clear the threshold flag to avoid more interruption
+  if (wheelId != 5)
+  {
+    Wheels.ClearThershold(wheelId);                      // clear the threshold flag to avoid more interruption
+  }
   WheelThresholdReached(wheelId);                      // call the threshold analyse
 
 }
 
 void WheelThresholdReached( uint8_t wheelId)
 {
-  if (wheelId == leftWheelId)
+  if (wheelId != 5)
+  {
+
+    if (wheelId == leftWheelId)
+    {
+      leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
+      rightMotor.StopMotor();                            // stop the other motor to avoid to turn round
+    }
+
+    if (wheelId == rightWheelId)
+    {
+      rightMotor.StopMotor();                         // stop firstly the motor that reached the threshold
+      leftMotor.StopMotor();                          // stop the other motor to avoid to turn round
+    }
+    StopEchoInterrupt(true, true);                    // stop obstacles detection
+    delay(200);                                       // wait a little for robot intertia
+    Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
+    detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+    leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
+    rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
+    unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
+    unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
+    delayAfterStopMotors = millis();
+    //  Serial.println(leftWheeelCumulative - rightWheeelCumulative);
+    /*
+    if (leftHoles != rightHoles)
+    {
+      if ((leftWheeelCumulative - rightWheeelCumulative > 0) && (leftHoles > rightHoles) )
+      {
+        leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio + 0.1;
+      }
+      if ((leftWheeelCumulative - rightWheeelCumulative < 0) && (leftHoles < rightHoles) )
+      {
+        leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio - 0.1;
+      }
+    }
+    */
+
+#if defined(debugMoveOn)
+    Serial.print("RPM:");
+    Serial.print(wheelId);
+    Serial.print(" ");
+    Serial.print(Wheels.GetLastTurnSpeed(wheelId) * 60);
+    Serial.print(" ");
+    Serial.println(Wheels.Get2LastTurnSpeed(wheelId) * 60);
+    Serial.print("Holesleft:");
+    Serial.print(leftHoles);
+    Serial.print(" right:");
+    Serial.println(rightHoles);
+#endif
+    if ( bitRead(currentMove, toDoStraight) == true)      // robot was moving straight
+    {
+      ComputeNewLocalization(0xff);                       // compute new  robot position
+      bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
+    }
+    if ( bitRead(currentMove, toDoRotation) == true)      // robot was turning around
+    {
+      ComputeNewLocalization(0x01);                       // compute new  robot position
+      bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation
+    }
+    bitWrite(pendingAction, pendingLeftMotor, false);     // clear the flag pending action motor
+    bitWrite(pendingAction, pendingRightMotor, false);    // clear the flag pending action motor
+    if (bitRead(toDo, toDoStraight) == false && bitRead(waitFlag, toWait) == 0 && actStat == moving)           // no more move to do
+    {
+      actStat = moveEnded;                                      // status move completed
+      toDo = 0x00;                                         // clear flag todo
+    }
+    SendStatus();
+  }
+  else                      // wheel mode pulse
   {
     leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
     rightMotor.StopMotor();                            // stop the other motor to avoid to turn round
   }
-
-  if (wheelId == rightWheelId)
-  {
-    rightMotor.StopMotor();                         // stop firstly the motor that reached the threshold
-    leftMotor.StopMotor();                          // stop the other motor to avoid to turn round
-  }
-  StopEchoInterrupt(true, true);                    // stop obstacles detection
-  delay(200);                                       // wait a little for robot intertia
-  Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
-  detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
-  leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
-  rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
-  unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
-  unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
-  delayAfterStopMotors = millis();
-  //  Serial.println(leftWheeelCumulative - rightWheeelCumulative);
-  /*
-  if (leftHoles != rightHoles)
-  {
-    if ((leftWheeelCumulative - rightWheeelCumulative > 0) && (leftHoles > rightHoles) )
-    {
-      leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio + 0.1;
-    }
-    if ((leftWheeelCumulative - rightWheeelCumulative < 0) && (leftHoles < rightHoles) )
-    {
-      leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio - 0.1;
-    }
-  }
-  */
-#if defined(debugMoveOn)
-  Serial.print("RPM:");
-  Serial.print(wheelId);
-  Serial.print(" ");
-  Serial.print(Wheels.GetLastTurnSpeed(wheelId) * 60);
-  Serial.print(" ");
-  Serial.println(Wheels.Get2LastTurnSpeed(wheelId) * 60);
-  Serial.print("Holesleft:");
-  Serial.print(leftHoles);
-  Serial.print(" right:");
-  Serial.println(rightHoles);
-#endif
-  if ( bitRead(currentMove, toDoStraight) == true)      // robot was moving straight
-  {
-    ComputeNewLocalization(0xff);                       // compute new  robot position
-    bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
-  }
-  if ( bitRead(currentMove, toDoRotation) == true)      // robot was turning around
-  {
-    ComputeNewLocalization(0x01);                       // compute new  robot position
-    bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation
-  }
-  bitWrite(pendingAction, pendingLeftMotor, false);     // clear the flag pending action motor
-  bitWrite(pendingAction, pendingRightMotor, false);    // clear the flag pending action motor
-  if (bitRead(toDo, toDoStraight) == false && bitRead(waitFlag, toWait) == 0 && actStat == moving)           // no more move to do
-  {
-    actStat = moveEnded;                                      // status move completed
-    toDo = 0x00;                                         // clear flag todo
-  }
-  SendStatus();
-
 }
 
 void CalibrateWheels()           // calibrate encoder levels and leftToRightDynamicAdjustRatio according to mesurments
@@ -1909,7 +1941,7 @@ void northAlign(unsigned int northAlignShift)
   uint8_t retry = 0;
   boolean aligned = false;
   actStat = aligning; // align required
-  while (aligned == false && retry <= 10)
+  while (aligned == false && retry <= 15)
   {
     compass.read();
     saveNorthOrientation = int(compass.heading());
@@ -1925,11 +1957,33 @@ void northAlign(unsigned int northAlignShift)
       appStat = appStat & 0x1f;
       if (alignTarget <= 180)
       {
-        Rotate(alignTarget);
+        if (alignTarget > 10)
+        {
+          Rotate(alignTarget);
+        }
+        else
+        {
+          bLeftClockwise = true;
+          bRightClockwise = bLeftClockwise;
+          //        bitWrite(currentMove, toDoClockwise, true);
+          //        bitWrite(saveCurrentMove, toDoClockwise, true);
+          pulseMotors(2);
+        }
       }
       else
       {
-        Rotate(alignTarget - 360);
+        if (alignTarget < 350)
+        {
+          Rotate(alignTarget - 360);
+        }
+        else
+        {
+          bLeftClockwise = false;
+          bRightClockwise = bLeftClockwise;
+          //        bitWrite(currentMove, toDoClockwise, false);
+          //        bitWrite(saveCurrentMove, toDoClockwise, false);
+          pulseMotors(2);
+        }
       }
       delay(1000);
       retry++;
