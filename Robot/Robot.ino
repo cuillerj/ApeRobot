@@ -6,7 +6,7 @@ String Version = "RobotV1";
 #define debugLocalizationOn true
 #define debugMotorsOn true
 #define debugWheelControlOn true
-//#define debugConnection true
+#define debugConnection true
 //#define debugPowerOn true
 #define wheelEncoderDebugOn true
 #include <Servo.h>  // the servo library use timer 5 with atmega
@@ -826,13 +826,13 @@ int ScanOnceBack(int numStep)
 void SendEndScan()
 {
 
-
+  int northOrientation = NorthOrientation();
   actStat = 0x67; //" scan completed
   PendingDataReqSerial[0] = actStat;
   PendingDataReqSerial[1] = appStat;
   PendingDataReqSerial[3] = 0x00;
-  PendingDataReqSerial[4] = 0x00;
-  PendingDataReqSerial[5] = 0x00;
+  PendingDataReqSerial[4] = uint8_t(northOrientation / 256);
+  PendingDataReqSerial[5] = uint8_t(northOrientation);
   PendingDataReqSerial[6] = 0x00;
   PendingDataReqSerial[7] = 0x00;
   PendingDataReqSerial[8] = 0x00;
@@ -2003,10 +2003,34 @@ void northAlign(unsigned int northAlignShift)
         actStat = alignEnded; // align required
         aligned = true;
         bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
-        SendStatus();
+        SendEndAlign();
       }
     }
   }
+}
+void SendEndAlign()
+{
+
+  int northOrientation = NorthOrientation();
+  actStat = alignEnded; // " align ended
+  PendingDataReqSerial[0] = actStat;
+  PendingDataReqSerial[1] = appStat;
+  PendingDataReqSerial[3] = 0x00;
+  PendingDataReqSerial[4] = uint8_t(northOrientation / 256);
+  PendingDataReqSerial[5] = uint8_t(northOrientation);
+  PendingDataReqSerial[6] = 0x00;
+  PendingDataReqSerial[7] = 0x00;
+  PendingDataReqSerial[8] = 0x00;
+  PendingDataReqSerial[9] = 0x00;
+  PendingDataLenSerial = 0x0a;
+
+  PendingReqSerial = PendingReqRefSerial;
+  myservo.write(pulseValue[(nbPulse + 1) / 2]); // remise au centre
+  delay(1000);
+  // myservo.detach();  // attaches the servo on pin 4 to the servo object
+  // digitalWrite(power1Pin, LOW);
+  numStep = 0;
+
 }
 
 
