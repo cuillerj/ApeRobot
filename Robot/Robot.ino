@@ -4,9 +4,9 @@ String Version = "RobotV1";
 #define debugMoveOn true
 //#define debugObstacleOn true
 #define debugLocalizationOn true
-#define debugMotorsOn true
-#define debugWheelControlOn true
-#define debugConnection true
+//#define debugMotorsOn true
+//#define debugWheelControlOn true
+//#define debugConnection true
 //#define debugPowerOn true
 #define wheelEncoderDebugOn true
 #include <Servo.h>  // the servo library use timer 5 with atmega
@@ -738,6 +738,7 @@ int PingBack() {
   {
     deltaT = deltaT * 0.905;
   }
+#if defined(debugScanOn)
   Serial.println();
   Serial.print("echo:");
   Serial.print(lecture_echo);
@@ -745,6 +746,7 @@ int PingBack() {
 
   Serial.print("deltaT Back:");
   Serial.println(time2 - time1);
+#endif
   cm = deltaT / 58  ;
   return (cm);
 
@@ -798,10 +800,12 @@ int ScanOnceFront(int numStep)
 
   AngleRadian = (pulseValue[(pulseNumber) % nbPulse] - pulseValue[0]) * coefAngRef;
   AngleDegre = (AngleRadian / PI) * 180;
+#if defined(debugScanOn)
   Serial.print(" ");
   Serial.print(AngleDegre);
   Serial.print(" dist front:");
   Serial.println(distF);
+#endif
   return distF;
 
 }
@@ -813,12 +817,13 @@ int ScanOnceBack(int numStep)
   AngleDegre = AngleRadian / PI * 180;
   // Serial.print(AngleRadian);
   //  Serial.print(";");
+#if defined(debugScanOn)
   Serial.print(" ");
   Serial.print(AngleDegre);
   Serial.print(" dist back:");
   Serial.print(distB);
   Serial.println();
-
+#endif
   return distB;
 
 }
@@ -1812,7 +1817,7 @@ void WheelThresholdReached( uint8_t wheelId)
       actStat = moveEnded;                                      // status move completed
       toDo = 0x00;                                         // clear flag todo
     }
-    SendStatus();
+    SendEndMove();
   }
   else                      // wheel mode pulse
   {
@@ -1934,14 +1939,14 @@ int NorthOrientation()
   return saveNorthOrientation;
 }
 
-#define minAlign 2
-#define maxAlign 358
+#define minAlign 7
+#define maxAlign 357
 void northAlign(unsigned int northAlignShift)
 { // aligning anti-clockwise positive    - robot rotation clockwise positive
   uint8_t retry = 0;
   boolean aligned = false;
   actStat = aligning; // align required
-  while (aligned == false && retry <= 15)
+  while (aligned == false && retry <= 20)
   {
     compass.read();
     saveNorthOrientation = int(compass.heading());
@@ -2025,14 +2030,35 @@ void SendEndAlign()
   PendingDataLenSerial = 0x0a;
 
   PendingReqSerial = PendingReqRefSerial;
-  myservo.write(pulseValue[(nbPulse + 1) / 2]); // remise au centre
-  delay(1000);
+  // myservo.write(pulseValue[(nbPulse + 1) / 2]); // remise au centre
+  //  delay(1000);
   // myservo.detach();  // attaches the servo on pin 4 to the servo object
   // digitalWrite(power1Pin, LOW);
   numStep = 0;
 
 }
+void SendEndMove()
+{
 
+  int northOrientation = NorthOrientation();
+  actStat = moveEnded; // " move ended
+  PendingDataReqSerial[0] = actStat;
+  PendingDataReqSerial[1] = appStat;
+  PendingDataReqSerial[3] = 0x00;
+  PendingDataReqSerial[4] = uint8_t(northOrientation / 256);
+  PendingDataReqSerial[5] = uint8_t(northOrientation);
+  PendingDataReqSerial[6] = 0x00;
+  PendingDataReqSerial[7] = 0x00;
+  PendingDataReqSerial[8] = 0x00;
+  PendingDataReqSerial[9] = 0x00;
+  PendingDataLenSerial = 0x0a;
+
+  PendingReqSerial = PendingReqRefSerial;
+  // myservo.detach();  // attaches the servo on pin 4 to the servo object
+  // digitalWrite(power1Pin, LOW);
+  numStep = 0;
+
+}
 
 
 
