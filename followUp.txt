@@ -1,3 +1,5 @@
+12/04/2016 arduino 3000 lines of C code Server 3000 lines of Java code - Octave 2000 line of code
+01/04/2016 Path determination - AStar developpment
 11/03/2016 start developpment of particles filter
 09/03/2016 goto computation implemented in Octave code
 08/03/2016 java can route trace toward console or file
