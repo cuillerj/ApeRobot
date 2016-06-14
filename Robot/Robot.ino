@@ -1,15 +1,15 @@
 String Version = "RobotV1";
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
-#define debugMoveOn true
+//#define debugMoveOn true
 #define debugObstacleOn true
-#define debugLocalizationOn true
+//#define debugLocalizationOn true
 //#define debugMotorsOn true
-#define debugWheelControlOn true
+//#define debugWheelControlOn true
 //#define debugConnection true
 //#define debugPowerOn true
 //#define debugLoop true
-#define wheelEncoderDebugOn true
+//#define wheelEncoderDebugOn true
 #include <Servo.h>  // the servo library use timer 5 with atmega
 #include <math.h>
 #include <EEPROM.h>  // 
@@ -37,9 +37,6 @@ int retryCount = 0;            // number of retry for sending
 
 //-- General Robot parameters --
 boolean reboot = true;
-int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
-int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
-float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
 float iLeftWheelDiameter = 6.4; //(in cm - used to measure robot moves)  65mn a vid
 float iRightWheelDiameter = iLeftWheelDiameter; //(in cm - used to measure robot moves)
 float iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) ;
@@ -78,12 +75,17 @@ int power2Mesurt = 0;   // current power2 value
 #define rightMotorId 1    // used to identify right motor inside the code
 //-- motors control --
 #include <motorControl2342L.h>  // library for motors control
-#define iLeftSlowPWM 125        // PMW value to slowdown motor at the end of the run
-#define iLeftRotatePWM 160        // PMW value to slowdown motor at the end of the run
+unsigned int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
+unsigned int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
+float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
+#define iLeftSlowPWM 170        // PMW value to slowdown motor at the end of the run
+#define iLeftRotatePWM 200        // PMW value 
+unsigned int leftMotorPWM = 255;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPWM); // define left Motor
-#define iRightSlowPWM iLeftSlowPWM   // PMW value to slowdown motor at the end of the run
-#define iRightRotatePWM iLeftRotatePWM   // PMW value to slowdown motor at the end of the run
+#define iRightSlowPWM 110  // PMW value to slowdown motor at the end of the run
+#define iRightRotatePWM 160   // PMW value 
+unsigned int rightMotorPWM = 190;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define pendingRightMotor 1    // define pendingAction bit used for right motor
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPWM); // define right Motor
 float leftToRightDynamicAdjustRatio = 1;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
@@ -101,21 +103,25 @@ unsigned int iRightRevSpeed;             // instant right wheel speed
 #define sizeOfRightRev 8 // size of the array containing latest revolution wheel speed
 unsigned long saveLeftWheelInterrupt = 0;           // copy of previous number of interrupts for the left encoder
 unsigned long saveRightWheelInterrupt = 0;          // copy of previous number of interrupts for the right encoder
+unsigned long pauseLeftWheelInterrupt = 0;           // copy of previous number of interrupts for the left encoder
+unsigned long pauseRightWheelInterrupt = 0;          // copy of previous number of interrupts for the right encoder
+unsigned int currentLeftWheelThreshold = 0;
+unsigned int currentRightWheelThreshold = 0;
+boolean pauseDirectionBackward;
 long leftWheeelCumulative = 0;            // cumulative count of the left holes used for dynamic speed adjustment
 long rightWheeelCumulative = 0;           // cumulative count of the right holes used for dynamic speed adjustment
-unsigned int rightMotorPWM = 210;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
-unsigned int leftMotorPWM = 230;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
+
 // to adjust low and high value set leftWheelControlOn true, rotate left wheel manualy and read on serial the value with and wihtout hole
 // must fit with the electonic characteristic
 // use calibrate() to set the incoder high and low value
 /*
- *
- * unsigned int leftIncoderHighValue = 300;  // define value above that signal is high
-unsigned int leftIncoderLowValue = 112;  // define value below that signal is low
-// to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
-unsigned int rightIncoderHighValue = 610; // define value above that signal is high
-unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
- */
+
+   unsigned int leftIncoderHighValue = 300;  // define value above that signal is high
+  unsigned int leftIncoderLowValue = 112;  // define value below that signal is low
+  // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
+  unsigned int rightIncoderHighValue = 610; // define value above that signal is high
+  unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
+*/
 unsigned int leftIncoderHighValue = 710;  // define value above that signal is high
 unsigned int leftIncoderLowValue = 175;  // define value below that signal is low
 // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
@@ -170,19 +176,19 @@ int orientationBeforeRotation = 0; // keep NO before rotation
 int orientationBeforeMoving = 0; // keep NO before rotation
 // compass calibration to be made
 /*
-#define compassMin1 -3076
-#define compassMin2 -3378
-#define compassMin3 -2844
-#define compassMax1 +2654
-#define compassMax2 +2189
-#define compassMax3 +2921
+  #define compassMin1 -3076
+  #define compassMin2 -3378
+  #define compassMin3 -2844
+  #define compassMax1 +2654
+  #define compassMax2 +2189
+  #define compassMax3 +2921
 
-#define compassMin1 -1296
-#define compassMin2 -1926
-#define compassMin3 -2900
-#define compassMax1 +1532
-#define compassMax2 +389
-#define compassMax3 -2210
+  #define compassMin1 -1296
+  #define compassMin2 -1926
+  #define compassMin3 -2900
+  #define compassMax1 +1532
+  #define compassMax2 +389
+  #define compassMax3 -2210
 */
 #define compassMin1 -661
 #define compassMin2 -1792
@@ -265,7 +271,8 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetweenInfo 5000   // delay before sending new status to the server  
 #define delayPowerCheck 5000    // delay before next checking of power
 #define delayBeforeRestartAfterAbstacle 5000 // delay before taking into account obstacle disappearance
-#define maxPauseDuration 10000
+#define delayBetweenCheckPosition 200       // delay between 2 check position
+#define maxPauseDuration 30000
 //-- robot status & diagnostics
 uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
 uint8_t diagPower = 0x00;   // bit 0 power1, 1 power2, 2 power3 0 Ok 1 Ko
@@ -327,9 +334,11 @@ void setup() {
   pinMode(yellowLed, OUTPUT);
   pinMode(greenLed, OUTPUT);
   pinMode(redLed, OUTPUT);
-  pinMode(wheelPinInterrupt, OUTPUT);
-  pinMode(echoPinInterrupt, OUTPUT);
+  pinMode(wheelPinInterrupt, INPUT);
+  pinMode(echoPinInterrupt, INPUT_PULLUP);
   pinMode(hornPin, OUTPUT);
+  pinMode(power1Value, INPUT);
+  pinMode(power2Value, INPUT);
   digitalWrite(hornPin, LOW);
   digitalWrite(blueLed, HIGH);
   digitalWrite(yellowLed, HIGH);
@@ -341,10 +350,10 @@ void setup() {
   /*
     compass.m_min = (LSM303::vector<int16_t>) {   // compass calibration
     -3076, -3378, -2796
-  };
-  compass.m_max = (LSM303::vector<int16_t>) {
+    };
+    compass.m_max = (LSM303::vector<int16_t>) {
     +2654, +2189, +2991
-  };
+    };
   */
   compass.m_min = (LSM303::vector<int16_t>) {   // compass calibration
     compassMin1, compassMin2, compassMin3
@@ -454,7 +463,7 @@ void loop() {
 
     // *** wheels speed control and localization
 
-    if ( millis() - delayCheckPosition > 250  && bitRead(currentMove, toDoStraight) == true && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
+    if ( millis() - delayCheckPosition > delayBetweenCheckPosition  && bitRead(currentMove, toDoStraight) == true && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
     { // Update robot position
       delayCheckPosition = millis();  // reset timer
       if ((millis() - timeMotorStarted) > 500 )   // wait for motors to run enough
@@ -486,8 +495,8 @@ void loop() {
           bitWrite(waitFlag, toEndPause, 0);
           bitWrite(waitFlag, toWait, 0);
           resumeCount = 0;                      // clear count
-          ResumeMove();                         // resume move
-
+          //         ResumeMove();                         // resume move
+          ResumeMoveAfterPause();
 
         }
       }
@@ -868,7 +877,6 @@ int ScanOnceBack(int numStep)
 
 void Move(int orientation, int lenghtToDo)
 {
-
   bitWrite(toDo, toDoMove, false);       // position bit toDo move
   if (orientation != 0)
   {
@@ -1059,6 +1067,8 @@ void PowerCheck()
 void startMotors()
 {
   digitalWrite(encoderPower, HIGH);
+  currentLeftWheelThreshold = iLeftCentiRevolutions;
+  currentRightWheelThreshold = iRightCentiRevolutions;
   if (iLeftCentiRevolutions > 0 && iRightCentiRevolutions > 0)
   {
     bitWrite(pendingAction, pendingLeftMotor, true);
@@ -1072,7 +1082,7 @@ void startMotors()
     diagMotor = 0x00;
     saveLeftWheelInterrupt = 0;
     saveRightWheelInterrupt = 0;
-    digitalWrite(wheelPinInterrupt, LOW);
+    //    digitalWrite(wheelPinInterrupt, LOW);
     attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
     Wheels.StartWheelControl(true, true, iLeftCentiRevolutions , true, true, iRightCentiRevolutions , false, false, 0, false, false, 0);
     leftMotor.RunMotor(bLeftClockwise,  iLeftRevSpeed);
@@ -1093,7 +1103,7 @@ void pulseMotors(unsigned int pulseNumber)
   Serial.println(rightMotorPWM);
 #endif
   diagMotor = 0x00;
-  digitalWrite(wheelPinInterrupt, LOW);
+  //  digitalWrite(wheelPinInterrupt, LOW);
   attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
   Wheels.StartWheelPulse(pulseNumber);
   leftMotor.RunMotor(bLeftClockwise,  leftMotorPWM);
@@ -1101,9 +1111,9 @@ void pulseMotors(unsigned int pulseNumber)
   timeMotorStarted = millis();
 
 }
+
 void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int leftMotorPWM, unsigned long iRightDistance, int rightMotorPWM)
 {
-
   // float powerAdustment = float (uRefMotorVoltage) / (3 * map(analogRead(power1Value), 0, 1023, 0, 467)); // speed adjustement to power supply
   float fLeftHoles = (float (iLeftDistance) * leftWheelEncoderHoles / iLeftTractionDistPerRev) ; // Centi-revolutions
   float fRightHoles  = (float (iRightDistance) * rightWheelEncoderHoles / iRightTractionDistPerRev) ; // ms
@@ -1152,6 +1162,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     digitalWrite(encoderPower, LOW);
     detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
     bitWrite(diagMotor, 3, 1);       // position bit diagMotor
+    pinMode(wheelPinInterrupt, INPUT);
     Serial.print("move synchro pb:");
     Serial.print(deltaMove);
     Serial.print(" ");
@@ -1226,20 +1237,20 @@ void ComputeNewLocalization(uint8_t param)  // compute localization according to
       {
         ComputeAngleAndPosition(deltaD, deltaLeft, deltaRight, param);
         /*
-        float deltaAlphaRadian = asin(deltaD / (2 * iRobotWidth));
-        Serial.println(deltaAlphaRadian);
-        float rayon =  deltaRight / (2 * sin(deltaAlphaRadian));
-        Serial.println(rayon);
-        float arcCenter = 2 * (rayon - iRobotWidth / 2) * sin(deltaAlphaRadian);
-        Serial.println(arcCenter);
-        deltaPosX = deltaPosX + arcCenter * cos(alphaRadian + deltaAlphaRadian);
-        deltaPosY = deltaPosY + arcCenter * sin(alphaRadian + deltaAlphaRadian);
-        alpha = (deltaAlphaRadian * 2 * 180 / PI + alpha);
-        Serial.print("delta alpha:");
-        Serial.print(deltaAlphaRadian * 2 * 180 / PI);
-        //     Serial.print(" deltaC:");
-        //    Serial.print(deltaC);
-        Serial.print(" ");
+          float deltaAlphaRadian = asin(deltaD / (2 * iRobotWidth));
+          Serial.println(deltaAlphaRadian);
+          float rayon =  deltaRight / (2 * sin(deltaAlphaRadian));
+          Serial.println(rayon);
+          float arcCenter = 2 * (rayon - iRobotWidth / 2) * sin(deltaAlphaRadian);
+          Serial.println(arcCenter);
+          deltaPosX = deltaPosX + arcCenter * cos(alphaRadian + deltaAlphaRadian);
+          deltaPosY = deltaPosY + arcCenter * sin(alphaRadian + deltaAlphaRadian);
+          alpha = (deltaAlphaRadian * 2 * 180 / PI + alpha);
+          Serial.print("delta alpha:");
+          Serial.print(deltaAlphaRadian * 2 * 180 / PI);
+          //     Serial.print(" deltaC:");
+          //    Serial.print(deltaC);
+          Serial.print(" ");
         */
       }
       else
@@ -1250,18 +1261,18 @@ void ComputeNewLocalization(uint8_t param)  // compute localization according to
 
 
       /*
-      float deltaD=(deltaRight-deltaLeft)/2;
-      deltaAlpha=2*asin(deltaD/(2*iRobotWidth))*180/PI;
-      alpha=alpha+deltaAlpha;
-      deltaPosX = deltaPosX + deltaC * cos(alpha * PI / 180);
-      deltaPosY = deltaPosY + deltaC * sin(alpha * PI / 180);
+        float deltaD=(deltaRight-deltaLeft)/2;
+        deltaAlpha=2*asin(deltaD/(2*iRobotWidth))*180/PI;
+        alpha=alpha+deltaAlpha;
+        deltaPosX = deltaPosX + deltaC * cos(alpha * PI / 180);
+        deltaPosY = deltaPosY + deltaC * sin(alpha * PI / 180);
       */
       /*
-      float deltaC = (deltaLeft + deltaRight) / 2; // Move of center of robot (middle of the 2 wheels) in centimeters.
-      deltaAlpha = asin((deltaRight - deltaLeft) / (iRobotWidth )); // Compute the modification of the angle since last call of the function
-      deltaPosX = deltaPosX + deltaC * cos(alpha * PI / 180);
-      deltaPosY = deltaPosY + deltaC * sin(alpha * PI / 180);
-      alpha = (deltaAlpha * PI / 180 + alpha);
+        float deltaC = (deltaLeft + deltaRight) / 2; // Move of center of robot (middle of the 2 wheels) in centimeters.
+        deltaAlpha = asin((deltaRight - deltaLeft) / (iRobotWidth )); // Compute the modification of the angle since last call of the function
+        deltaPosX = deltaPosX + deltaC * cos(alpha * PI / 180);
+        deltaPosY = deltaPosY + deltaC * sin(alpha * PI / 180);
+        alpha = (deltaAlpha * PI / 180 + alpha);
       */
 #if defined(debugLocalizationOn)
       Serial.print(" alpha:");
@@ -1526,6 +1537,7 @@ void StopAll()
   Wheels.StopWheelControl(true, true, 0, 0);
   digitalWrite(encoderPower, LOW);
   detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+  pinMode(wheelPinInterrupt, INPUT);
   appStat = 0xff;       // update robot status
   actStat = 0x00;       // clear action status
   toDo = 0x00;           // cleat toDo byte
@@ -1561,6 +1573,7 @@ void StopEchoInterrupt(boolean frontOff, boolean backOff)
 #endif
   echo.StopDetection(!frontOff, !backOff, echo3, echo4);
   detachInterrupt(digitalPinToInterrupt(echoPinInterrupt));
+  pinMode(echoPinInterrupt, INPUT_PULLUP);
   echoCurrent = 0;
   trigCurrent = 0;
   scanNumber = 0;
@@ -1613,11 +1626,36 @@ void PauseMove()                  //
 {
   leftMotor.StopMotor();
   rightMotor.StopMotor();
+  pauseDirectionBackward = bitRead(toDo, toDoBackward);
+  //  unsigned int currentLeftWheelThreshold = Wheels.GetWheelThreshold(leftWheelId);
+  //  unsigned int currentRightWheelThreshold = Wheels.GetWheelThreshold(rightWheelId);
+#if debugObstacleOn
+  {
+    Serial.println("stop obstacle");
+    Serial.print("threshold left:");
+    Serial.print(currentLeftWheelThreshold);
+    Serial.print(" right:");
+    Serial.println(currentRightWheelThreshold);
+
+  }
+#endif
+  delay(100);
+  pauseLeftWheelInterrupt = currentLeftWheelThreshold - Wheels.GetCurrentHolesCount(leftWheelId);
+  pauseRightWheelInterrupt = currentRightWheelThreshold - Wheels.GetCurrentHolesCount(rightWheelId);
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
+#if debugObstacleOn
+  {
+    Serial.print("pause left:");
+    Serial.print(pauseLeftWheelInterrupt);
+    Serial.print(" right:");
+    Serial.println(pauseRightWheelInterrupt);
+    Serial.println("stop obstacle");
+  }
+#endif
   digitalWrite(encoderPower, LOW);
   detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+  pinMode(wheelPinInterrupt, INPUT);
   bitWrite(diagRobot, 0, 1);       // position bit diagRobot
-  Serial.println("stop obstacle");
   //  delayToStopWheel = millis();
   Horn(true, 750);
   bitWrite(pendingAction, pendingLeftMotor, false);
@@ -1708,6 +1746,38 @@ void ResumeMove()  // no more obstacle resume moving
   SendStatus();
 }
 
+void ResumeMoveAfterPause()  // no more obstacle resume moving
+{
+  bitWrite(diagRobot, 0, 0);       // position bit diagRobot
+  float lenToDo = (((pauseLeftWheelInterrupt * iLeftWheelDiameter) / leftWheelEncoderHoles + (pauseRightWheelInterrupt * iRightWheelDiameter) / rightWheelEncoderHoles ) * PI / 2);
+  bitWrite(toDo, toDoStraight, true);
+  if (pauseDirectionBackward == true)
+  {
+    bitWrite(toDo, toDoBackward, true);
+    lenToDo = -lenToDo;
+  }
+  else
+  {
+    bitWrite(toDo, toDoBackward, false);
+  }
+#if debugObstacleOn
+  Serial.print("resume move after pause:");
+  Serial.println(lenToDo);
+#endif
+  if (abs(lenToDo) >= minDistToBeDone )
+  {
+    pendingStraight = lenToDo;
+    pendingStraight = lenToDo;
+    Move(0, lenToDo);
+  }
+  else
+  {
+    actStat = moveEnded;                                      // status move completed
+    toDo = 0x00;                                         // clear flag todo
+    SendEndAction(moveEnded, 0x02);                       //
+  }
+  SendStatus();
+}
 void ComputeTargetLocalization(int rotation, int lenghtToDo)
 {
   targetAlpha = alpha + rotation;           // target orientation = current orientation + requested rotation
@@ -1774,10 +1844,9 @@ void WheelInterrupt()   // wheel controler set a software interruption due to th
   uint8_t wheelId = Wheels.GetLastWheelInterruptId();  // get which wheel Id reached the threshold
   if (wheelId != 5)
   {
-    Wheels.ClearThershold(wheelId);                      // clear the threshold flag to avoid any more interruption
+    Wheels.ClearThreshold(wheelId);                      // clear the threshold flag to avoid any more interruption
   }
   WheelThresholdReached(wheelId);                      // call the threshold analyse
-
 }
 
 void WheelThresholdReached( uint8_t wheelId)
@@ -1798,8 +1867,9 @@ void WheelThresholdReached( uint8_t wheelId)
     StopEchoInterrupt(true, true);                    // stop obstacles detection
     delay(200);                                       // wait a little for robot intertia
     Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
-    digitalWrite(encoderPower, LOW);
     detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+    pinMode(wheelPinInterrupt, INPUT);
+    digitalWrite(encoderPower, LOW);
     leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
     rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
     unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
@@ -1807,8 +1877,8 @@ void WheelThresholdReached( uint8_t wheelId)
     delayAfterStopMotors = millis();
     //  Serial.println(leftWheeelCumulative - rightWheeelCumulative);
     /*
-    if (leftHoles != rightHoles)
-    {
+      if (leftHoles != rightHoles)
+      {
       if ((leftWheeelCumulative - rightWheeelCumulative > 0) && (leftHoles > rightHoles) )
       {
         leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio + 0.1;
@@ -1817,7 +1887,7 @@ void WheelThresholdReached( uint8_t wheelId)
       {
         leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio - 0.1;
       }
-    }
+      }
     */
 
 #if defined(debugMoveOn)
@@ -1838,7 +1908,7 @@ void WheelThresholdReached( uint8_t wheelId)
           ComputeNewLocalization(0xff);                       // compute new  robot position
           bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
         }
-      */
+    */
     bitWrite(pendingAction, pendingLeftMotor, false);     // clear the flag pending action motor
     bitWrite(pendingAction, pendingRightMotor, false);    // clear the flag pending action motor
     if ( bitRead(currentMove, toDoRotation) == true)      // robot was turning around
@@ -1879,7 +1949,7 @@ void CalibrateWheels()           // calibrate encoder levels and leftToRightDyna
   saveLeftWheelInterrupt = 0;
   saveRightWheelInterrupt = 0;
   digitalWrite(encoderPower, HIGH);
-  digitalWrite(wheelPinInterrupt, LOW);
+  //  digitalWrite(wheelPinInterrupt, LOW);
   attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
   Wheels.StartWheelControl(true, false, 0 , true, false, 0 , false, false, 0, false, false, 0);
   leftMotor.RunMotor(0,  leftMotorPWM );
@@ -1892,6 +1962,7 @@ void CalibrateWheels()           // calibrate encoder levels and leftToRightDyna
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
   digitalWrite(encoderPower, LOW);
   detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+  pinMode(wheelPinInterrupt, INPUT);
   leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
   rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
   unsigned int minLeftLevel = Wheels.GetMinLevel(leftWheelId);
