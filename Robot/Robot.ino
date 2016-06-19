@@ -40,15 +40,10 @@ int retryCount = 0;            // number of retry for sending
 //-- General Robot parameters --
 #include <ApeRobotCommonDefine.h>
 boolean reboot = true;
-float iLeftWheelDiameter = 6.4; //(in cm - used to measure robot moves)  65mn a vid
-float iRightWheelDiameter = iLeftWheelDiameter; //(in cm - used to measure robot moves)
+
 float iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) ;
 float iRightTractionDistPerRev = (PI * iRightWheelDiameter);
-float iRobotWidth = 45.5; // distance beetwen the 2 wheels cm
 float coeffGlissementRotation = 1.;
-#define frontLenght  35 // from echo system cm
-#define backLenght  12 // from echo system  cm
-#define securityLenght 30 // minimal obstacle distance  cm
 #define rebootDuration 10000 // delay to completly start arduino
 #define hornPin 49
 
@@ -281,6 +276,8 @@ long targetX = 0;  // x target position after moving
 long targetY = 0;// x target position after moving
 float deltaPosX = 0;  // incremental x move
 float deltaPosY = 0;  // incremental y move
+float posRotationCenterX = posX - shiftEchoVsRotationCenter * cos(alpha*PI / 180);   // x position of the rotation center
+float posRotationCenterY = posY - shiftEchoVsRotationCenter * sin(alpha*PI / 180);   // y position of the rotation center
 uint8_t currentLocProb = 0;
 
 
@@ -891,6 +888,8 @@ void Rotate( int orientation) {
   // trigBoth = true;         // need to scan front and back during rotation for obstacle detection
   //  echoCurrent = echoFront; // start echo front
   // StartEchoInterrupt(1, 1);
+  posRotationCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
+  posRotationCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
   NOBeforeRotation = NorthOrientation();
   currentMove = 0x00;
   saveCurrentMove = 0x00;
@@ -1153,7 +1152,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     bitWrite(diagMotor, diagMotorPbRight, 1);       // position bit diagMotor
   }
 
-  if ( (deltaMove > 2 && deltaMove / float(Wheels.GetCurrentHolesCount(leftWheelId))   > 0.1)  )
+  if ( (deltaMove > 3 && deltaMove / float(Wheels.GetCurrentHolesCount(leftWheelId))   > 0.15)  )
   {
     pbSynchro = true;
   }
@@ -1304,6 +1303,8 @@ void ComputeNewLocalization(uint8_t param)  // compute localization according to
       deltaAlpha = -deltaAlpha;
     }
     alpha = deltaAlpha + alpha;
+    posX = posRotationCenterX + shiftEchoVsRotationCenter * cos(alpha * PI / 180);    // to take into account the distance beetwen (X,Y) reference and rotation center
+    posY = posRotationCenterY + shiftEchoVsRotationCenter * sin(alpha * PI / 180);
 #if defined(debugLocalizationOn)
     Serial.print("new pos X:");
     Serial.print(posX);
