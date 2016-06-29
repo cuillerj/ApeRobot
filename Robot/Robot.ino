@@ -89,8 +89,6 @@ Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm,
 float leftToRightDynamicAdjustRatio = 1;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
 //-- wheel control --
 #define wheelPinInterrupt 3    // used by sotfware interrupt when rotation reach threshold
-#define leftWheelEncoderHoles 8  // number of holes of the encoder wheel
-#define rightWheelEncoderHoles leftWheelEncoderHoles // number of holes of the encoder wheel
 #define leftAnalogEncoderInput A8   // analog input left encoder
 #define rightAnalogEncoderInput A10  // analog input right encoder
 #define leftWheelId 0           // to identify left wheel Id 
