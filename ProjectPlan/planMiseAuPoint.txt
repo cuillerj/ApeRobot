@@ -1,0 +1,20 @@
+orientation:
+ utiliser la moyenne des angles (heading vue robot, delatNO et trigo (X,Y) 
+
+bug sur filtre a particules  (DetermineRobotLocationWithParticlesGaussian() qui peut choisir n importe quoi
+(DetermineRobotLocationWithParticlesGaussian()  ne fonctionne pas correctement avec plusieurs mesures en entree
+poids ?
+bug move ended X:176 Y:151 Heading:61 NO:188 deltaNORot:-1 deltaNOMov:187 alors que le tobot est pose sur socle
+
+ne pas recalucer la trajectoire si on est porche de du next setp
+
+ajouter timestamp aux traces
+
+3 systemes a tester independment
+localisation inclus les HSR
+control mouvement inclus defauts et obstacles
+trajectoire
+
+revoir poids TestLocationEchoConsistancy sous forme gaussienne ?
+
+enlever les 200 de la carto pour les coins angles
