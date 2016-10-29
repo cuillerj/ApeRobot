@@ -1,9 +1,17 @@
+/*
+   release notes
+   //    StartEchoInterrupt(doEchoFront, distF , doEchoBack, distB ); provisoirement mis en commentaire
+   //    Debuguer restart apres detection  obstacle
+   en effet si obstacle on envoie end move mais le mouvement reprend ensuite avec un nouveau endmove alors qu'entre temps octave a valider la position
+*/
+
 String Version = "RobotV1";
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
-//#define debugMoveOn true
-//#define debugObstacleOn true
-//#define debugLocalizationOn true
+#define debugMoveOn true
+#define debugObstacleOn true
+#define debugLocalizationOn true
+//#define debugMagnetoOn true
 //#define debugMotorsOn true
 //#define debugWheelControlOn true
 //#define wheelEncoderDebugOn true
@@ -150,7 +158,6 @@ unsigned long iRightCentiRevolutions; // nmuber of done revolutions * 100
 #define toEndPause 1     // could restart
 #define toPause 2     // move to be temporaly paused
 
-
 int pendingStraight = 0;   // copy of straight distance to be done
 int reqAng = 0;          // requested rotation
 int reqMove = 0;         // requested move
@@ -163,6 +170,7 @@ LSM303 compass;
 unsigned long refAccX;
 float X;
 float Y = 0;
+int  northOrientation = 0;
 int saveNorthOrientation = 0; // last north orientation
 int NOBeforeRotation = 0; // keep NO before rotation
 int NOAfterRotation = 0;
@@ -178,7 +186,7 @@ int targetAfterNORotation = 0;
 #define compassMax3 -2560
 
 //-- scan control --
-#define servoPin 28    //  stepper
+#define servoPin 28    //  servo motor Pin
 #define toDoScan 0    // toDo bit for scan request
 #define echoFront 18  // arduino pin for mesuring echo delay for front 
 #define echFrontId 0 //
@@ -198,13 +206,16 @@ boolean toDoEchoBack = true;    // to set echo back on when obstacle detection i
 boolean echoBackAlertOn = true; // to set echo back threshold on when obstacle detection is running
 float echoCycleDuration = 0.5;  // define cycle in second between 2 triggers when obstacle detection is running
 EchoObstacleDetection echo(echoFront, trigFront, echoBack, trigBack, 0, 0, 0, 0, echoPinInterrupt);   // create obstacle detection object
+boolean obstacleDetectionOn = true;
+unsigned int obstacleDetectionCount=0;
 int numStep = 0;     // current scan step number
 int nbSteps = 0;     // number of steps to be done for a scan
 boolean switchFB = 0;  // switch front back scan
 #define nbPulse 15    // nb of servo positions for a 360Â° scan
 #define miniServoAngle 0    // corresponding to the lowest value of pulseValue
 #define maxiServoAngle 180   // corresponding to the highest value of pulseValue
-int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 360Â° split in 15 steps
+int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 360° split in 15 steps
+uint8_t shiftPulse = 0;
 float coefAngRef = PI / (pulseValue[14] - pulseValue[0]);  // angle value beetwen 2 pulses
 uint8_t pulseNumber = 0;  // pointer to pulseValue array
 int distFSav = 0;     // saved front echo distance in cm
@@ -349,6 +360,7 @@ void setup() {
   //     compass.read();
   //    refAccX=abs(compass.a.x)*1.1;
   EchoServoAlign(90);                               // adjust servo motor to center position
+  northOrientation = NorthOrientation();            // added 24/10/2016
 }
 
 void loop() {
@@ -451,7 +463,7 @@ void loop() {
     if ( millis() - delayCheckPosition > delayBetweenCheckPosition  && bitRead(currentMove, toDoStraight) == true && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
     { // Update robot position
       delayCheckPosition = millis();  // reset timer
-      if ((millis() - timeMotorStarted) > 500 && bitRead(diagMotor, diagMotorPbSynchro) == false)   // wait for motors to run enough
+      if ((timeMotorStarted != 0 && millis() - timeMotorStarted) > 500 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
       {
         //        Serial.println(millis() - timeMotorStarted);
         //        Serial.println(bitRead(diagMotor, diagMotorPbSynchro));
@@ -542,10 +554,28 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   bitWrite(diagConnection, 0, 0);       // connection is active
   timeReceiveSerial = millis();         // reset check receive timer
   switch (cmdInput) {                   // first byte of input is the command type
+    case 0x4f: // commande o obstacle detection
+      Serial.print("commande o obstacle detection:");
+      obstacleDetectionOn = (DataInSerial[3]); // 1 on 0 off
+      Serial.println(obstacleDetectionOn);
+      break;
     case 0x53: // commande S align servo
       Serial.println("align servo");
       EchoServoAlign(DataInSerial[3]); // align according to data received - orientation in degres
       break;
+    case 0x68: // commande h horn
+      {
+        Serial.println("horn");
+        unsigned int duration = DataInSerial[3];
+        Horn(true, duration * 1000);
+        break;
+      }
+    case 0x69: // commande i adujst shiftPulse
+      {
+        Serial.println("set shift pulse:");
+        shiftPulse = DataInSerial[3];
+        break;
+      }
     case 0x70: // commande p ping front back
       Serial.println("ping FB");
       bitWrite(toDo, toDoPingFB, 1);
@@ -703,7 +733,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         northAlign(reqN);
         break;
       }
-    case 0x61: // we receiver a ack from the server
+    case 0x61: // we received a ack from the server
       lastAckTrameNumber = DataInSerial[3];
 #if defined(debugConnection)
       Serial.print("ack: ");
@@ -749,7 +779,7 @@ void IncServo(int sens) {   // increase servo motor position depending on sens v
   Serial.print("servo write pulse:");
   Serial.println(valAng);
 #endif
-  myservo.write(valAng);    // move servo motor
+  myservo.write(valAng + shiftPulse);  // move servo motor
   delay(750);              // wait to be sure the servo reach the target position
 }
 int IncPulse(int sens) { // compute servo motor value depending on sens
@@ -764,7 +794,7 @@ int PingFront() {               // ping echo front
   unsigned long time2;
   unsigned long deltaT;
   digitalWrite(trigFront, LOW);  // ajoute le 24/12/2015 a avlider
-  delayMicroseconds(2);      //
+  delayMicroseconds(3);      // // modify 23/10/2016
   digitalWrite(trigFront, HIGH);
   delayMicroseconds(15); // 10 micro sec mini
   time1 = micros();
@@ -785,16 +815,16 @@ int PingFront() {               // ping echo front
   //Serial.println(cm);
 
   return (cm);
-
 }
+
 int PingBack() {
   int cm;
   unsigned long lecture_echo;   //
   unsigned long time1;
   unsigned long time2;
   unsigned long deltaT;
-  digitalWrite(trigBack, LOW);  // ajoute le 24/12/2015 a avlider
-  delayMicroseconds(2);      //
+  digitalWrite(trigBack, LOW);
+  delayMicroseconds(3);      // modify 23/10/2016
   digitalWrite(trigBack, HIGH);
 
   delayMicroseconds(15); // 10 micro sec mini
@@ -825,9 +855,13 @@ int PingBack() {
 
   //  }
 }
+
 void PingFrontBack()
 {
-  SendScanResultSerial (PingFront(), PingBack());
+  int distFront = PingFront();                          // added 28/09/2016
+  delay(60);                                            // added 24/10/2016
+  int distBack = PingBack();
+  SendScanResultSerial (distFront, distBack);
   timePingFB = millis();
 }
 void InitScan(int nbS, int startingOrientation)    // int scan
@@ -840,7 +874,7 @@ void InitScan(int nbS, int startingOrientation)    // int scan
   Serial.print("init pulse:");
   Serial.println(pulseValue[scanOrientation]);
 #endif
-  myservo.write(pulseValue[scanOrientation]);     // set the servo motor to the starting position
+  myservo.write(pulseValue[scanOrientation] + shiftPulse);   // set the servo motor to the starting position
   delay(1000);                                    // wait long enough for the servo to reach target
 }
 
@@ -1038,7 +1072,10 @@ void MoveForward(int lengthToDo ) {
     Serial.print(" back:");
     Serial.println(distB);
 #endif
-    StartEchoInterrupt(doEchoFront, distF , doEchoBack, distB );
+    if (obstacleDetectionOn)
+    {
+      StartEchoInterrupt(doEchoFront, distF , doEchoBack, distB );
+    }
     startMotors();
   }
 }
@@ -1061,7 +1098,7 @@ void SendScanResultSerial (int distF, int distB)   // send scan echo data to the
   PendingDataReqSerial[5] = 0x42; //"B" back
   PendingDataReqSerial[6] = uint8_t(distB / 256);
   PendingDataReqSerial[7] = uint8_t(distB);
-  PendingDataReqSerial[8] = 0x41; //"A" angle
+  PendingDataReqSerial[8] = 0x41; //"A" angle du servo
   PendingDataReqSerial[9] = uint8_t(AngleDegre / 256); //1er octet contient les facteurs de 256
   PendingDataReqSerial[10] = uint8_t(AngleDegre); //2eme octets contient le complement - position = Datareq2*256+Datareq3
   PendingDataReqSerial[11] = uint8_t(trameNumber % 256);
@@ -1463,10 +1500,10 @@ void EchoServoAlign(uint8_t angle)    // to align echo servo motor with robot
 #if(debugScanOn)
   Serial.print("servo align:");
   //  Serial.println(pulseValue[(nbPulse - 1) / 2]);
-  Serial.println(value)
+  Serial.println(value);
 #endif
   //  myservo.write(pulseValue[(nbPulse - 1) / 2]);  // select the middle of the pulse range
-  myservo.write(value);
+  myservo.write(value + shiftPulse);
   delay(1000);
   myservo.detach();
   SendEndAction(servoAlignEnded, 0x00);
@@ -1594,7 +1631,7 @@ void SendStatus()
   PendingDataReqSerial[15] = uint8_t(abs(angle) / 256);
   PendingDataReqSerial[16] = uint8_t(abs(angle));
   PendingDataReqSerial[17] = 0x00;
-  int  northOrientation = saveNorthOrientation;
+  northOrientation = saveNorthOrientation;
   if (toDo == 0x00 && (actStat != 0x66 && actStat != 0x68) && millis() - delayAfterStopMotors > 500 )
   {
     northOrientation = NorthOrientation();
@@ -1676,7 +1713,7 @@ void StartEchoInterrupt(boolean frontOn, unsigned int frontL, boolean backOn, un
 
   frontL = max(frontLenght + securityLenght, frontL);
   backL = max(backLenght + securityLenght, backL);
-
+  obstacleDetectionCount=0;
 #if defined(debugObstacleOn)
   Serial.print("start echo interrupt ");
   if (frontOn == true)
@@ -1787,8 +1824,8 @@ void PauseMove()                  //
     Serial.println("stop obstacle");
   }
 #endif
-  digitalWrite(encoderPower, LOW);
   detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+  digitalWrite(encoderPower, LOW);
   pinMode(wheelPinInterrupt, INPUT);
   //  delayToStopWheel = millis();
   if (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true)
@@ -1968,13 +2005,14 @@ void CheckEndOfReboot()  //
 
 void obstacleInterrupt()        // Obstacles detection system set a softare interrupt due to threshold reaching
 {
+  obstacleDetectionCount++;
   uint8_t echoID = echo.GetAlertEchoNumber();
   unsigned int obstacleDistance = echo.GetDistance(echoID);
 #if defined(debugObstacleOn)
   Serial.print("obstacle a:");
   Serial.println(obstacleDistance);
 #endif
-  if (obstacleDistance != 0)
+  if (obstacleDistance != 0 && obstacleDetectionCount>2)
   {
     bitWrite(waitFlag, toPause, true);     // position bit pause to end
     bitWrite(diagRobot, diagRobotObstacle, 1);       // position bit diagRobot
@@ -2240,7 +2278,7 @@ int NorthOrientation()
 {
   compass.read();
   float northOrientation = compass.heading();
-#if defined(debugLocalizationOn)
+#if defined(debugMagnetoOn)
   Serial.print(" magneto orientation: ");
   Serial.println(northOrientation);
 #endif
@@ -2324,8 +2362,8 @@ void northAlign(unsigned int northAlignShift)
         if (bitRead(toDo, toDoAlign) == true)
         {
           bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
-          SendEndAction(alignEnded, 0x00);
         }
+        SendEndAction(alignEnded, 0x00);
       }
     }
   }
@@ -2336,6 +2374,7 @@ void SendEndAction(int action, uint8_t retCode)
   int deltaNORotation = NOBeforeRotation - NOAfterRotation;
   int deltaNOMoving = NOBeforeMoving - NOAfterMoving;
   actStat = action;
+  trameNumber = trameNumber + 1;
   PendingDataReqSerial[0] = 0x01;   // ack expected
   PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
   PendingDataReqSerial[2] = 0x01;
@@ -2396,7 +2435,23 @@ void SendEndAction(int action, uint8_t retCode)
   }
   PendingDataReqSerial[21] = uint8_t(abs(deltaNOMoving) / 256);
   PendingDataReqSerial[22] = uint8_t(abs(deltaNOMoving));
-  PendingDataLenSerial = 0x17;
+  // below dependin on actStat
+  PendingDataReqSerial[23] = 0x2f;
+  PendingDataReqSerial[24] = 0x00;
+  PendingDataReqSerial[25] = 0x00;
+  PendingDataReqSerial[26] = 0x00;
+  PendingDataReqSerial[27] = 0x00;
+  PendingDataReqSerial[28] = 0x00;
+  PendingDataReqSerial[29] = 0x00;
+  if (actStat == moveEnded)
+  {
+    PendingDataReqSerial[24] = uint8_t(leftWheeelCumulative / 256);
+    PendingDataReqSerial[25] = uint8_t(leftWheeelCumulative);
+    PendingDataReqSerial[26] = 0x3a;
+    PendingDataReqSerial[27] = uint8_t(rightWheeelCumulative / 256);
+    PendingDataReqSerial[28] = uint8_t(rightWheeelCumulative);
+  }
+  PendingDataLenSerial = 0x1e;
   retryCount = 00;
   pendingAckSerial = 0x01;
   PendingReqSerial = PendingReqRefSerial;

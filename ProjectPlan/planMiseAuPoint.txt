@@ -6,7 +6,7 @@ bug sur filtre a particules  (DetermineRobotLocationWithParticlesGaussian() qui 
 poids ?
 bug move ended X:176 Y:151 Heading:61 NO:188 deltaNORot:-1 deltaNOMov:187 alors que le tobot est pose sur socle
 
-ne pas recalucer la trajectoire si on est porche de du next setp
+ne pas recalculer la trajectoire si on est porche de du next setp
 
 ajouter timestamp aux traces
 
