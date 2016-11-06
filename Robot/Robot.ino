@@ -207,14 +207,14 @@ boolean echoBackAlertOn = true; // to set echo back threshold on when obstacle d
 float echoCycleDuration = 0.5;  // define cycle in second between 2 triggers when obstacle detection is running
 EchoObstacleDetection echo(echoFront, trigFront, echoBack, trigBack, 0, 0, 0, 0, echoPinInterrupt);   // create obstacle detection object
 boolean obstacleDetectionOn = true;
-unsigned int obstacleDetectionCount=0;
+unsigned int obstacleDetectionCount = 0;
 int numStep = 0;     // current scan step number
 int nbSteps = 0;     // number of steps to be done for a scan
 boolean switchFB = 0;  // switch front back scan
 #define nbPulse 15    // nb of servo positions for a 360Â° scan
 #define miniServoAngle 0    // corresponding to the lowest value of pulseValue
 #define maxiServoAngle 180   // corresponding to the highest value of pulseValue
-int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 360° split in 15 steps
+int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 180° split in 15 steps
 uint8_t shiftPulse = 0;
 float coefAngRef = PI / (pulseValue[14] - pulseValue[0]);  // angle value beetwen 2 pulses
 uint8_t pulseNumber = 0;  // pointer to pulseValue array
@@ -1058,12 +1058,15 @@ void MoveForward(int lengthToDo ) {
     trigBoth == false;
     unsigned int distF = 0;
     unsigned int distB = 0 ;
-    if (abs(movePingInit) > abs(lengthToDo))
-    {
+    /*
+      if (abs(movePingInit) > abs(lengthToDo))
+      {
       distF = (abs(movePingInit) - abs(lengthToDo)) * doEchoFront * .9;
       distB = (abs(movePingInit) - abs(lengthToDo)) * doEchoBack * .9;
-    }
-
+      }
+    */
+    distF = (frontLenght + securityLenght) * doEchoFront;
+    distB = (backLenght + securityLenght) * doEchoBack;
 #if defined(debugObstacleOn)
     Serial.print("Starting obstacle distance:");
     Serial.print(movePingInit);
@@ -1713,7 +1716,7 @@ void StartEchoInterrupt(boolean frontOn, unsigned int frontL, boolean backOn, un
 
   frontL = max(frontLenght + securityLenght, frontL);
   backL = max(backLenght + securityLenght, backL);
-  obstacleDetectionCount=0;
+  obstacleDetectionCount = 0;
 #if defined(debugObstacleOn)
   Serial.print("start echo interrupt ");
   if (frontOn == true)
@@ -2012,7 +2015,7 @@ void obstacleInterrupt()        // Obstacles detection system set a softare inte
   Serial.print("obstacle a:");
   Serial.println(obstacleDistance);
 #endif
-  if (obstacleDistance != 0 && obstacleDetectionCount>2)
+  if (obstacleDistance != 0 && obstacleDetectionCount >= 2)
   {
     bitWrite(waitFlag, toPause, true);     // position bit pause to end
     bitWrite(diagRobot, diagRobotObstacle, 1);       // position bit diagRobot
