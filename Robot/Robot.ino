@@ -7,14 +7,14 @@
 
 String Version = "RobotV1";
 // uncomment #define debug to get log on serial link
-//#define debugScanOn true
-#define debugMoveOn true
-#define debugObstacleOn true
-#define debugLocalizationOn true
+#define debugScanOn true
+//#define debugMoveOn true
+//#define debugObstacleOn true
+//#define debugLocalizationOn true
 //#define debugMagnetoOn true
 //#define debugMotorsOn true
-//#define debugWheelControlOn true
-//#define wheelEncoderDebugOn true
+#define debugWheelControlOn true
+#define wheelEncoderDebugOn true
 //#define debugConnection true
 //#define debugPowerOn true
 //#define debugLoop true
@@ -29,6 +29,7 @@ String Version = "RobotV1";
 #include <WheelControl.h>
 #include <Wire.h>        // for accelerometer
 #include <LSM303.h>     // for accelerometer
+#include <NewPing.h>
 Servo myservo;  // create servo object to control a servo
 
 //-- comunication --
@@ -84,12 +85,12 @@ int power2Mesurt = 0;   // current power2 value
 unsigned int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
 unsigned int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
 //float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
-unsigned int leftMotorPWM = 255;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
+unsigned int leftMotorPWM = 230;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define iLeftSlowPWM 150        // PMW value to slowdown motor at the end of the run
 #define leftRotatePWMRatio 0.8    // 
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPWM); // define left Motor
-unsigned int rightMotorPWM = 165;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
+unsigned int rightMotorPWM = 200;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define iRightSlowPWM 110  // PMW value to slowdown motor at the end of the run
 //#define iRightRotatePWM 170   // PMW value
 #define rightRotatePWMRatio 0.8    // 
@@ -99,7 +100,7 @@ float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed 
 //-- wheel control --
 #define wheelPinInterrupt 3    // used by sotfware interrupt when rotation reach threshold
 #define leftAnalogEncoderInput A8   // analog input left encoder
-#define rightAnalogEncoderInput A10  // analog input right encoder
+#define rightAnalogEncoderInput A7  // analog input right encoder
 #define leftWheelId 0           // to identify left wheel Id 
 #define rightWheelId 1         // to identify right wheel Id
 unsigned int iLeftRevSpeed;              // instant left wheel speed
@@ -128,11 +129,11 @@ unsigned long prevCheckRightHoles = 0;      // copy of previous RightHoles to ch
   unsigned int rightIncoderHighValue = 610; // define value above that signal is high
   unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
 */
-unsigned int leftIncoderHighValue = 720;  // define value above that signal is high
-unsigned int leftIncoderLowValue = 170;  // define value below that signal is low
+unsigned int leftIncoderHighValue = 650;  // define value mV above that signal is high
+unsigned int leftIncoderLowValue = 250;  // define value mV below that signal is low
 // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
-unsigned int rightIncoderHighValue = 704; // define value above that signal is high
-unsigned int rightIncoderLowValue = 148;  // define value below that signal is low
+unsigned int rightIncoderHighValue = 640; // define value mV above that signal is high
+unsigned int rightIncoderLowValue = 220;  // define value mV below that signal is low
 //#define delayBetweenEncoderAnalogRead  750 //  micro second between analog read of wheel encoder level
 #define delayMiniBetweenHoles  35  //  delay millis second between 2 encoder holes at the maximum speed
 // create wheel control object
@@ -188,11 +189,11 @@ int targetAfterNORotation = 0;
 //-- scan control --
 #define servoPin 28    //  servo motor Pin
 #define toDoScan 0    // toDo bit for scan request
-#define echoFront 18  // arduino pin for mesuring echo delay for front 
+#define echoFront 19  // arduino pin for mesuring echo delay for front 
 #define echFrontId 0 //
-#define trigFront  22     // arduino pin for trigerring front echo
-#define echoBack  19   // arduino pin for mesuring echo delay for back 
-#define trigBack  23    // arduino pin for trigerring back echo
+#define trigFront  23     // arduino pin for trigerring front echo
+#define echoBack  18   // arduino pin for mesuring echo delay for back 
+#define trigBack  22    // arduino pin for trigerring back echo
 #define echBacktId 1 //
 #define nbPulse 15    // nb of servo positions for a 360Â° scan
 #define echo3 false  // does not exit
@@ -214,7 +215,8 @@ boolean switchFB = 0;  // switch front back scan
 #define nbPulse 15    // nb of servo positions for a 360Â° scan
 #define miniServoAngle 0    // corresponding to the lowest value of pulseValue
 #define maxiServoAngle 180   // corresponding to the highest value of pulseValue
-int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 180° split in 15 steps
+//int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 180° split in 15 steps
+int pulseValue[nbPulse] = {0, 13, 26, 39, 52, 65, 78, 90, 103, 116, 129, 142, 155, 168, 180}; // corresponding to 180° split in 15 steps
 uint8_t shiftPulse = 0;
 float coefAngRef = PI / (pulseValue[14] - pulseValue[0]);  // angle value beetwen 2 pulses
 uint8_t pulseNumber = 0;  // pointer to pulseValue array
@@ -229,7 +231,9 @@ uint8_t trigCurrent = 0; // used during move to determine which front or back is
 boolean trigOn = false;  // flag for asynchronous echo to know if trigger has been activated
 boolean trigBoth = false; // flag used to alternatively scan front or back
 unsigned int scanNumber = 0;   // count number of scan retry for asynchronous echo
-
+#define MAX_DISTANCE 400
+NewPing pingFront(trigFront, echoFront, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
+NewPing pingBack(trigBack, echoBack, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
 //-- timers --
 unsigned long timeAppli; // cycle applicatif
 unsigned long timeStatut;  // cycle envoi du statut au master
@@ -554,8 +558,64 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   bitWrite(diagConnection, 0, 0);       // connection is active
   timeReceiveSerial = millis();         // reset check receive timer
   switch (cmdInput) {                   // first byte of input is the command type
-    case 0x4f: // commande o obstacle detection
-      Serial.print("commande o obstacle detection:");
+    case 0x3a: // commande : power on/off encoder
+      Serial.print("commande : power on/off encoder:");
+      Serial.println(DataInSerial[3]);
+      digitalWrite(encoderPower, DataInSerial[3]);
+      break;
+    case 0x3c: // commande : set encoder threshold
+      Serial.print("commande : set threshold encoder ");
+      //     Serial.println(DataInSerial[3]);
+      if (DataInSerial[3] == 0x4c)
+      {
+        leftIncoderLowValue = DataInSerial[5] * 256 + DataInSerial[6];
+        leftIncoderHighValue = DataInSerial[8] * 256 + DataInSerial[9];
+        Serial.println("left");
+      }
+      if (DataInSerial[3] == 0x52)
+      {
+        rightIncoderLowValue = DataInSerial[5] * 256 + DataInSerial[6];
+        rightIncoderHighValue = DataInSerial[8] * 256 + DataInSerial[9];
+        Serial.println("right");
+      }
+      break;
+    case 0x3d: // commande : set motors ratio
+      {
+        Serial.print("commande : set motors ratio:");
+        float inpValue = 0.;
+        inpValue = DataInSerial[3] * 256 + DataInSerial[4];
+        leftToRightDynamicAdjustRatio = inpValue / 100;
+        Serial.println(leftToRightDynamicAdjustRatio);
+        break;
+      }
+    case 0x3e: // commande : query encoders values
+      {
+        Serial.println("commande : query encoders values:");
+        SendEncoderValues();
+        break;
+      }
+    case 0x3f: // commande : set motors PMW values
+      {
+        Serial.print("commande : set motors PMW values :");
+        Serial.println(DataInSerial[3], HEX);
+        if (DataInSerial[3] == 0x4c)
+        {
+          leftMotorPWM =  DataInSerial[6];
+        }
+        if (DataInSerial[3] == 0x52)
+        {
+          rightMotorPWM =  DataInSerial[6];
+        }
+        break;
+      }
+    case 0x40: // commande : query encoders values
+      {
+        Serial.println("commande : query PWM:");
+        SendPWMValues();
+        break;
+      }
+    case 0x4f: // commande O obstacle detection
+      Serial.print("commande O obstacle detection:");
       obstacleDetectionOn = (DataInSerial[3]); // 1 on 0 off
       Serial.println(obstacleDetectionOn);
       break;
@@ -720,7 +780,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 #endif
       }
       break;
-    case 0x45: // N north align
+    case 0x45: // E north align
       {
         unsigned int reqN = DataInSerial[3] * 256 + DataInSerial[4];
 
@@ -775,12 +835,15 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 
 void IncServo(int sens) {   // increase servo motor position depending on sens value
   valAng = IncPulse(sens ); // compute servo motor value depending on sens value
+  myservo.attach(servoPin);
+  //  delay(100);
 #if(servoMotorDebugOn)
   Serial.print("servo write pulse:");
   Serial.println(valAng);
 #endif
   myservo.write(valAng + shiftPulse);  // move servo motor
-  delay(750);              // wait to be sure the servo reach the target position
+  delay(1000);              // wait to be sure the servo reach the target position
+  myservo.detach();
 }
 int IncPulse(int sens) { // compute servo motor value depending on sens
   pulseNumber = pulseNumber + sens;    //
@@ -789,68 +852,102 @@ int IncPulse(int sens) { // compute servo motor value depending on sens
 }
 int PingFront() {               // ping echo front
   int cm;
-  unsigned long lecture_echo;   //
-  unsigned long time1;
-  unsigned long time2;
-  unsigned long deltaT;
-  digitalWrite(trigFront, LOW);  // ajoute le 24/12/2015 a avlider
-  delayMicroseconds(3);      // // modify 23/10/2016
-  digitalWrite(trigFront, HIGH);
-  delayMicroseconds(15); // 10 micro sec mini
-  time1 = micros();
-  digitalWrite(trigFront, LOW);
-  lecture_echo = pulseIn(echoFront, HIGH, durationMaxEcho);
-  time2 = micros();
-  deltaT = (time2 - time1);
-  if (deltaT >= durationMaxEcho)
-  {
+  /*
+    unsigned long lecture_echo;   //
+    unsigned long time1;
+    unsigned long time2;
+    unsigned long deltaT;
+    digitalWrite(trigFront, LOW);  // ajoute le 24/12/2015 a avlider
+    delayMicroseconds(3);      // // modify 23/10/2016
+    digitalWrite(trigFront, HIGH);
+    delayMicroseconds(1); // 10 micro sec mini
+    time1 = micros();
+    digitalWrite(trigFront, LOW);
+    lecture_echo = pulseIn(echoFront, HIGH, durationMaxEcho);
+    time2 = micros();
+    deltaT = (time2 - time1);
+    if (deltaT >= durationMaxEcho)
+    {
     deltaT = 0;
-  }
-  else
-  {
+    }
+    else
+    {
     deltaT = deltaT * 0.905;
+    }
+
+    cm = deltaT / 58  ;
+    //Serial.println(cm);
+  */
+  unsigned int uS = pingFront.ping(); // Send ping, get ping time in microseconds (uS).
+  if (uS == 0)
+  {
+#if (debugScanOn)
+    Serial.println("retry front");
+#endif
+    delay(50);
+    uS = pingFront.ping();
   }
-
-  cm = deltaT / 58  ;
-  //Serial.println(cm);
-
+  cm = pingFront.convert_cm(uS);
+#if (debugScanOn)
+  Serial.print("Ping front: ");
+  Serial.print(cm); // Convert ping time to distance and print result (0 = outside set distance range, no ping echo)
+  Serial.println("cm");
+#endif
   return (cm);
 }
 
 int PingBack() {
   int cm;
-  unsigned long lecture_echo;   //
-  unsigned long time1;
-  unsigned long time2;
-  unsigned long deltaT;
-  digitalWrite(trigBack, LOW);
-  delayMicroseconds(3);      // modify 23/10/2016
-  digitalWrite(trigBack, HIGH);
+  /*
+    unsigned long lecture_echo;   //
+    unsigned long time1;
+    unsigned long time2;
+    unsigned long deltaT;
+    digitalWrite(trigBack, LOW);
+    delayMicroseconds(3);      // modify 23/10/2016
+    digitalWrite(trigBack, HIGH);
 
-  delayMicroseconds(15); // 10 micro sec mini
-  time1 = micros();
-  digitalWrite(trigBack, LOW);
-  lecture_echo = pulseIn(echoBack, HIGH, durationMaxEcho);
-  time2 = micros();
-  deltaT = (time2 - time1);
-  if (deltaT >= durationMaxEcho)
-  {
+    delayMicroseconds(10); // 10 micro sec mini
+    time1 = micros();
+    digitalWrite(trigBack, LOW);
+    lecture_echo = pulseIn(echoBack, HIGH, durationMaxEcho);
+    time2 = micros();
+    deltaT = (time2 - time1);
+    if (deltaT >= durationMaxEcho)
+    {
     deltaT = 0;
-  }
-  else
-  {
+    }
+    else
+    {
     deltaT = deltaT * 0.905;
-  }
-#if defined(debugScanOn)
-  Serial.println();
-  Serial.print("echo:");
-  Serial.print(lecture_echo);
-  Serial.println();
+    }
+    #if defined(debugScanOn)
+    Serial.println();
+    Serial.print("echo:");
+    Serial.print(lecture_echo);
+    Serial.println();
 
-  Serial.print("deltaT Back:");
-  Serial.println(time2 - time1);
+    Serial.print("deltaT Back:");
+    Serial.println(time2 - time1);
+    #endif
+    cm = deltaT / 58  ;
+  */
+  unsigned int uS = pingBack.ping(); // Send ping, get ping time in microseconds (uS).
+  // Serial.print("Ping: ");
+  cm = pingBack.convert_cm(uS);
+  if (uS == 0)
+  {
+#if (debugScanOn)
+    Serial.println("retry back");
 #endif
-  cm = deltaT / 58  ;
+    delay(50);
+    uS = pingFront.ping();
+  }
+#if (debugScanOn)
+  Serial.print("Ping back: ");
+  Serial.print(cm); // Convert ping time to distance and print result (0 = outside set distance range, no ping echo)
+  Serial.println("cm");
+#endif
   return (cm);
 
   //  }
@@ -859,7 +956,7 @@ int PingBack() {
 void PingFrontBack()
 {
   int distFront = PingFront();                          // added 28/09/2016
-  delay(60);                                            // added 24/10/2016
+  delay(100);                                            // added 24/10/2016
   int distBack = PingBack();
   SendScanResultSerial (distFront, distBack);
   timePingFB = millis();
@@ -870,12 +967,14 @@ void InitScan(int nbS, int startingOrientation)    // int scan
   nbSteps = nbS;                                   // init number of servo steps to do
   scanOrientation = startingOrientation;           // init starting servo position
   myservo.attach(servoPin);                       // attaches the servo motor
+  //  delay(100);
 #if (servoMotorDebugOn)
   Serial.print("init pulse:");
   Serial.println(pulseValue[scanOrientation]);
 #endif
   myservo.write(pulseValue[scanOrientation] + shiftPulse);   // set the servo motor to the starting position
   delay(1000);                                    // wait long enough for the servo to reach target
+  myservo.detach();
 }
 
 void ScanPosition() {
@@ -1507,7 +1606,7 @@ void EchoServoAlign(uint8_t angle)    // to align echo servo motor with robot
 #endif
   //  myservo.write(pulseValue[(nbPulse - 1) / 2]);  // select the middle of the pulse range
   myservo.write(value + shiftPulse);
-  delay(1000);
+  delay(1500);
   myservo.detach();
   SendEndAction(servoAlignEnded, 0x00);
 }
@@ -1689,7 +1788,52 @@ void SendEncoderMotorValue()
   PendingDataReqSerial[21] = uint8_t(leftToRightDynamicAdjustRatio * 100 );
   PendingDataLenSerial = 0x16; // 6 longueur mini max 25  pour la gateway
 }
-
+void SendEncoderValues()
+{
+  PendingReqSerial = PendingReqRefSerial;
+  unsigned int minLeftLevel = Wheels.GetMinLevel(leftWheelId);
+  unsigned int maxLeftLevel = Wheels.GetMaxLevel(leftWheelId);
+  unsigned int minRightLevel = Wheels.GetMinLevel(rightWheelId);
+  unsigned int maxRightLevel = Wheels.GetMaxLevel(rightWheelId);
+  PendingDataReqSerial[0] = 0x72; //
+  PendingDataReqSerial[1] = 0x08;   // paramters number
+  PendingDataReqSerial[2] = uint8_t(leftIncoderHighValue / 256);
+  PendingDataReqSerial[3] = uint8_t(leftIncoderHighValue );
+  PendingDataReqSerial[4] = 0x00;
+  PendingDataReqSerial[5] = uint8_t(maxLeftLevel / 256);
+  PendingDataReqSerial[6] = uint8_t(maxLeftLevel );
+  PendingDataReqSerial[7] = 0x00;
+  PendingDataReqSerial[8] = uint8_t(leftIncoderLowValue / 256);
+  PendingDataReqSerial[9] = uint8_t(leftIncoderLowValue );
+  PendingDataReqSerial[10] = 0x00;
+  PendingDataReqSerial[11] = uint8_t(minLeftLevel / 256);
+  PendingDataReqSerial[12] = uint8_t(minLeftLevel );
+  PendingDataReqSerial[13] = 0x00;
+  PendingDataReqSerial[14] = uint8_t(rightIncoderHighValue / 256);
+  PendingDataReqSerial[15] = uint8_t(rightIncoderHighValue );
+  PendingDataReqSerial[16] = 0x00;
+  PendingDataReqSerial[17] = uint8_t(maxRightLevel / 256);
+  PendingDataReqSerial[18] = uint8_t(maxRightLevel );
+  PendingDataReqSerial[19] = 0x00;
+  PendingDataReqSerial[20] = uint8_t(rightIncoderLowValue / 256);
+  PendingDataReqSerial[21] = uint8_t(rightIncoderLowValue );
+  PendingDataReqSerial[22] = 0x00;
+  PendingDataReqSerial[23] = uint8_t(minRightLevel / 256);
+  PendingDataReqSerial[24] = uint8_t(minRightLevel );
+  PendingDataLenSerial = 0x19; // 6 longueur mini max 25  pour la gateway
+}
+void SendPWMValues()
+{
+  PendingReqSerial = PendingReqRefSerial;
+  PendingDataReqSerial[0] = 0x73; //
+  PendingDataReqSerial[1] = 0x02;   // paramters number
+  PendingDataReqSerial[2] = uint8_t(leftMotorPWM / 256);
+  PendingDataReqSerial[3] = uint8_t(leftMotorPWM );
+  PendingDataReqSerial[4] = 0x00;
+  PendingDataReqSerial[5] = uint8_t(rightMotorPWM / 256);
+  PendingDataReqSerial[6] = uint8_t(rightMotorPWM );
+  PendingDataLenSerial = 0x07; // 6 longueur mini max 25  pour la gateway
+}
 void StopAll()
 {
   leftMotor.StopMotor();
@@ -2003,6 +2147,10 @@ void CheckEndOfReboot()  //
     waitFlag = 0x00;
     appStat = 0x00;
     Horn(true, 250);
+    EchoServoAlign(90);                               // adjust servo motor to center position
+    delay(1500);
+    northOrientation = NorthOrientation();            // added 24/10/2016
+    PingFrontBack();
   }
 }
 
