@@ -48,12 +48,12 @@ int retryCount = 0;            // number of retry for sending
 
 //-- General Robot parameters --
 #include <ApeRobotCommonDefine.h>
-boolean reboot = true;
+uint8_t rebootPhase = 3;
 
 float iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) ;
 float iRightTractionDistPerRev = (PI * iRightWheelDiameter);
 float coeffGlissementRotation = 1.;
-#define rebootDuration 10000 // delay to completly start arduino
+#define rebootDuration 20000 // delay to completly start arduino
 #define hornPin 49           // to activate horn
 
 //-- power control --
@@ -187,7 +187,7 @@ int targetAfterNORotation = 0;
 #define compassMax3 -2560
 
 //-- scan control --
-#define servoPin 28    //  servo motor Pin
+#define servoPin 6    //  servo motor Pin (28)
 #define toDoScan 0    // toDo bit for scan request
 #define echoFront 19  // arduino pin for mesuring echo delay for front 
 #define echFrontId 0 //
@@ -216,7 +216,8 @@ boolean switchFB = 0;  // switch front back scan
 #define miniServoAngle 0    // corresponding to the lowest value of pulseValue
 #define maxiServoAngle 180   // corresponding to the highest value of pulseValue
 //int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 180° split in 15 steps
-int pulseValue[nbPulse] = {0, 13, 26, 39, 52, 65, 78, 90, 103, 116, 129, 142, 155, 168, 180}; // corresponding to 180° split in 15 steps
+//int pulseValue[nbPulse] = {0, 13, 26, 39, 52, 65, 78, 90, 103, 116, 129, 142, 155, 168, 180}; // corresponding to 180° split in 15 steps
+int pulseValue[nbPulse] = {0, 13, 26, 38, 52, 65, 78, 90, 103, 116, 129, 142, 154, 166, 178}; // corresponding to 180° split in 15 steps
 uint8_t shiftPulse = 0;
 float coefAngRef = PI / (pulseValue[14] - pulseValue[0]);  // angle value beetwen 2 pulses
 uint8_t pulseNumber = 0;  // pointer to pulseValue array
@@ -259,7 +260,7 @@ unsigned long delayAfterStopMotors;     // to avoid I2C perturbations
 unsigned long timeBetweenOnOffObstacle;  // use to compute delay between obstacle detection sitch on off
 unsigned long timeMotorStarted;          // set to time motors started
 unsigned long timerHorn   ;          // set to time horn started
-unsigned long pauseSince   ;          // starting time of pause status
+volatile unsigned long pauseSince   ;          // starting time of pause status
 unsigned long timePingFB;             // used to delay sending end action after sending echo ping
 #if defined debugLoop
 unsigned long timeLoop;  // cycle demande heure
@@ -272,12 +273,12 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetweenCheckPosition 200       // delay between 2 check position
 #define maxPauseDuration 30000
 //-- robot status & diagnostics
-uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
+volatile uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
 uint8_t diagPower = 0x00;   // bit 0 power1, 1 power2, 2 power3 0 Ok 1 Ko
 uint8_t diagConnection = 0x01;   // bit 0 pending serial link
 uint8_t diagRobot = 0xff;     // to be cleared after complete reboot
 uint8_t toDo = 0x00;          // flag kind of move to do
-uint8_t waitFlag = 0xff;     // used to pause and waiting before starting
+volatile uint8_t waitFlag = 0xff;     // used to pause and waiting before starting
 
 uint8_t currentMove = 0x00;   // flag kind of current move
 uint8_t pendingAction = 0x00; // flag pending action to be started
@@ -322,6 +323,7 @@ void setup() {
   Serial.print("ArduinoID=");
   Serial.println(valueEeprom, DEC);
   // **** define gpio mode
+  Serial.println("reboot started");
   pinMode(trigFront, OUTPUT);
   pinMode(encoderPower, OUTPUT);
   digitalWrite(trigBack, LOW);
@@ -363,8 +365,7 @@ void setup() {
   };
   //     compass.read();
   //    refAccX=abs(compass.a.x)*1.1;
-  EchoServoAlign(90);                               // adjust servo motor to center position
-  northOrientation = NorthOrientation();            // added 24/10/2016
+  // northOrientation = NorthOrientation();            // added 24/10/2016
 }
 
 void loop() {
@@ -446,7 +447,7 @@ void loop() {
   // *** end of loop refresh LED
 
   // *** actions loops
-  if (reboot == false && appStat != 0xff)         //  wait reboot complete to act
+  if (rebootPhase == 0 && appStat != 0xff)         //  wait reboot complete to act
   {
 
     // *** checking resqueted actions
@@ -833,7 +834,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   }
 }
 
-void IncServo(int sens) {   // increase servo motor position depending on sens value
+void IncServo(int sens, int waitDuration) {  // increase servo motor position depending on sens value
   valAng = IncPulse(sens ); // compute servo motor value depending on sens value
   myservo.attach(servoPin);
   //  delay(100);
@@ -842,8 +843,9 @@ void IncServo(int sens) {   // increase servo motor position depending on sens v
   Serial.println(valAng);
 #endif
   myservo.write(valAng + shiftPulse);  // move servo motor
-  delay(1000);              // wait to be sure the servo reach the target position
+  delay(waitDuration);              // wait to be sure the servo  get the order
   myservo.detach();
+  delay(100);                      // wait to be sure the servo reach the position
 }
 int IncPulse(int sens) { // compute servo motor value depending on sens
   pulseNumber = pulseNumber + sens;    //
@@ -993,7 +995,10 @@ void ScanPosition() {
     switchFB = 0;
     distBSav = ScanOnceBack(numStep);
     SendScanResultSerial(distFSav, distBSav);
-    IncServo(1);
+    if (numStep < abs(nbSteps) - 1)
+    {
+      IncServo(1, 200);
+    }
     numStep = numStep + 1;
   }
 
@@ -1015,8 +1020,9 @@ int ScanOnceFront(int numStep)
 {
   int distF = PingFront();
 
-  AngleRadian = (pulseValue[(pulseNumber) % nbPulse] - pulseValue[0]) * coefAngRef;
-  AngleDegre = (AngleRadian / PI) * 180;
+  //  AngleRadian = (pulseValue[(pulseNumber) % nbPulse] - pulseValue[0]) * coefAngRef;
+  //  AngleDegre = (AngleRadian / PI) * 180;
+  AngleDegre = (pulseValue[(pulseNumber) % nbPulse]);
 #if defined(debugScanOn)
   Serial.print(" ");
   Serial.print(AngleDegre);
@@ -1030,8 +1036,9 @@ int ScanOnceBack(int numStep)
 {
   int distB = PingBack();
   trameNumber = trameNumber + 1;
-  AngleRadian = (pulseValue[(pulseNumber) % nbPulse] - pulseValue[0]) * coefAngRef;
-  AngleDegre = AngleRadian / PI * 180;
+  // AngleRadian = (pulseValue[(pulseNumber) % nbPulse] - pulseValue[0]) * coefAngRef;
+  //  AngleDegre = AngleRadian / PI * 180;
+  AngleDegre = (pulseValue[(pulseNumber) % nbPulse]);
   // Serial.print(AngleRadian);
   //  Serial.print(";");
 #if defined(debugScanOn)
@@ -1597,16 +1604,16 @@ void EchoServoAlign(uint8_t angle)    // to align echo servo motor with robot
 {
   AngleDegre = angle;
   myservo.attach(servoPin);
-  unsigned int value = map(angle, 0, 180, pulseValue[0],  pulseValue[nbPulse - 1]);
+  // unsigned int value = map(angle, 0, 180, pulseValue[0],  pulseValue[nbPulse - 1]);
 
 #if(debugScanOn)
   Serial.print("servo align:");
   //  Serial.println(pulseValue[(nbPulse - 1) / 2]);
-  Serial.println(value);
+  Serial.println(AngleDegre);
 #endif
   //  myservo.write(pulseValue[(nbPulse - 1) / 2]);  // select the middle of the pulse range
-  myservo.write(value + shiftPulse);
-  delay(1500);
+  myservo.write(AngleDegre + shiftPulse);
+  delay(750);
   myservo.detach();
   SendEndAction(servoAlignEnded, 0x00);
 }
@@ -2140,25 +2147,40 @@ void CheckBeforeStart()
 
 void CheckEndOfReboot()  //
 {
-  if (reboot == true && millis() > rebootDuration)  // end of arduino reboot
+  if (rebootPhase == 3 && millis() > rebootDuration) // end of arduino reboot
   {
-    diagRobot = 0x00;
-    reboot = false;
-    waitFlag = 0x00;
-    appStat = 0x00;
-    Horn(true, 250);
+    Serial.println("reboot phase:3");
     EchoServoAlign(90);                               // adjust servo motor to center position
-    delay(1500);
+    delay(1000);
     northOrientation = NorthOrientation();            // added 24/10/2016
     PingFrontBack();
+    rebootPhase = 2;
+    Serial.println("reboot phase:2");
+  }
+  if (rebootPhase == 2 && millis() > rebootDuration + 5000) // end of arduino reboot
+  {
+    northOrientation = NorthOrientation();            // added 24/10/2016
+    PingFrontBack();
+    rebootPhase = 1;
+    Serial.println("reboot phase:1");
+  }
+  if (rebootPhase == 1 && millis() > rebootDuration + 7000) // end of arduino reboot
+  {
+    diagRobot = 0x00;
+    waitFlag = 0x00;
+    appStat = 0x00;
+    PingFrontBack();
+    Horn(true, 250);
+    rebootPhase = 0;
+    Serial.println("reboot completed");
   }
 }
 
 void obstacleInterrupt()        // Obstacles detection system set a softare interrupt due to threshold reaching
 {
   obstacleDetectionCount++;
-  uint8_t echoID = echo.GetAlertEchoNumber();
-  unsigned int obstacleDistance = echo.GetDistance(echoID);
+  volatile uint8_t echoID = echo.GetAlertEchoNumber();
+  volatile unsigned int obstacleDistance = echo.GetDistance(echoID);
 #if defined(debugObstacleOn)
   Serial.print("obstacle a:");
   Serial.println(obstacleDistance);
