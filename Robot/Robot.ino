@@ -1,34 +1,40 @@
 /*
+   v2 a nano added as sensor subsytem for gyroscope
+
    release notes
    //    StartEchoInterrupt(doEchoFront, distF , doEchoBack, distB ); provisoirement mis en commentaire
    //    Debuguer restart apres detection  obstacle
    en effet si obstacle on envoie end move mais le mouvement reprend ensuite avec un nouveau endmove alors qu'entre temps octave a valider la position
+
 */
 
-String Version = "RobotV1";
+String Version = "RobotV2";
 // uncomment #define debug to get log on serial link
-#define debugScanOn true
+//#define debugScanOn true
 //#define debugMoveOn true
 //#define debugObstacleOn true
 //#define debugLocalizationOn true
 //#define debugMagnetoOn true
 //#define debugMotorsOn true
-#define debugWheelControlOn true
-#define wheelEncoderDebugOn true
+//#define debugWheelControlOn true
+//#define wheelEncoderDebugOn true
 //#define debugConnection true
 //#define debugPowerOn true
 //#define debugLoop true
 //#define servoMotorDebugOn true
 //#define servoMotorDebugOn true
+#define debugGyroscopeOn true
+#define I2CSlaveMode true
 #include <Servo.h>  // the servo library use timer 5 with atmega
 #include <math.h>
 #include <EEPROM.h>  // 
 //#include <Stepper.h>
 #include <SoftwareSerial.h>
-#include <EchoObstacleDetection.h>
-#include <WheelControl.h>
 #include <Wire.h>        // for accelerometer
 #include <LSM303.h>     // for accelerometer
+#include <EchoObstacleDetection.h>
+#include <WheelControl.h>
+#include <ApeRobotSensorSubsytemDefine.h>
 #include <NewPing.h>
 Servo myservo;  // create servo object to control a servo
 
@@ -93,7 +99,7 @@ Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLef
 unsigned int rightMotorPWM = 200;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define iRightSlowPWM 110  // PMW value to slowdown motor at the end of the run
 //#define iRightRotatePWM 170   // PMW value
-#define rightRotatePWMRatio 0.8    // 
+#define rightRotatePWMRatio 0.9    // 
 #define pendingRightMotor 1    // define pendingAction bit used for right motor
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPWM); // define right Motor
 float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
@@ -185,6 +191,17 @@ int targetAfterNORotation = 0;
 #define compassMax1 +1502
 #define compassMax2 +497
 #define compassMax3 -2560
+/*
+   gyroscope
+*/
+boolean gyroCalibrationOk = false;
+uint8_t inputData[256];
+uint8_t slaveAddress = robotI2CAddress;
+long OutputRobotRequestPinTimer;
+uint8_t outData[pollResponseLenght] = {slaveAddress, 0x00, 0x00, 0x00};
+#define maxGyroscopeHeadings 100
+int gyroscopeHeading[maxGyroscopeHeadings];
+uint8_t gyroscopeHeadingIdx = 0x00;
 
 //-- scan control --
 #define servoPin 6    //  servo motor Pin (28)
@@ -275,7 +292,7 @@ unsigned long timeLoop;  // cycle demande heure
 //-- robot status & diagnostics
 volatile uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
 uint8_t diagPower = 0x00;   // bit 0 power1, 1 power2, 2 power3 0 Ok 1 Ko
-uint8_t diagConnection = 0x01;   // bit 0 pending serial link
+uint8_t diagConnection = 0x03;   // bit 0 pending serial link bit 1 pending I2C
 uint8_t diagRobot = 0xff;     // to be cleared after complete reboot
 uint8_t toDo = 0x00;          // flag kind of move to do
 volatile uint8_t waitFlag = 0xff;     // used to pause and waiting before starting
@@ -341,14 +358,27 @@ void setup() {
   pinMode(hornPin, OUTPUT);
   pinMode(power1Value, INPUT);
   pinMode(power2Value, INPUT);
+  pinMode(RobotOutputRobotRequestPin, OUTPUT);
+  digitalWrite(RobotOutputRobotRequestPin, LOW);
   digitalWrite(hornPin, LOW);
   digitalWrite(blueLed, HIGH);
   digitalWrite(yellowLed, HIGH);
   digitalWrite(greenLed, LOW);
   digitalWrite(redLed, HIGH);
+  Serial.println("Start I2C");
+#if defined(I2CSlaveMode)
+  Wire.begin(slaveAddress);                // join i2c bus with address #8
+  Wire.onReceive(receiveEvent); // register event
+  Wire.onRequest(requestEvent); // register event
+  Serial.println("starting I2C slave mode");
+  pinMode(RobotOutputRobotRequestPin, OUTPUT);
+  digitalWrite(RobotOutputRobotRequestPin, LOW);
+#else
   Wire.begin();
   compass.init();
   compass.enableDefault();
+#endif
+  Serial.println("I2C ready");
   /*
     compass.m_min = (LSM303::vector<int16_t>) {   // compass calibration
     -3076, -3378, -2796
@@ -357,12 +387,15 @@ void setup() {
     +2654, +2189, +2991
     };
   */
+#if defined(I2CSlaveMode)
+#else
   compass.m_min = (LSM303::vector<int16_t>) {   // compass calibration
     compassMin1, compassMin2, compassMin3
   };
   compass.m_max = (LSM303::vector<int16_t>) {
     compassMax1, compassMax2, compassMax3
   };
+#endif
   //     compass.read();
   //    refAccX=abs(compass.a.x)*1.1;
   // northOrientation = NorthOrientation();            // added 24/10/2016
@@ -378,7 +411,10 @@ void loop() {
   }
 #endif
   CheckEndOfReboot();                      // check for reboot completion
-
+  if (millis() - OutputRobotRequestPinTimer >= minimumDurationBeetwenPolling / 2)
+  {
+    digitalWrite(RobotOutputRobotRequestPin, LOW);
+  }
   // ***  keep in touch with the server
   int getSerial = Serial_have_message();  // check if we have received a message
   if (getSerial > 0)                      // we got a message
@@ -413,7 +449,7 @@ void loop() {
   }
   if (millis() - timeReceiveSerial >= 30000)     // 30 seconds without receiving data from the server
   {
-    bitWrite(diagConnection, 1, 0);       // conection broken
+    bitWrite(diagConnection, diagConnectionIP, 1);       // conection broken
   }
 
   if (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66)  // alternatively send status and power to the server
@@ -556,7 +592,7 @@ void loop() {
 }
 void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   //  Serial.println("serialInput");
-  bitWrite(diagConnection, 0, 0);       // connection is active
+  bitWrite(diagConnection, diagConnectionIP, 0);      // connection is active
   timeReceiveSerial = millis();         // reset check receive timer
   switch (cmdInput) {                   // first byte of input is the command type
     case 0x3a: // commande : power on/off encoder
@@ -615,6 +651,36 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         SendPWMValues();
         break;
       }
+    case 0x41: // commande : set gyro selected range
+      {
+        Serial.print("commande : set gyro selected range :");
+        Serial.println(DataInSerial[3], HEX);
+        SetGyroSelectedRange(DataInSerial[3]);
+        break;
+      }
+    case 0x42: // commande : set gyro ODR
+      {
+        Serial.print("commande : set gyro ODR :");
+        Serial.println(DataInSerial[3], HEX);
+        SetGyroODR(DataInSerial[3]);
+        break;
+      }
+    case 0x43: // commande : read subsytem register
+      {
+        Serial.print("commande : read subsytem register:");
+        Serial.print(DataInSerial[3], HEX);
+        Serial.print("-");
+        uint8_t registers[5];
+        for (int i = 0; i < 5; i++)
+        {
+          registers[i] = DataInSerial[i + 4];
+          Serial.print(registers[i], HEX);
+          Serial.print(".");
+        }
+        Serial.println();
+        GetSubsystemRegister(DataInSerial[3], registers);
+        break;
+      }
     case 0x4f: // commande O obstacle detection
       Serial.print("commande O obstacle detection:");
       obstacleDetectionOn = (DataInSerial[3]); // 1 on 0 off
@@ -651,16 +717,22 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       Serial.println("cmd start");
       appStat = 0x00;
       resetStatus(0xff);     // reset all
+      ResetGyroscopeHeadings();
+      GyroStartInitMonitor();
       SendStatus();
       break;
     case 0x72: // commande r menus reset
       Serial.print("cmd reset:");
       Serial.println(DataInSerial[3], HEX);
+      ResetGyroscopeHeadings();
+      GyroStartInitMonitor();
       resetStatus(DataInSerial[3]); // reset according to data receveid
       SendStatus();
       break;
     case 0x77: // commande w means calibrate wheels
       Serial.println("calibrate");
+      ResetGyroscopeHeadings();
+      GyroStartInitMonitor();
       CalibrateWheels();
       break;
     case 0x65: // commande e server request for robot status
@@ -711,6 +783,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case 0x67: // commande goto X Y position
       {
+        ResetGyroscopeHeadings();
+        GyroStartInitMonitor();
         int reqX = DataInSerial[4] * 256 + DataInSerial[5];
         moveForward = true;           // goto forward
         if (DataInSerial[3] == 0x2d) {
@@ -739,6 +813,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case 0x6d: // commande m means move
       if (appStat != 0xff)
       {
+        ResetGyroscopeHeadings();
+        GyroStartInitMonitor();
         appStat = appStat & 0x1f;
         actStat = 0x68; // moving
         toDo = 0x00;
@@ -783,6 +859,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case 0x45: // E north align
       {
+        ResetGyroscopeHeadings();
+        GyroStartInitMonitor();
         unsigned int reqN = DataInSerial[3] * 256 + DataInSerial[4];
 
 #if defined(debugConnection)
@@ -817,6 +895,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case 0x6e: // r rotate VS north
       {
+        ResetGyroscopeHeadings();
+        GyroStartInitMonitor();
         unsigned int reqN = DataInSerial[3] * 256 + DataInSerial[4];
 
 #if defined(debugConnection)
@@ -850,7 +930,6 @@ void IncServo(int sens, int waitDuration) {  // increase servo motor position de
 int IncPulse(int sens) { // compute servo motor value depending on sens
   pulseNumber = pulseNumber + sens;    //
   return (pulseValue[(pulseNumber) % nbPulse]) ;
-
 }
 int PingFront() {               // ping echo front
   int cm;
@@ -1055,6 +1134,7 @@ int ScanOnceBack(int numStep)
 void Move(int orientation, int lenghtToDo)
 {
   //  deltaNORotation = 0;
+  //  GyroGetHeadingRegisters();
   NOBeforeRotation = 0;
   NOAfterRotation = 0;
   NOBeforeMoving = 0;
@@ -1071,6 +1151,7 @@ void Move(int orientation, int lenghtToDo)
   }
 }
 void Rotate( int orientation) {
+  //  GyroGetHeadingRegisters();
   // EchoServoAlign();
   // trigCurrent = trigFront;
   // trigBoth = true;         // need to scan front and back during rotation for obstacle detection
@@ -1116,6 +1197,8 @@ void Rotate( int orientation) {
 }
 
 void MoveForward(int lengthToDo ) {
+  //  GyroGetHeadingRegisters();
+  delay(10);
   EchoServoAlign(90);
   NOBeforeMoving = NorthOrientation();
   bitWrite(toDo, toDoStraight, false);       // position bit toDo move
@@ -1271,6 +1354,7 @@ void PowerCheck()
 
 void startMotors()
 {
+  GyroGetHeadingRegisters();
   digitalWrite(encoderPower, HIGH);
   currentLeftWheelThreshold = iLeftCentiRevolutions;
   currentRightWheelThreshold = iRightCentiRevolutions;
@@ -1298,7 +1382,7 @@ void startMotors()
 
 void pulseMotors(unsigned int pulseNumber)
 {
-
+  GyroGetHeadingRegisters();
   // bitWrite(pendingAction, pendingLeftMotor, true);
   //  bitWrite(pendingAction, pendingRightMotor, true);
 #if defined(debugMotorsOn)
@@ -1383,6 +1467,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     rightMotor.StopMotor();
     timeMotorStarted = 0;
     delay(100);
+    GyroGetHeadingRegisters();
     StopEchoInterrupt(true, true);                    // stop obstacles detection
     Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
     digitalWrite(encoderPower, LOW);
@@ -1705,6 +1790,7 @@ void SendStatus()
   PendingDataReqSerial[3] = diagPower;
   PendingDataReqSerial[4] = 0x00; // no more than 3 conscutives non asccii bytes
   PendingDataReqSerial[5] = diagMotor;
+  bitWrite(diagConnection, diagConnectionI2CReady, !digitalRead(RobotInputReadyPin));
   PendingDataReqSerial[6] = diagConnection;
   PendingDataReqSerial[7] = diagRobot;
   if (posX >= 0)
@@ -1849,6 +1935,7 @@ void StopAll()
   myservo.detach();
   StopEchoInterrupt(true, true);
   Wheels.StopWheelControl(true, true, 0, 0);
+  GyroGetHeadingRegisters();
   digitalWrite(encoderPower, LOW);
   detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
   pinMode(wheelPinInterrupt, INPUT);
@@ -1966,6 +2053,7 @@ void PauseMove()                  //
   }
 #endif
   delay(100);
+  GyroGetHeadingRegisters();
   pauseLeftWheelInterrupt = currentLeftWheelThreshold - Wheels.GetCurrentHolesCount(leftWheelId);
   pauseRightWheelInterrupt = currentRightWheelThreshold - Wheels.GetCurrentHolesCount(rightWheelId);
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
@@ -2157,18 +2245,20 @@ void CheckEndOfReboot()  //
     rebootPhase = 2;
     Serial.println("reboot phase:2");
   }
-  if (rebootPhase == 2 && millis() > rebootDuration + 5000) // end of arduino reboot
+  if (rebootPhase == 2 && digitalRead(RobotInputReadyPin) == 1 && millis() > rebootDuration + 5000) // end of arduino reboot
   {
     northOrientation = NorthOrientation();            // added 24/10/2016
     PingFrontBack();
     rebootPhase = 1;
+    CalibrateGyro();
     Serial.println("reboot phase:1");
   }
-  if (rebootPhase == 1 && millis() > rebootDuration + 7000) // end of arduino reboot
+  if (rebootPhase == 1 && gyroCalibrationOk && millis() > rebootDuration + 7000) // end of arduino reboot
   {
     diagRobot = 0x00;
     waitFlag = 0x00;
     appStat = 0x00;
+    bitWrite(diagConnection, diagConnectionI2C, 0);
     PingFrontBack();
     Horn(true, 250);
     rebootPhase = 0;
@@ -2222,6 +2312,7 @@ void WheelThresholdReached( uint8_t wheelId)
     timeMotorStarted = 0;
     StopEchoInterrupt(true, true);                    // stop obstacles detection
     delay(200);                                       // wait a little for robot intertia
+    GyroGetHeadingRegisters();
     Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
     detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
     pinMode(wheelPinInterrupt, INPUT);
@@ -2340,6 +2431,7 @@ void WheelThresholdReached( uint8_t wheelId)
     leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
     rightMotor.StopMotor();                            // stop the other motor to avoid to turn round
     timeMotorStarted = 0;
+    GyroGetHeadingRegisters();
   }
 }
 
@@ -2358,6 +2450,7 @@ void CalibrateWheels()           // calibrate encoder levels and leftToRightDyna
   leftMotor.StopMotor();                          // stop the other motor to avoid to turn round
   StopEchoInterrupt(true, true);                    // stop obstacles detection
   delay(200);                                       // wait a little for robot intertia
+  GyroGetHeadingRegisters();
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
   digitalWrite(encoderPower, LOW);
   detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
@@ -2449,14 +2542,19 @@ void Horn(boolean hornOn, unsigned int hornDuration)  //
 
 int NorthOrientation()
 {
+#if defined(I2CSlaveMode)
+  return 0;
+#else
   compass.read();
   float northOrientation = compass.heading();
 #if defined(debugMagnetoOn)
   Serial.print(" magneto orientation: ");
   Serial.println(northOrientation);
 #endif
+
   saveNorthOrientation = int(northOrientation);
   return saveNorthOrientation;
+#endif
 }
 
 #define minAlign 7
@@ -2543,6 +2641,17 @@ void northAlign(unsigned int northAlignShift)
 }
 void SendEndAction(int action, uint8_t retCode)
 {
+#if defined(debugGyroscopeOn)
+  Serial.print("gyroscope data:");
+  for (int i = 0; i < gyroscopeHeadingIdx; i++)
+  {
+    Serial.print(gyroscopeHeading[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+
+#endif
+  //  GetHeadingRegisters();
   int northOrientation = NorthOrientation();
   int deltaNORotation = NOBeforeRotation - NOAfterRotation;
   int deltaNOMoving = NOBeforeMoving - NOAfterMoving;
@@ -2553,9 +2662,11 @@ void SendEndAction(int action, uint8_t retCode)
   PendingDataReqSerial[2] = 0x01;
   PendingDataReqSerial[3] = actStat;
   PendingDataReqSerial[4] = retCode;
+
   PendingDataReqSerial[5] = 0x00;
   PendingDataReqSerial[6] = uint8_t(northOrientation / 256);
   PendingDataReqSerial[7] = uint8_t(northOrientation);
+
   if (posX >= 0)
   {
     PendingDataReqSerial[8] = 0x2b;
@@ -2598,6 +2709,19 @@ void SendEndAction(int action, uint8_t retCode)
   }
   PendingDataReqSerial[18] = uint8_t(abs(deltaNORotation) / 256);
   PendingDataReqSerial[19] = uint8_t(abs(deltaNORotation));
+
+#if defined(I2CSlaveMode)
+  if (gyroscopeHeading[gyroscopeHeadingIdx] >= 0)
+  {
+    PendingDataReqSerial[20] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[20] = 0x2d;
+  }
+  PendingDataReqSerial[21] = uint8_t(abs(gyroscopeHeading[gyroscopeHeadingIdx]) / 256);
+  PendingDataReqSerial[22] = uint8_t(abs(gyroscopeHeading[gyroscopeHeadingIdx]));
+#else
   if (deltaNOMoving >= 0)
   {
     PendingDataReqSerial[20] = 0x2b;
@@ -2608,6 +2732,7 @@ void SendEndAction(int action, uint8_t retCode)
   }
   PendingDataReqSerial[21] = uint8_t(abs(deltaNOMoving) / 256);
   PendingDataReqSerial[22] = uint8_t(abs(deltaNOMoving));
+#endif
   // below dependin on actStat
   PendingDataReqSerial[23] = 0x2f;
   PendingDataReqSerial[24] = 0x00;
@@ -2675,6 +2800,363 @@ void resetStatus(uint8_t code)
 }
 
 
+void requestEvent() {
+#if defined(debugGyroscopeOn)
+  Serial.print("request event:");
+  Serial.print(inputData[0]);
+  Serial.print("-");
+  Serial.println(inputData[1]);
+#endif
+  //  if (inputData[0] == slaveAddress && inputData[1] == 0x01 && inputData[2] <= pollResponseLenght)
+  if (inputData[0] == slaveAddress  && inputData[2] <= pollResponseLenght)
+  {
+    Wire.write(outData, pollResponseLenght);
+    delay(1);
+    InitOutData();
+  }
+}
 
+void receiveEvent(int howMany) {
+
+  //  Serial.println(howMany);
+  int receivedCount = 0;
+  Serial.print("receive event: ");
+  while (Wire.available()) { // loop through all but the last
+    inputData[receivedCount] = Wire.read(); // receive byte as a character
+#if defined(debugGyroscopeOn)
+    Serial.print(inputData[receivedCount], HEX);        // print the character
+    Serial.print("-");
+#endif
+    receivedCount++;
+  }
+  //   digitalWrite(OutputRobotRequestPin, LOW);
+#if defined(debugGyroscopeOn)
+  Serial.println();
+#endif
+  /*
+     decode received frame
+  */
+  uint8_t cmd = inputData[1];
+  uint8_t  receivedNumber = inputData[2];
+  uint8_t receivedRegister[15];
+  digitalWrite(RobotOutputRobotRequestPin, LOW);
+  switch (cmd)
+  {
+    case idleRequest:
+      {
+#if defined(debugGyroscopeOn)
+        if (bitRead(inputData[2], monitGyroStatusBit) == 1)
+        {
+          Serial.print("Giro ");
+        }
+        if (bitRead(inputData[2], monitMagnetoStatusBit) == 1)
+        {
+          Serial.print("Magneto ");
+        }
+        if (bitRead(inputData[2], monitMagnetoStatusBit) == 1 || bitRead(inputData[2], monitMagnetoStatusBit) == 1)
+        {
+          Serial.println(("on"));
+        }
+#endif
+        break;
+      }
+    case readRegisterResponse:
+      {
+        for (int i = 0; i < receivedNumber; i++)
+        {
+          receivedRegister[i] = inputData[2 * i + 3];
+        }
+        switch (receivedNumber)
+        {
+          case (3):
+            {
+              boolean trameOk = true;
+              for (int i = 0; i < sizeof(headingResponse); i++)
+              {
+                if (receivedRegister[i] != headingResponse[i])
+                {
+                  trameOk = false;
+                }
+                if (trameOk == false)
+                {
+                  break;
+                }
+              }
+              if (trameOk)
+              {         
+                if (inputData[3] == headingResponse[0] && inputData[5] == headingResponse[1] && inputData[7] == headingResponse[2])
+                {
+                  int relativeHeading = inputData[6] * 256 + inputData[8];
+                  if (inputData[4] == 0x01)
+                  {
+                    relativeHeading = -relativeHeading;
+                  }
+                  gyroscopeHeadingIdx++;
+                  gyroscopeHeading[(gyroscopeHeadingIdx) % maxGyroscopeHeadings] = relativeHeading;
+
+#if defined(debugGyroscopeOn)
+                  Serial.print("heading:");
+                  Serial.println(relativeHeading);
+#endif
+                }
+              }
+              break;
+            }
+          case (2):
+            {
+              boolean trameNO = false;
+              boolean trameBeforeNO = false;
+              boolean trameAfterNO = false;
+              for (int i = 0; i < sizeof(NOResponse); i++)
+              {
+                if (receivedRegister[i] == NOResponse[i])
+                {
+                  trameNO = true;
+                }
+              }
+              for (int i = 0; i < sizeof(beforeNOResponse); i++)
+              {
+                if (receivedRegister[i] == beforeNOResponse[i])
+                {
+                  trameBeforeNO = true;
+                }
+              }
+              for (int i = 0; i < sizeof(afterNOResponse); i++)
+              {
+                if (receivedRegister[i] == afterNOResponse[i])
+                {
+                  trameAfterNO = true;
+                }
+              }
+              if (trameNO)
+              {
+                Serial.print("NO:");
+              }
+              if (trameBeforeNO)
+              {
+                Serial.print("before NO:");
+              }
+              if (trameAfterNO)
+              {
+                Serial.print("after NO:");
+              }
+              int NO = inputData[4] * 256 + inputData[6];
+              Serial.println(NO);
+              break;
+
+            }
+          case (4):
+            {
+              boolean trameBeforeAfterNO = false;
+              for (int i = 0; i < sizeof(beforeAfterNOResponse); i++)
+              {
+                if (receivedRegister[i] == beforeAfterNOResponse[i])
+                {
+                  trameBeforeAfterNO = true;
+                }
+              }
+              if (trameBeforeAfterNO)
+              {
+                Serial.print("before NO:");
+                int NO = inputData[4] * 256 + inputData[6];
+                Serial.print(NO);
+                Serial.print(" after NO:");
+                NO = inputData[8] * 256 + inputData[10];
+                Serial.println(NO);
+              }
+              break;
+
+            }
+          default:
+            {
+              break;
+            }
+        }
+      default:
+        {
+          break;
+        }
+      }
+
+    case (calibrateGyro):
+      {
+        gyroCalibrationOk = true;
+#if defined(debugGyroscopeOn)
+        Serial.println("gyro calibration ok");
+#endif
+        break;
+      }
+  }
+}
+
+/*
+  void readParameters(uint8_t number, uint8_t list[maxReadParamtersList])
+  {
+  number = min(number, maxReadParamtersList);
+  //     Wire.beginTransmission(4);
+  Wire.write("2", 1);             // sends one byte
+  }
+*/
+void GyroResetRegisters()
+{
+  uint8_t registers[maxRegsNumberUpdate];
+  uint8_t registersValues[maxRegsNumberUpdate];
+  SubsystemSetRegisters(0xff, registers, registersValues);
+  RequestForPolling();
+}
+void GyroSetPollingRegister(int cycleValue)
+{
+  uint8_t reg[maxRegsNumberUpdate];
+  reg[0] = robotPollingTimer_Reg1;
+  reg[1] = robotPollingTimer_Reg2;
+  uint8_t regVal[maxRegsNumberUpdate];
+
+  regVal[0] =  (cycleValue / 256);
+  regVal[1] =  (cycleValue);
+  // robotPollingTimer_Reg1 = (cycleValue / 256);
+  SubsystemSetRegisters(2, reg, regVal);
+  RequestForPolling();
+}
+void SubsystemReadRegisters(uint8_t number, uint8_t registers[maxRegsNumberRead])
+{
+  InitOutData();
+  outData[1] = readRegisterRequest;
+  outData[2] = number;                 // nb register to read
+  outData[3] = registers[0];
+  outData[4] = registers[1];
+  outData[5] = registers[2];
+  outData[6] = registers[3];
+  outData[7] = registers[4];
+  outData[8] = registers[5];
+  RequestForPolling();
+}
+void SubsystemSetRegisters(uint8_t number, uint8_t registers[3], uint8_t registersValues[3])
+{
+  InitOutData();
+  outData[1] = setRegisterRequest;
+  outData[2] = number;                 // nb register to read
+  outData[3] = registers[0];
+  outData[4] = registersValues[0];
+  outData[5] = registers[1];
+  outData[6] = registersValues[1];
+  outData[7] = registers[2];
+  outData[8] = registersValues[2];
+  RequestForPolling();
+}
+void GyroStartMonitor()
+{
+  InitOutData();
+  outData[1] = startMonitorGyro;
+  RequestForPolling();
+
+}
+void GyroStartInitMonitor()
+{
+  InitOutData();
+  outData[1] = startInitMonitorGyro;
+  RequestForPolling();
+}
+void GyroStopMonitor()
+{
+  InitOutData();
+  outData[1] = stopMonitorGyro;
+  RequestForPolling();
+}
+void GyroStopInitMonitor()
+{
+  InitOutData();
+  outData[1] = stopInitMonitorGyro;    RequestForPolling();
+  RequestForPolling();
+}
+void StartMagneto()
+{
+  InitOutData();
+  outData[1] = startMonitorMagneto;    RequestForPolling();
+  RequestForPolling();
+}
+void StopMagneto()
+{
+  InitOutData();
+  outData[1] = stopMonitorMagneto;    RequestForPolling();
+  RequestForPolling();
+}
+void CalibrateGyro()
+{
+  gyroCalibrationOk = false;
+  InitOutData();
+  outData[1] = calibrateGyro;
+  RequestForPolling();
+}
+void GyroGetHeadingRegisters()
+{
+  uint8_t reqRegisters[3] = {headingResponse[0], headingResponse[1], headingResponse[2]};
+  SubsystemReadRegisters(0x03, reqRegisters);          // read z registers
+  RequestForPolling();
+}
+void GetNorthOrientation()
+{
+  uint8_t reqRegisters[2] = {NOResponse[0], NOResponse[1]};
+  SubsystemReadRegisters(0x02, reqRegisters);          // read z registers
+  RequestForPolling();
+}
+void GetBeforeNorthOrientation()
+{
+  uint8_t reqRegisters[2] = {beforeNOResponse[0], beforeNOResponse[1]};
+  SubsystemReadRegisters(0x02, reqRegisters);          // read z registers
+  RequestForPolling();
+}
+void GetAfterNorthOrientation()
+{
+  uint8_t reqRegisters[2] = {afterNOResponse[0], afterNOResponse[1]};
+  SubsystemReadRegisters(0x02, reqRegisters);          // read z registers
+  RequestForPolling();
+}
+void GetBeforeAfterNorthOrientation()
+{
+  uint8_t reqRegisters[4] = {beforeNOResponse[0], beforeNOResponse[1], afterNOResponse[0], afterNOResponse[1]};
+  SubsystemReadRegisters(0x04, reqRegisters);          // read z registers
+  RequestForPolling();
+}
+void RequestForPolling()
+{
+  digitalWrite(RobotOutputRobotRequestPin, HIGH);
+  OutputRobotRequestPinTimer = millis();
+}
+
+void InitOutData()
+{
+  outData[0] = slaveAddress;
+  outData[1] =  idleRequest;
+  for (int i = 2; i < pollResponseLenght; i++)
+  {
+    outData[i] = 0x00;
+  }
+}
+void ResetGyroscopeHeadings()
+{
+  for (int i = 0; i < maxGyroscopeHeadings; i++)
+  {
+    gyroscopeHeading[i] = 0;
+  }
+  gyroscopeHeadingIdx = 0x00;
+}
+void SetGyroSelectedRange(uint8_t value)
+{
+  InitOutData();
+  outData[1] = setGyroSelectedRange;
+  outData[2] = value;
+  RequestForPolling();
+}
+void SetGyroODR(uint8_t value)
+{
+  InitOutData();
+  outData[1] = setGyroODR;
+  outData[2] = value;
+  RequestForPolling();
+}
+void GetSubsystemRegister(uint8_t number, uint8_t value[5])
+{
+  SubsystemReadRegisters(number, value);
+}
 
 
