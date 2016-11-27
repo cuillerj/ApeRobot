@@ -681,6 +681,25 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         GetSubsystemRegister(DataInSerial[3], registers);
         break;
       }
+    case 0x44: // commande : set subsystem registers
+      {
+        uint8_t registers[3];
+        uint8_t registersValues[3];
+        Serial.print("commande : set GyroBiasMicrosec:");
+        Serial.print(DataInSerial[3], HEX);
+        Serial.print(" ");
+        for (int i = 0; i < DataInSerial[3]; i++)
+        {
+          Serial.print(DataInSerial[i + 4]);
+          Serial.print("=");
+          Serial.print(DataInSerial[i + 5]);
+          registers[i] = DataInSerial[i + 4];
+          registersValues[i] = DataInSerial[i + 5];
+        }
+        Serial.println();
+        SubsystemSetRegisters(max(DataInSerial[3], 3), registers, registersValues);
+        break;
+      }
     case 0x4f: // commande O obstacle detection
       Serial.print("commande O obstacle detection:");
       obstacleDetectionOn = (DataInSerial[3]); // 1 on 0 off
@@ -1927,6 +1946,19 @@ void SendPWMValues()
   PendingDataReqSerial[6] = uint8_t(rightMotorPWM );
   PendingDataLenSerial = 0x07; // 6 longueur mini max 25  pour la gateway
 }
+void  SendUDPSubsystemRegister(uint8_t receivedRegister[5], uint8_t receivedValue[5])
+{
+  PendingReqSerial = PendingReqRefSerial;
+  PendingDataReqSerial[0] = 0x74; //
+  PendingDataReqSerial[1] = 0x05;   // paramters number
+  for (int i = 0; i < 5; i++)
+  {
+    PendingDataReqSerial[2 + 3*i] = receivedRegister[i];
+    PendingDataReqSerial[3 + 3*i] = receivedValue[i];
+    PendingDataReqSerial[4 + 3*i] = 0x00;
+  }
+  PendingDataLenSerial = 0x12; // 6 longueur mini max 25  pour la gateway
+}
 void StopAll()
 {
   leftMotor.StopMotor();
@@ -2883,22 +2915,19 @@ void receiveEvent(int howMany) {
                 }
               }
               if (trameOk)
-              {         
-                if (inputData[3] == headingResponse[0] && inputData[5] == headingResponse[1] && inputData[7] == headingResponse[2])
+              {
+                int relativeHeading = inputData[6] * 256 + inputData[8];
+                if (inputData[4] == 0x01)
                 {
-                  int relativeHeading = inputData[6] * 256 + inputData[8];
-                  if (inputData[4] == 0x01)
-                  {
-                    relativeHeading = -relativeHeading;
-                  }
-                  gyroscopeHeadingIdx++;
-                  gyroscopeHeading[(gyroscopeHeadingIdx) % maxGyroscopeHeadings] = relativeHeading;
+                  relativeHeading = -relativeHeading;
+                }
+                gyroscopeHeadingIdx++;
+                gyroscopeHeading[(gyroscopeHeadingIdx) % maxGyroscopeHeadings] = relativeHeading;
 
 #if defined(debugGyroscopeOn)
-                  Serial.print("heading:");
-                  Serial.println(relativeHeading);
+                Serial.print("heading:");
+                Serial.println(relativeHeading);
 #endif
-                }
               }
               break;
             }
@@ -2966,6 +2995,16 @@ void receiveEvent(int howMany) {
               }
               break;
 
+            }
+          case (5):
+            {
+              uint8_t receivedValue[5];
+              for (int i = 0; i < 5; i++)
+              {
+                receivedValue[i] = inputData[2 * i + 4];
+              }
+              SendUDPSubsystemRegister(receivedRegister, receivedValue);
+              break;
             }
           default:
             {
@@ -3158,5 +3197,12 @@ void GetSubsystemRegister(uint8_t number, uint8_t value[5])
 {
   SubsystemReadRegisters(number, value);
 }
-
+void SetGyroBiasMicrosec(uint8_t registerValue)
+{
+  uint8_t registers[3];
+  uint8_t registersValues[3];
+  registers[0] = 0x18;
+  registersValues[0] = registerValue;
+  SubsystemSetRegisters(1, registers, registersValues);
+}
 
