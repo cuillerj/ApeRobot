@@ -3,6 +3,20 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   bitWrite(diagConnection, diagConnectionIP, 0);      // connection is active
   timeReceiveSerial = millis();         // reset check receive timer
   switch (cmdInput) {                   // first byte of input is the command type
+
+    case 0x2b: // commande + means scan 360
+      if (appStat != 0xff)
+      {
+        appStat = appStat & 0xf1;
+        Serial.println("Scan");
+        pulseNumber = 0;
+        InitScan(nbPulse, 0);
+        actStat = 0x66;
+        bitWrite(toDo, toDoScan, 1);       // position bit toDo scan
+        SendStatus();
+      }
+      //      SendRFNoSecured();
+      break;
     case 0x3a: // commande : power on/off encoder
       Serial.print("commande : power on/off encoder:");
       Serial.println(DataInSerial[3]);
@@ -108,68 +122,22 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         SubsystemSetRegisters(max(DataInSerial[3], 3), registers, registersValues);
         break;
       }
-    case 0x4f: // commande O obstacle detection
-      Serial.print("commande O obstacle detection:");
-      obstacleDetectionOn = (DataInSerial[3]); // 1 on 0 off
-      Serial.println(obstacleDetectionOn);
-      break;
-    case 0x53: // commande S align servo
-      Serial.println("align servo");
-      EchoServoAlign(DataInSerial[3]); // align according to data received - orientation in degres
-      break;
-    case 0x68: // commande h horn
+
+    case 0x45: // E north align
       {
-        Serial.println("horn");
-        unsigned int duration = DataInSerial[3];
-        Horn(true, duration * 1000);
+        ResetGyroscopeHeadings();
+        GyroStartInitMonitor();
+        unsigned int reqN = DataInSerial[3] * 256 + DataInSerial[4];
+
+#if defined(debugConnection)
+        Serial.print("north align:");
+        Serial.println(reqN);
+#endif
+        //       targetAfterNORotation= ((int) alpha + reqN) % 360;
+        targetAfterNORotation = 0;
+        northAlign(reqN);
         break;
       }
-    case 0x69: // commande i adujst shiftPulse
-      {
-        Serial.println("set shift pulse:");
-        shiftPulse = DataInSerial[3];
-        break;
-      }
-    case 0x70: // commande p ping front back
-      Serial.println("ping FB");
-      bitWrite(toDo, toDoPingFB, 1);
-      PingFrontBack(); //
-      break;
-    case 0x73: // commande s means stop
-      Serial.println("cmd stop");
-      ResetGyroscopeHeadings();
-      //    GyroStopInitMonitor();
-      StopAll();
-      SendStatus();
-      break;
-    case 0x78: // commande x menus start
-      Serial.println("cmd start");
-      appStat = 0x00;
-      resetStatus(0xff);     // reset all
-      ResetGyroscopeHeadings();
-      //     GyroStartInitMonitor();
-      SendStatus();
-      break;
-    case 0x72: // commande r menus reset
-      Serial.print("cmd reset:");
-      Serial.println(DataInSerial[3], HEX);
-      ResetGyroscopeHeadings();
-      GyroStopInitMonitor();
-      resetStatus(DataInSerial[3]); // reset according to data receveid
-      SendStatus();
-      break;
-    case 0x77: // commande w means calibrate wheels
-      Serial.println("calibrate");
-      ResetGyroscopeHeadings();
-      GyroStartInitMonitor();
-      CalibrateWheels();
-      break;
-    case 0x65: // commande e server request for robot status
-      if (actStat != 0x66)
-      {
-        SendStatus();                                     // send robot status to server
-      }
-      break;
     case 0x49: // commande I init robot postion
       posX = DataInSerial[4] * 256 + DataInSerial[5]; // received X cm position on 3 bytes including 1 byte for sign
       if (DataInSerial[3] == 0x2d) {                  // check sign + or -
@@ -187,6 +155,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       deltaPosX = 0;
       deltaPosY = 0;
       currentLocProb = DataInSerial[13];   // localisation probability
+      sendInfoSwitch = 1;                  // to force next sent info to be status
       SendStatus();
 #if defined(debugConnection)
       Serial.print("init X Y Alpha:");
@@ -197,19 +166,43 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       Serial.println(alpha);
 #endif
       break;
-    case 0x2b: // commande + means scan 360
-      if (appStat != 0xff)
-      {
-        appStat = appStat & 0xf1;
-        Serial.println("Scan");
-        pulseNumber = 0;
-        InitScan(nbPulse, 0);
-        actStat = 0x66;
-        bitWrite(toDo, toDoScan, 1);       // position bit toDo scan
-        SendStatus();
-      }
-      //      SendRFNoSecured();
+    case 0x4f: // commande O obstacle detection
+      Serial.print("commande O obstacle detection:");
+      obstacleDetectionOn = (DataInSerial[3]); // 1 on 0 off
+      Serial.println(obstacleDetectionOn);
       break;
+    case 0x53: // commande S align servo
+      Serial.println("align servo");
+      EchoServoAlign(DataInSerial[3]); // align according to data received - orientation in degres
+      break;
+    case 0x61: // we received a ack from the server
+      lastAckTrameNumber = DataInSerial[3];
+#if defined(debugConnection)
+      Serial.print("ack: ");
+      for (int i = 0; i < 5; i++)
+      {
+        Serial.print(DataInSerial[i], HEX);
+        Serial.print(":");
+      }
+      Serial.println();
+
+      //      Serial.print(":");
+      Serial.print(lastAckTrameNumber);
+      Serial.print(":");
+      Serial.println(trameNumber);
+#endif
+      if (lastAckTrameNumber <= trameNumber )
+      {
+        pendingAckSerial = 0x00;
+      }
+      break;
+    case 0x65: // commande e server request for robot status
+      if (actStat != 0x66)
+      {
+        SendStatus();                                     // send robot status to server
+      }
+      break;
+
     case 0x67: // commande goto X Y position
       {
         ResetGyroscopeHeadings();
@@ -237,6 +230,19 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         actStat = 0x68; // moving
         SendStatus();
         ResumeMove();
+        break;
+      }
+    case 0x68: // commande h horn
+      {
+        Serial.println("horn");
+        unsigned int duration = DataInSerial[3];
+        Horn(true, duration * 1000);
+        break;
+      }
+    case 0x69: // commande i adujst shiftPulse
+      {
+        Serial.println("set shift pulse:");
+        shiftPulse = DataInSerial[3];
         break;
       }
     case 0x6d: // commande m means move
@@ -286,42 +292,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 #endif
       }
       break;
-    case 0x45: // E north align
-      {
-        ResetGyroscopeHeadings();
-        GyroStartInitMonitor();
-        unsigned int reqN = DataInSerial[3] * 256 + DataInSerial[4];
 
-#if defined(debugConnection)
-        Serial.print("north align:");
-        Serial.println(reqN);
-#endif
-        //       targetAfterNORotation= ((int) alpha + reqN) % 360;
-        targetAfterNORotation = 0;
-        northAlign(reqN);
-        break;
-      }
-    case 0x61: // we received a ack from the server
-      lastAckTrameNumber = DataInSerial[3];
-#if defined(debugConnection)
-      Serial.print("ack: ");
-      for (int i = 0; i < 5; i++)
-      {
-        Serial.print(DataInSerial[i], HEX);
-        Serial.print(":");
-      }
-      Serial.println();
-
-      //      Serial.print(":");
-      Serial.print(lastAckTrameNumber);
-      Serial.print(":");
-      Serial.println(trameNumber);
-#endif
-      if (lastAckTrameNumber <= trameNumber )
-      {
-        pendingAckSerial = 0x00;
-      }
-      break;
     case 0x6e: // r rotate VS north
       {
         ResetGyroscopeHeadings();
@@ -348,18 +319,59 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         if (bitRead(DataInSerial[3], 7) == 1)    // means negative rotation
         {
           reqN = -reqN;
+          gyroInitRotationSens = -1;
         }
-
+        else
+        {
+          gyroInitRotationSens = 1;
+        }
         Serial.print("request gyro rotate:");
         Serial.println( reqN);
         timeGyroRotation = millis();
         gyroTargetRotation = reqN;
+        Serial.print("request gyro rotate:");
+        Serial.println( gyroTargetRotation);
         gyroRotationRetry = 0;
         //       uint8_t retCode = GyroscopeRotate();
         //        targetAfterGyroRotation = ((int) alpha + reqN) % 360;
         //       northAlign((NorthOrientation() - reqN + 360) % 360);
         break;
       }
+    case 0x70: // commande p ping front back
+      Serial.println("ping FB");
+      bitWrite(toDo, toDoPingFB, 1);
+      PingFrontBack(); //
+      break;
+    case 0x73: // commande s means stop
+      Serial.println("cmd stop");
+      ResetGyroscopeHeadings();
+      //    GyroStopInitMonitor();
+      StopAll();
+      SendStatus();
+      break;
+    case 0x72: // commande r menus reset
+      Serial.print("cmd reset:");
+      Serial.println(DataInSerial[3], HEX);
+      ResetGyroscopeHeadings();
+      GyroStopInitMonitor();
+      resetStatus(DataInSerial[3]); // reset according to data receveid
+      SendStatus();
+      break;
+    case 0x77: // commande w means calibrate wheels
+      Serial.println("calibrate");
+      ResetGyroscopeHeadings();
+      GyroStartInitMonitor();
+      CalibrateWheels();
+      break;
+    case 0x78: // commande x menus start
+      Serial.println("cmd start");
+      appStat = 0x00;
+      resetStatus(0xff);     // reset all
+      ResetGyroscopeHeadings();
+      //     GyroStartInitMonitor();
+      SendStatus();
+      break;
+
     default:
 
       Serial.print("commande recue: ");

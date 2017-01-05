@@ -33,7 +33,9 @@ String Version = "RobotV2";
 #include <LSM303.h>     // for accelerometer
 #include <EchoObstacleDetection.h>
 #include <WheelControl.h>
-#include <ApeRobotSensorSubsytemDefine.h>
+#define IMU true
+//#include <ApeRobotSensorSubsytemDefine.h>  // select to use a simple gyroscope
+#include <BNO055SubsystemCommonDefine.h>     // or select to use IMU 
 #include <NewPing.h>
 Servo myservo;  // create servo object to control a servo
 
@@ -67,8 +69,8 @@ int uRefMotorVoltage = 1200; // mVolt for maxRPM
 #define power1Value A13  // 9v power for motors
 #define power2Value A14  // 5v power for arduino mega
 //#define power3Value A15  // 12V power for esp8266 and components
-#define power1LowLimit 700   // minimum centi volt before warning
-#define power2LowLimit 480   // minimum centi volt before warning
+#define power1LowLimit 750   // minimum centi volt before warning
+#define power2LowLimit 475   // minimum centi volt before warning
 //#define power3LowLimit 750  // minimum centi volt before warning
 int power1Mesurt = 0;   // current power1 value
 int power2Mesurt = 0;   // current power2 value
@@ -197,7 +199,7 @@ int targetAfterNORotation = 0;
 /*
    gyroscope
 */
-boolean gyroCalibrationOk = false;
+boolean gyroCalibrationOk = true;
 uint8_t inputData[256];
 uint8_t slaveAddress = robotI2CAddress;
 long OutputRobotRequestPinTimer;
@@ -207,6 +209,8 @@ int gyroscopeHeading[maxGyroscopeHeadings];
 uint8_t gyroscopeHeadingIdx = 0x00;
 uint8_t gyroUpToDate = 0x00;
 uint8_t monitSubsystemStatus = 0x00;
+int prevGyroRotation = 0;
+uint8_t gyroInitRotationSens = 0x00;
 //-- scan control --
 #define servoPin 6    //  servo motor Pin (28)
 #define echoFront 19  // arduino pin for mesuring echo delay for front 
@@ -462,7 +466,7 @@ void loop() {
     bitWrite(diagConnection, diagConnectionIP, 1);       // conection broken
   }
 
-  if (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66)  // alternatively send status and power to the server
+  if (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66 && pendingAckSerial == 0x00) // alternatively send status and power to the server
   {
     //   Serial.println(leftMotor.CheckMotor(1, 1), HEX);
     if (sendInfoSwitch % 4 == 1)
@@ -616,7 +620,7 @@ void loop() {
   if (millis() - timeGyroRotation > 500 && bitRead(toDoDetail, toDoGyroRotation) == 1 && leftMotor.CheckMotor(1, 1) == 0 && rightMotor.CheckMotor(1, 1) == 0) //
   {
     timeGyroRotation = millis();
-    Serial.println("gyro rot");
+    Serial.println("loop gyro");
     if (gyroRotationRetry >= maxGyroRotationRetry)
     {
       Serial.println("gyro to many retry");
@@ -814,7 +818,7 @@ void PowerCheck()
   //  Serial.print("power1:");
   unsigned int power1 = analogRead(power1Value); // read power1 analog value and map to fit real voltage
   power1 = analogRead(power1Value);              // read twice to get a better value
-  power1Mesurt = (power1 * float (1010) / 1023);  // map to fit real voltage
+  power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
   if (power1Mesurt < power1LowLimit)                                    // check power voltage is over minimum threshold
   {
     bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
@@ -825,7 +829,7 @@ void PowerCheck()
   }
   unsigned int power2 = analogRead(power2Value); // read power1 analog value and map to fit real voltage
   power2 = analogRead(power2Value);               // read twice to get a better value
-  power2Mesurt = (power2 * float (975) / 1023);  // map to fit real voltage
+  power2Mesurt = (power2 * float (990) / 1023);  // map to fit real voltage
 #if defined(debugPowerOn)
   Serial.print(power1);
   Serial.print(" ");
@@ -839,7 +843,7 @@ void PowerCheck()
   if (power2Mesurt < power2LowLimit)                // check power voltage is over minimum threshold
   {
     bitWrite(diagPower, 1, true);                  // set diag bit power 2 ok
-    myservo.detach();
+    //  myservo.detach();
   }
   else
   {
@@ -1589,7 +1593,7 @@ void CheckEndOfReboot()  //
     northOrientation = NorthOrientation();            // added 24/10/2016
     PingFrontBack();
     rebootPhase = 1;
-    CalibrateGyro();
+    //    CalibrateGyro();
     Serial.println("reboot phase:1");
   }
   if (rebootPhase == 1 && gyroCalibrationOk && millis() > rebootDuration + 7000) // end of arduino reboot
@@ -1648,10 +1652,11 @@ void WheelThresholdReached( uint8_t wheelId)
       rightMotor.StopMotor();                         // stop firstly the motor that reached the threshold
       leftMotor.StopMotor();                          // stop the other motor to avoid to turn round
     }
-    gyroUpToDate = 0x00;
+
     timeMotorStarted = 0;
     StopEchoInterrupt(true, true);                    // stop obstacles detection
-    delay(200);                                       // wait a little for robot intertia
+    delay(200);                                      // wait a little for robot intertia
+    gyroUpToDate = 0x00;
     GyroGetHeadingRegisters();
     Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
     detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
@@ -1931,7 +1936,7 @@ void northAlign(unsigned int northAlignShift)
           //        bitWrite(currentMove, toDoClockwise, true);
           //        bitWrite(saveCurrentMove, toDoClockwise, true);
           pulseMotors(4);
-
+          delay(200);     // to let time for inertia
         }
       }
       else
@@ -1981,6 +1986,7 @@ void northAlign(unsigned int northAlignShift)
 }
 uint8_t GyroscopeRotate()
 {
+  gyroUpToDate = 0x00;
   if (bitRead(monitSubsystemStatus, monitGyroStatusBit) == 1)
   {
     //  GyroGetHeadingRegisters();
@@ -1993,8 +1999,83 @@ uint8_t GyroscopeRotate()
     actStat = gyroRotating; //
     // gyroTargetRotation=rotation;
     // delay(100);
+
+    if (gyroInitRotationSens != 0x00 && abs(gyroTargetRotation) >= minRotEncoderAbility)     // first step
+    {
+      gyroInitRotationSens = 0x00;
+      prevGyroRotation = gyroTargetRotation;
+      OptimizeGyroRotation(gyroTargetRotation);
+      if (gyroTargetRotation < 0)
+      {
+        gyroTargetRotation = 360 + gyroTargetRotation;
+      }
+#if defined(gyroDebugOn)
+      Serial.print("first gyro rotation step:");
+      Serial.println(gyroTargetRotation);
+#endif
+      return (1);
+    }
+    /*
+        if (abs(gyroH) >= 180)
+        {
+          gyroH = (360 - gyroH);
+        }
+        else
+        {
+          gyroH = -gyroH;
+        }
+    */
     int gyroH = gyroscopeHeading[gyroscopeHeadingIdx];
-    int rotation = (gyroTargetRotation - gyroH) ;
+    int rotation = 0;
+//    gyroH = (360 - gyroH)%360;        // change to anti clockwiseint totation=0;
+#if defined(gyroDebugOn)
+    Serial.print("gyro relativeheading:");
+    Serial.println(gyroH);
+#endif
+    if ((gyroTargetRotation > 0 && gyroTargetRotation < 90) && (gyroH > 270 && gyroH < 360))
+    {
+#if defined(gyroDebugOn)
+      Serial.print("case 1 over 0:");
+      Serial.print(gyroTargetRotation);
+      Serial.print(" ");
+      Serial.println(gyroH);
+#endif
+      if (prevGyroRotation >= 0)
+      {
+        rotation = gyroTargetRotation + (360 - gyroH);
+      }
+      else                    // more than 360° turn has been done
+      {
+        return -2;
+      }
+    }
+    else if ((gyroTargetRotation > 270 && gyroTargetRotation < 360) && (gyroH > 0 && gyroH < 90))
+    {
+#if defined(gyroDebugOn)
+      Serial.print("case 1 over 0:");
+      Serial.print(gyroTargetRotation);
+      Serial.print(" ");
+      Serial.println(gyroH);
+#endif
+      if (prevGyroRotation <= 0 )
+      {
+        rotation = -(360 - gyroTargetRotation) + gyroH;
+      }
+      else                    // more than 360° turn has been done
+      {
+        return -2;
+      }
+
+    }
+    else
+    {
+      rotation = (gyroTargetRotation - gyroH) ;
+#if defined(gyroDebugOn)
+      Serial.print("new rotation:");
+      Serial.println(rotation);
+#endif
+    }
+    prevGyroRotation = rotation;
 #if defined(gyroDebugOn)
     Serial.print("gyro:");
     Serial.println(rotation);
@@ -2042,46 +2123,11 @@ uint8_t GyroscopeRotate()
 
 
         appStat = appStat & 0x1f;
-
+        OptimizeGyroRotation(rotation);
         ///     if (abs(rotation) > 15 && gyroRotationRetry <= 3)
         //     {
-        if (abs(rotation) > 3 * maxInertialRotation)
-        {
-          if (rotation >= 0)
-          {
-            Rotate(rotation - maxInertialRotation);
-#if defined(gyroDebugOn)
-            Serial.println( rotation - maxInertialRotation);
-#endif
-          }
-          else
-          {
-            Rotate(rotation + maxInertialRotation);
-#if defined(gyroDebugOn)
-            Serial.println( rotation + maxInertialRotation);
-#endif
-          }
-        }
-        else
-        {
-          if (rotation >= 0)
-          {
-            Rotate(max(round(rotation * 0.8), minRotEncoderAbility));
-#if defined(gyroDebugOn)
-            Serial.println( max(round(rotation * 0.8), minRotEncoderAbility));
-#endif
-          }
-          else
-          {
-            Rotate(min(round(rotation * 0.8), -minRotEncoderAbility));
-#if defined(gyroDebugOn)
-            Serial.println( min(round(rotation * 0.8), -minRotEncoderAbility));
-#endif
-          }
-        }
-      }
 
-      gyroUpToDate = 0x00;
+      }
       return (1);
     }
   }
@@ -2090,10 +2136,11 @@ uint8_t GyroscopeRotate()
     ResetGyroscopeHeadings();
     GyroStartInitMonitor();
     Serial.println("start gyro monitor");
-    gyroUpToDate = 0x00;
+
     return -1;
   }
 }
+
 
 void debugPrintLoop()
 {
@@ -2133,6 +2180,43 @@ void resetStatus(uint8_t code)
   timerHorn = 0;
 }
 
+void OptimizeGyroRotation (int rotation)
+{
+  if (abs(rotation) > 3 * maxInertialRotation)
+  {
+    if (rotation >= 0)
+    {
+      Rotate(rotation - maxInertialRotation);
+#if defined(gyroDebugOn)
+      Serial.println( rotation - maxInertialRotation);
+#endif
+    }
+    else
+    {
+      Rotate(rotation + maxInertialRotation);
+#if defined(gyroDebugOn)
+      Serial.println( rotation + maxInertialRotation);
+#endif
+    }
+  }
+  else
+  {
+    if (rotation >= 0)
+    {
+      Rotate(max(round(rotation * 0.8), minRotEncoderAbility));
+#if defined(gyroDebugOn)
+      Serial.println( max(round(rotation * 0.8), minRotEncoderAbility));
+#endif
+    }
+    else
+    {
+      Rotate(min(round(rotation * 0.8), -minRotEncoderAbility));
+#if defined(gyroDebugOn)
+      Serial.println( min(round(rotation * 0.8), -minRotEncoderAbility));
+#endif
+    }
+  }
+}
 
 
 /*

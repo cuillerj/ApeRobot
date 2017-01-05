@@ -150,7 +150,7 @@ void ResetGyroscopeHeadings()
   {
     gyroscopeHeading[i] = 0;
   }
-  gyroUpToDate=0x00;
+  gyroUpToDate = 0x00;
   gyroscopeHeadingIdx = 0x00;
 }
 void SetGyroSelectedRange(uint8_t value)
@@ -265,10 +265,25 @@ void receiveEvent(int howMany) {
                   relativeHeading = -relativeHeading;
                 }
                 gyroscopeHeadingIdx = (gyroscopeHeadingIdx + 1) % maxGyroscopeHeadings;
-                gyroscopeHeading[gyroscopeHeadingIdx] = relativeHeading*L3GPositiveClockWise;
-                if (gyroUpToDate==0x01)
+#if defined(IMU)
+                //                                int h1 = (360 - relativeHeading) ;
+                //                               int h2 = -relativeHeading;
+                relativeHeading = (360 - relativeHeading)%360;
+                /*
+                  if (abs(relativeHeading) >= 180)
+                  {
+                  relativeHeading = (360 - relativeHeading);
+                  }
+                  else
+                  {
+                  relativeHeading = -relativeHeading;
+                  }
+                */
+#endif
+                gyroscopeHeading[gyroscopeHeadingIdx] = relativeHeading ;
+                if (gyroUpToDate == 0x01)
                 {
-                  gyroUpToDate = 0x02;                
+                  gyroUpToDate = 0x02;
                 }
 #if defined(debugGyroscopeOn)
                 Serial.print("heading:");
