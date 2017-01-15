@@ -101,13 +101,19 @@ void CalibrateGyro()
 }
 void GyroGetHeadingRegisters()
 {
-  uint8_t reqRegisters[3] = {headingResponse[0], headingResponse[1], headingResponse[2]};
+  uint8_t reqRegisters[3] = {relativeHeadingResponse[0], relativeHeadingResponse[1], relativeHeadingResponse[2]};
+  SubsystemReadRegisters(0x03, reqRegisters);          // read z registers
+  RequestForPolling();
+}
+void GetAbsoluteHeading()
+{
+  uint8_t reqRegisters[3] = {absoluteHeadingResponse[0], absoluteHeadingResponse[1], absoluteHeadingResponse[2]};
   SubsystemReadRegisters(0x03, reqRegisters);          // read z registers
   RequestForPolling();
 }
 void GetNorthOrientation()
 {
-  uint8_t reqRegisters[2] = {NOResponse[0], NOResponse[1]};
+  uint8_t reqRegisters[2] = {compassResponse[0], compassResponse[1]};
   SubsystemReadRegisters(0x02, reqRegisters);          // read z registers
   RequestForPolling();
 }
@@ -155,17 +161,17 @@ void ResetGyroscopeHeadings()
 }
 void SetGyroSelectedRange(uint8_t value)
 {
-  InitOutData();
-  outData[1] = setGyroSelectedRange;
-  outData[2] = value;
-  RequestForPolling();
+  // InitOutData();
+  //  outData[1] = setGyroSelectedRange;
+  // outData[2] = value;
+  // RequestForPolling();
 }
 void SetGyroODR(uint8_t value)
 {
-  InitOutData();
-  outData[1] = setGyroODR;
-  outData[2] = value;
-  RequestForPolling();
+  //  InitOutData();
+  //  outData[1] = setGyroODR;
+  // outData[2] = value;
+  // RequestForPolling();
 }
 void GetSubsystemRegister(uint8_t number, uint8_t value[5])
 {
@@ -243,99 +249,99 @@ void receiveEvent(int howMany) {
         }
         switch (receivedNumber)
         {
-          case (3):
+          case (2):                           // 3 registers received
             {
-              boolean trameOk = true;
-              for (int i = 0; i < sizeof(headingResponse); i++)
+              switch (receivedRegister[0])
               {
-                if (receivedRegister[i] != headingResponse[i])
-                {
-                  trameOk = false;
-                }
-                if (trameOk == false)
-                {
+                case (compasHeading_Reg1):
+                  {
+                    Serial.print("NO:");
+
+                    northOrientation = inputData[4] * 256 + inputData[6];
+                    Serial.println(northOrientation);
+                    break;
+                  }
+                default:
                   break;
-                }
-              }
-              if (trameOk)
-              {
-                int relativeHeading = inputData[6] * 256 + inputData[8];
-                if (inputData[4] == 0x01)
-                {
-                  relativeHeading = -relativeHeading;
-                }
-                gyroscopeHeadingIdx = (gyroscopeHeadingIdx + 1) % maxGyroscopeHeadings;
-#if defined(IMU)
-                //                                int h1 = (360 - relativeHeading) ;
-                //                               int h2 = -relativeHeading;
-                relativeHeading = (360 - relativeHeading)%360;
-                /*
-                  if (abs(relativeHeading) >= 180)
-                  {
-                  relativeHeading = (360 - relativeHeading);
-                  }
-                  else
-                  {
-                  relativeHeading = -relativeHeading;
-                  }
-                */
-#endif
-                gyroscopeHeading[gyroscopeHeadingIdx] = relativeHeading ;
-                if (gyroUpToDate == 0x01)
-                {
-                  gyroUpToDate = 0x02;
-                }
-#if defined(debugGyroscopeOn)
-                Serial.print("heading:");
-                Serial.println(relativeHeading);
-#endif
               }
               break;
             }
-          case (2):
+
+          case (3):                           // 3 registers received
             {
-              boolean trameNO = false;
-              boolean trameBeforeNO = false;
-              boolean trameAfterNO = false;
-              for (int i = 0; i < sizeof(NOResponse); i++)
+              switch (receivedRegister[0])
               {
-                if (receivedRegister[i] == NOResponse[i])
-                {
-                  trameNO = true;
-                }
+                case (relativeHeading_Reg1):
+                  {
+                    boolean trameOk = true;
+                    for (int i = 0; i < sizeof(relativeHeadingResponse); i++)
+                    {
+                      if (receivedRegister[i] != relativeHeadingResponse[i])
+                      {
+                        trameOk = false;
+                      }
+                      if (trameOk == false)
+                      {
+                        break;
+                      }
+                    }
+                    if (trameOk)
+                    {
+                      int relativeHeading = inputData[6] * 256 + inputData[8];
+                      if (inputData[4] == 0x01)
+                      {
+                        relativeHeading = -relativeHeading;
+                      }
+                      gyroscopeHeadingIdx = (gyroscopeHeadingIdx + 1) % maxGyroscopeHeadings;
+#if defined(IMU)
+                      //                                int h1 = (360 - relativeHeading) ;
+                      //                               int h2 = -relativeHeading;
+                      relativeHeading = (360 - relativeHeading) % 360;
+                      /*
+                        if (abs(relativeHeading) >= 180)
+                        {
+                        relativeHeading = (360 - relativeHeading);
+                        }
+                        else
+                        {
+                        relativeHeading = -relativeHeading;
+                        }
+                      */
+#endif
+                      gyroscopeHeading[gyroscopeHeadingIdx] = relativeHeading ;
+                      if (gyroUpToDate == 0x01)
+                      {
+                        gyroUpToDate = 0x02;
+                      }
+#if defined(debugGyroscopeOn)
+                      Serial.print("heading:");
+                      Serial.println(relativeHeading);
+#endif
+                    }
+                    break;
+                  }
+                  break;
+                case (absoluteHeading_Reg1):
+                  {
+                    Serial.print("NO:");
+
+                    int NO = inputData[6] * 256 + inputData[8];
+                    if (inputData[4] == 0x01)
+                    {
+                      northOrientation = -NO;
+                    }
+                    else
+                    {
+                      northOrientation = NO;
+                    }
+                    Serial.println(northOrientation);
+                    break;
+                  }
               }
-              for (int i = 0; i < sizeof(beforeNOResponse); i++)
-              {
-                if (receivedRegister[i] == beforeNOResponse[i])
-                {
-                  trameBeforeNO = true;
-                }
-              }
-              for (int i = 0; i < sizeof(afterNOResponse); i++)
-              {
-                if (receivedRegister[i] == afterNOResponse[i])
-                {
-                  trameAfterNO = true;
-                }
-              }
-              if (trameNO)
-              {
-                Serial.print("NO:");
-              }
-              if (trameBeforeNO)
-              {
-                Serial.print("before NO:");
-              }
-              if (trameAfterNO)
-              {
-                Serial.print("after NO:");
-              }
-              int NO = inputData[4] * 256 + inputData[6];
-              Serial.println(NO);
-              break;
 
             }
-          case (4):
+
+          case (6):
             {
               boolean trameBeforeAfterNO = false;
               for (int i = 0; i < sizeof(beforeAfterNOResponse); i++)
@@ -348,10 +354,10 @@ void receiveEvent(int howMany) {
               if (trameBeforeAfterNO)
               {
                 Serial.print("before NO:");
-                int NO = inputData[4] * 256 + inputData[6];
+                int NO = inputData[6] * 256 + inputData[8];
                 Serial.print(NO);
                 Serial.print(" after NO:");
-                NO = inputData[8] * 256 + inputData[10];
+                NO = inputData[10] * 256 + inputData[12];
                 Serial.println(NO);
               }
               break;

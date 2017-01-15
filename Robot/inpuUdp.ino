@@ -154,6 +154,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
       deltaPosX = 0;
       deltaPosY = 0;
+      posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180); // x position of the rotation center
+      posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180); // y position of the rotation center
       currentLocProb = DataInSerial[13];   // localisation probability
       sendInfoSwitch = 1;                  // to force next sent info to be status
       SendStatus();
@@ -311,9 +313,15 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       {
         rotationType = cmdInput;
         posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
-        posRotationGyroCenterY = posY + shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
+        posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
         ResetGyroscopeHeadings();
         GyroStartInitMonitor();
+        delay(100);
+        while (gyroscopeHeading[gyroscopeHeadingIdx] != 0)
+        {
+          GyroStartInitMonitor();
+          delay(100);
+        }
         bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
         int reqN = ((DataInSerial[3] & 0b01111111) * 256 + DataInSerial[4]) % 360;
         if (bitRead(DataInSerial[3], 7) == 1)    // means negative rotation

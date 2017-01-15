@@ -174,11 +174,11 @@ void SendStatus()
   PendingDataReqSerial[15] = uint8_t(abs(angle) / 256);
   PendingDataReqSerial[16] = uint8_t(abs(angle));
   PendingDataReqSerial[17] = 0x00;
-  northOrientation = saveNorthOrientation;
-  if (toDo == 0x00 && (actStat != 0x66 && actStat != 0x68) && millis() - delayAfterStopMotors > 500 )
-  {
-    northOrientation = NorthOrientation();
-  }
+//  northOrientation = saveNorthOrientation;
+ // if (toDo == 0x00 && (actStat != 0x66 && actStat != 0x68) && millis() - delayAfterStopMotors > 500 )
+ // {
+ //   northOrientation = NorthOrientation();
+ // }
   PendingDataReqSerial[18] = uint8_t(northOrientation / 256);
   PendingDataReqSerial[19] = uint8_t(northOrientation);
   PendingDataReqSerial[20] = 0x00;

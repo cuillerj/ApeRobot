@@ -12,14 +12,14 @@ String Version = "RobotV2";
 //#define debugObstacleOn true
 //#define debugLocalizationOn true
 //#define debugMagnetoOn true
-#define debugMotorsOn true
+//#define debugMotorsOn true
 #define debugWheelControlOn true
 #define wheelEncoderDebugOn true
 //#define debugConnection true
 //#define debugPowerOn true
 //#define debugLoop true
 //#define servoMotorDebugOn true
-#define gyroDebugOn true
+//#define gyroDebugOn true
 
 #define debugGyroscopeOn true
 #define debugGyroscopeL2On true
@@ -288,6 +288,7 @@ volatile unsigned long pauseSince   ;          // starting time of pause status
 unsigned long timePingFB;             // used to delay sending end action after sending echo ping
 unsigned long timeGyroRotation;
 unsigned long timeSubsystemPolling;   // used for reguraly checking subsystem status
+unsigned long timeUpdateNO;           // used for reguraly update north orientation
 #if defined debugLoop
 unsigned long timeLoop;  // cycle demande heure
 #endif
@@ -297,6 +298,7 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayPowerCheck 5000    // delay before next checking of power
 #define delayBeforeRestartAfterAbstacle 5000 // delay before taking into account obstacle disappearance
 #define delayBetweenCheckPosition 200       // delay between 2 check position
+#define delayBetween2NO 500          // delay between 2 NO update
 #define maxPauseDuration 30000
 //-- robot status & diagnostics
 volatile uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
@@ -325,9 +327,9 @@ long targetY = 0;// x target position after moving
 float deltaPosX = 0;  // incremental x move
 float deltaPosY = 0;  // incremental y move
 float posRotationCenterX = posX - shiftEchoVsRotationCenter * cos(alpha*PI / 180);   // x position of the rotation center
-float posRotationCenterY = posY + shiftEchoVsRotationCenter * sin(alpha*PI / 180);   // y position of the rotation center
+float posRotationCenterY = posY - shiftEchoVsRotationCenter * sin(alpha*PI / 180);   // y position of the rotation center
 float posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha*PI / 180);   // x position of the rotation center
-float posRotationGyroCenterY = posY + shiftEchoVsRotationCenter * sin(alpha*PI / 180);   // y position of the rotation center
+float posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha*PI / 180);   // y position of the rotation center
 uint8_t currentLocProb = 0;
 
 
@@ -413,6 +415,7 @@ void setup() {
   //     compass.read();
   //    refAccX=abs(compass.a.x)*1.1;
   // northOrientation = NorthOrientation();            // added 24/10/2016
+
 }
 
 void loop() {
@@ -420,14 +423,14 @@ void loop() {
 #if defined(debugLoop)
   if (millis() - timeLoop > 1000)
   {
-    debugPrintLoop();
+    debugPrintLoop();                     // for degub only
     timeLoop = millis();
   }
 #endif
   CheckEndOfReboot();                      // check for reboot completion
   if (millis() - OutputRobotRequestPinTimer >= minimumDurationBeetwenPolling / 2)
   {
-    digitalWrite(RobotOutputRobotRequestPin, LOW);
+    digitalWrite(RobotOutputRobotRequestPin, LOW);      // reset the request to the subsystem
   }
   // ***  keep in touch with the server
   int getSerial = Serial_have_message();  // check if we have received a message
@@ -506,15 +509,15 @@ void loop() {
   // *** end of loop refresh LED
 
   // *** actions loops
-  if (rebootPhase == 0 && appStat != 0xff)         //  wait reboot complete to act
+  if (rebootPhase == 0 && appStat != 0xff)         //  wait reboot complete before doing anything
   {
 
     // *** checking resqueted actions
-    if (bitRead(toDo, toDoScan) == 1)          // check if for scan request
+    if (bitRead(toDo, toDoScan) == 1)          // check if for scan is requested
     {
       ScanPosition();
     }
-    if (bitRead(toDo, toDoMove) == 1 && bitRead(waitFlag, toWait) == 0) {      // check if  move requested
+    if (bitRead(toDo, toDoMove) == 1 && bitRead(waitFlag, toWait) == 0) {      // check if  move is requested
       //  Serial.println("move");
       ComputeTargetLocalization(reqAng, reqMove);
       Move(reqAng, reqMove);                    // move according to the request first rotation and the straight move
@@ -527,8 +530,9 @@ void loop() {
     if ( millis() - delayCheckPosition > delayBetweenCheckPosition  && bitRead(currentMove, toDoStraight) == true && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
     { // Update robot position
       delayCheckPosition = millis();  // reset timer
-      if ((timeMotorStarted != 0 && millis() - timeMotorStarted) > 500 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
+      if (timeMotorStarted != 0 && millis() - timeMotorStarted > 400 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
       {
+        Serial.println("check syncrho");
         //        Serial.println(millis() - timeMotorStarted);
         //        Serial.println(bitRead(diagMotor, diagMotorPbSynchro));
         CheckMoveSynchronisation();
@@ -656,6 +660,11 @@ void loop() {
         }
       }
     }
+  }
+  if (millis() - timeUpdateNO >= delayBetween2NO && gyroUpToDate != 0x01) // regurarly request North orientation if no other request pending
+  {
+    timeUpdateNO = millis();
+    GetNorthOrientation();
   }
 }
 
@@ -2027,7 +2036,7 @@ uint8_t GyroscopeRotate()
     */
     int gyroH = gyroscopeHeading[gyroscopeHeadingIdx];
     int rotation = 0;
-//    gyroH = (360 - gyroH)%360;        // change to anti clockwiseint totation=0;
+    //    gyroH = (360 - gyroH)%360;        // change to anti clockwiseint totation=0;
 #if defined(gyroDebugOn)
     Serial.print("gyro relativeheading:");
     Serial.println(gyroH);
