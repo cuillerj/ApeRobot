@@ -10,8 +10,12 @@ void SendEndAction(int action, uint8_t retCode)
   Serial.println();
 
 #endif
+  if (action == moveEnded)
+  {
+    getBNOLocation = 0x07;                // to resquest BNO computed location
+  }
   //  GetHeadingRegisters();
-  int northOrientation = NorthOrientation();
+  //  int northOrientation = NorthOrientation();
   int deltaNORotation = NOBeforeRotation - NOAfterRotation;
   int deltaNOMoving = NOBeforeMoving - NOAfterMoving;
   actStat = action;
@@ -173,14 +177,28 @@ void SendStatus()
   int angle = alpha;
   PendingDataReqSerial[15] = uint8_t(abs(angle) / 256);
   PendingDataReqSerial[16] = uint8_t(abs(angle));
-  PendingDataReqSerial[17] = 0x00;
-//  northOrientation = saveNorthOrientation;
- // if (toDo == 0x00 && (actStat != 0x66 && actStat != 0x68) && millis() - delayAfterStopMotors > 500 )
- // {
- //   northOrientation = NorthOrientation();
- // }
-  PendingDataReqSerial[18] = uint8_t(northOrientation / 256);
-  PendingDataReqSerial[19] = uint8_t(northOrientation);
+  //  PendingDataReqSerial[17] = BNOMode;
+  //  northOrientation = saveNorthOrientation;
+  // if (toDo == 0x00 && (actStat != 0x66 && actStat != 0x68) && millis() - delayAfterStopMotors > 500 )
+  // {
+  //   northOrientation = NorthOrientation();
+  // }
+  PendingDataReqSerial[17] = BNOMode;
+  if (BNOMode == MODE_IMUPLUS)
+  {
+    PendingDataReqSerial[18] = 0x00;
+    PendingDataReqSerial[19] = 0x00;
+  }
+  if (BNOMode == MODE_COMPASS)
+  {
+    PendingDataReqSerial[18] = uint8_t(northOrientation / 256);
+    PendingDataReqSerial[19] = uint8_t(northOrientation);
+  }
+  if (BNOMode == MODE_NDOF)
+  {
+    PendingDataReqSerial[18] = uint8_t(absoluteHeading / 256);
+    PendingDataReqSerial[19] = uint8_t(absoluteHeading);
+  }
   PendingDataReqSerial[20] = 0x00;
   PendingDataReqSerial[21] = currentLocProb;
   PendingDataReqSerial[22] = 0x00;
@@ -189,7 +207,8 @@ void SendStatus()
   PendingDataReqSerial[25] = pendingAction; // for debuging
   PendingDataReqSerial[26] = 0x00;
   PendingDataReqSerial[27] =  waitFlag; // for debuging
-  PendingDataLenSerial = 0x1c; // 6 longueur mini max 25 pour la gateway
+  PendingDataReqSerial[28] =  lastReceivedNumber; // for debuging
+  PendingDataLenSerial = 0x1d; // 6 longueur mini max 30 pour la gateway
 }
 void SendPowerValue()
 {
@@ -303,6 +322,7 @@ void  SendUDPSubsystemRegister(uint8_t receivedRegister[5], uint8_t receivedValu
   }
   PendingDataLenSerial = 0x12; // 6 longueur mini max 25  pour la gateway
 }
+
 void SendScanResultSerial (int distF, int distB)   // send scan echo data to the server
 {
 
@@ -318,10 +338,89 @@ void SendScanResultSerial (int distF, int distB)   // send scan echo data to the
   PendingDataReqSerial[9] = uint8_t(AngleDegre / 256); //1er octet contient les facteurs de 256
   PendingDataReqSerial[10] = uint8_t(AngleDegre); //2eme octets contient le complement - position = Datareq2*256+Datareq3
   PendingDataReqSerial[11] = uint8_t(trameNumber % 256);
-  PendingDataReqSerial[12] = 0x00;
-  PendingDataReqSerial[13] = 0x00;
-  PendingDataReqSerial[14] = 0x00;
+  PendingDataReqSerial[12] = 0x4f;
+  PendingDataReqSerial[13] = uint8_t(northOrientation / 256);
+  PendingDataReqSerial[14] = uint8_t(northOrientation);
   PendingDataLenSerial = 0x0f;                      // data len
+  retryCount = 00;
+  pendingAckSerial = 0x01;
+  PendingReqSerial = PendingReqRefSerial;
+  // DataToSendSerial();
+  SendSecuSerial();                               // secured sending to wait for server ack
+  timeSendSecSerial = millis();                   // init timer used to check for server ack
+}
+void SendBNOSubsytemStatus()
+{
+  PendingReqSerial = PendingReqRefSerial;
+  PendingDataReqSerial[0] = 0x75; //
+  PendingDataReqSerial[1] = BNOMode; //
+  PendingDataReqSerial[2] = BNOCalStat;
+  PendingDataReqSerial[3] = 0x00;
+  PendingDataReqSerial[4] = BNOSysStat;
+  PendingDataReqSerial[5] = BNOSysError;
+  PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gateway
+}
+void SendBNOLocation ()
+{
+  trameNumber = trameNumber + 1;
+  PendingDataReqSerial[0] = 0x01;
+  PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
+  PendingDataReqSerial[2] = 0x76;
+  PendingDataReqSerial[3] = getBNOLocation;    // used by java to check uptodate (0x00)
+  if (BNOLeftPosX >= 0)
+  {
+    PendingDataReqSerial[4] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[4] = 0x2d;
+  }
+  PendingDataReqSerial[5] = uint8_t(abs(BNOLeftPosX) / 256);
+  PendingDataReqSerial[6] = uint8_t(abs(BNOLeftPosX));
+
+  if (BNOLeftPosY >= 0)
+  {
+    PendingDataReqSerial[7] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[7] = 0x2d;
+  }
+  PendingDataReqSerial[8] = uint8_t(abs(BNOLeftPosY) / 256);
+  PendingDataReqSerial[9] = uint8_t(abs(BNOLeftPosY));
+
+  if (BNORightPosX >= 0)
+  {
+    PendingDataReqSerial[10] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[10] = 0x2d;
+  }
+  PendingDataReqSerial[11] = uint8_t(abs(BNORightPosX) / 256);
+  PendingDataReqSerial[12] = uint8_t(abs(BNORightPosX));
+
+  if (BNORightPosY >= 0)
+  {
+    PendingDataReqSerial[13] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[13] = 0x2d;
+  }
+  PendingDataReqSerial[14] = uint8_t(abs(BNORightPosY) / 256);
+  PendingDataReqSerial[15] = uint8_t(abs(BNORightPosY));
+  if (gyroscopeHeading[gyroscopeHeadingIdx] >= 0)
+  {
+    PendingDataReqSerial[16] = 0x2b;
+  }
+  else
+  {
+    PendingDataReqSerial[16] = 0x2d;
+  }
+  PendingDataReqSerial[17] = uint8_t(abs(BNOLocationHeading) / 256);
+  PendingDataReqSerial[18] = uint8_t(abs(BNOLocationHeading));
+  PendingDataLenSerial = 0x13;                      // data len
   retryCount = 00;
   pendingAckSerial = 0x01;
   PendingReqSerial = PendingReqRefSerial;

@@ -52,15 +52,36 @@ void SubsystemSetRegisters(uint8_t number, uint8_t registers[3], uint8_t registe
   outData[8] = registersValues[2];
   RequestForPolling();
 }
+void SubsystemSetMoveRegisters(uint8_t number, uint8_t registers[3], uint8_t registersValues[3])
+{
+  InitOutData();
+  outData[1] = setMoveRegisters;
+  outData[2] = number;                 // nb register to read
+  outData[3] = registers[0];
+  outData[4] = registersValues[0];
+  outData[5] = registers[1];
+  outData[6] = registersValues[1];
+  outData[7] = registers[2];
+  outData[8] = registersValues[2];
+  RequestForPolling();
+}
 void GyroStartMonitor()
 {
   InitOutData();
   outData[1] = startMonitorGyro;
   RequestForPolling();
-
+}
+void GyroInitLocation()
+{
+  InitOutData();
+  outData[1] = initLocation;
+  RequestForPolling();
 }
 void GyroStartInitMonitor()
 {
+#if defined(debugGyroscopeL2On)
+  Serial.println("startinit");
+#endif
   InitOutData();
   outData[1] = startInitMonitorGyro;
   RequestForPolling();
@@ -76,20 +97,17 @@ void GyroStopInitMonitor()
   InitOutData();
   outData[1] = stopInitMonitorGyro;
   RequestForPolling();
-  RequestForPolling();
 }
 void StartMagneto()
 {
   InitOutData();
   outData[1] = startMonitorMagneto;
   RequestForPolling();
-  RequestForPolling();
 }
 void StopMagneto()
 {
   InitOutData();
   outData[1] = stopMonitorMagneto;
-  RequestForPolling();
   RequestForPolling();
 }
 void CalibrateGyro()
@@ -135,12 +153,49 @@ void GetBeforeAfterNorthOrientation()
   SubsystemReadRegisters(0x04, reqRegisters);          // read z registers
   RequestForPolling();
 }
+void GetBNO055Status()
+{
+  uint8_t reqRegisters[4] = {BNO055StatusResponse[0], BNO055StatusResponse[1], BNO055StatusResponse[2], BNO055StatusResponse[3]};
+  SubsystemReadRegisters(0x04, reqRegisters);          // read z registers
+  RequestForPolling();
+}
+void GetBNOHeadingLocation()
+{
+  Serial.println(getBNOLocation, HEX);
+  uint8_t reqRegisters[2] = {BNO055LocationHeading[0], BNO055LocationHeading[1]};
+  SubsystemReadRegisters(0x02, reqRegisters);          // read z registers
+  if (getBNOLocation != 0x00)
+  {
+    getBNOLocation--;
+  }
+  RequestForPolling();
+}
+void GetBNOLeftLocation()
+{
+  uint8_t reqRegisters[4] = {BNO055LeftLocationResponse[0], BNO055LeftLocationResponse[1], BNO055LeftLocationResponse[2], BNO055LeftLocationResponse[3]};
+  SubsystemReadRegisters(0x04, reqRegisters);          // read z registers
+  if (getBNOLocation != 0x00)
+  {
+    getBNOLocation--;
+  }
+  RequestForPolling();
+}
+void GetBNORightLocation()
+{
+  uint8_t reqRegisters[4] = {BNO055RightLocationResponse[0], BNO055RightLocationResponse[1], BNO055RightLocationResponse[2], BNO055RightLocationResponse[3]};
+  SubsystemReadRegisters(0x04, reqRegisters);          // read z registers
+  if (getBNOLocation != 0x00)
+  {
+    getBNOLocation--;
+  }
+  RequestForPolling();
+}
 void RequestForPolling()
 {
   digitalWrite(RobotOutputRobotRequestPin, HIGH);
   OutputRobotRequestPinTimer = millis();
+  pendingPollingResp = 0x02;
 }
-
 void InitOutData()
 {
   outData[0] = slaveAddress;
@@ -178,8 +233,93 @@ void GetSubsystemRegister(uint8_t number, uint8_t value[5])
   SubsystemReadRegisters(number, value);
 }
 
-void requestEvent() {
+void SetBNOMode(uint8_t value)
+{
+
+  if (millis() - lastSetModeTime > 1000)
+  {
+#if defined(debugGyroscopeL2On)
+    Serial.println("setbno");
+#endif
+    InitOutData();
+    outData[1] = setBNO055Mode;
+    outData[2] = value;
+    RequestForPolling();
+    lastSetModeTime = millis();
+    BNOUpToDateFlag = 0;
+  }
+  if (millis() - lastSetModeTime > 300)
+  {
+    GetBNO055Status();
+    BNOUpToDateFlag = 0;
+  }
+  // lastSetModeTime = millis();
+}
+void InitBNOLocation()
+{
+  uint16_t uInitX = (int)round(posRotationGyroCenterX * leftWheelEncoderHoles / (iLeftWheelDiameter * PI));
+  uint16_t uInitY = (int)round(posRotationGyroCenterY * rightWheelEncoderHoles / (iRightWheelDiameter * PI));
+  uint16_t uAlpha = (int)round(alpha);
 #if defined(debugGyroscopeOn)
+  Serial.print("InitBNOLocation:");
+  Serial.println(stepBNOInitLocation, HEX);
+#endif
+  switch (stepBNOInitLocation)
+  {
+    case 1:
+      {
+        //       Serial.print(" 1 ");
+        uint8_t regLoc[3] = {initPosX_Reg1, initPosX_Reg2, initPosY_Reg1};
+        uint8_t regLocValue[3] = {((uint8_t)((uInitX & 0x7fff) >> 8) | ((uInitX & 0x8000) >> 8)), (uint8_t)uInitX , ((uint8_t)((uInitY & 0x7fff) >> 8) | ((uInitY & 0x8000) >> 8))};
+        SubsystemSetMoveRegisters(3, regLoc, regLocValue);
+        stepBNOInitLocation++;
+        break;
+      }
+    case 2:
+      {
+        //       Serial.print(" 2 ");
+        uint8_t regLoc[3] = {initPosY_Reg2, initHeading_reg1, initHeading_reg2};
+        uint8_t regLocValue[3] = {(uint8_t)uInitY, ((uint8_t)(uAlpha & 0x7fff) >> 8 | ((uAlpha & 0x8000) >> 8)), (uint8_t)uAlpha};
+        SubsystemSetMoveRegisters(3, regLoc, regLocValue);
+        stepBNOInitLocation++;
+        break;
+      }
+    case 3:
+      {
+        //      Serial.print(" 3 ");
+        GyroInitLocation();
+        stepBNOInitLocation = 0x00;
+        break;
+      }
+  }
+
+}
+void UpdateBNOMove()
+{
+  lastUpdateBNOMoveTime = millis();
+  unsigned int currentLeftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
+  unsigned int currentRightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
+
+  if (currentLeftHoles > BNOprevSentLeftHoles || currentRightHoles > BNOprevSentRightHoles)
+  {
+#if defined(debugGyroscopeOn)
+    Serial.print ("send holes left:");
+    Serial.print(currentLeftHoles);
+    Serial.print(" right:");
+    Serial.println(currentRightHoles);
+#endif
+    uint8_t reg[3] = {requestCompute_Reg, leftDistance_Reg, rightDistance_Reg};
+    uint8_t regValue[3] = {0x01, uint8_t(abs(currentLeftHoles - BNOprevSentLeftHoles)), uint8_t(abs(currentRightHoles - BNOprevSentRightHoles))};
+    SubsystemSetMoveRegisters(3,  reg, regValue);
+    BNOprevSentLeftHoles = currentLeftHoles;
+    BNOprevSentRightHoles = currentRightHoles;
+  }
+}
+
+
+
+void requestEvent() {
+#if defined(debugGyroscopeL2On)
   Serial.print("request event:");
   Serial.print(inputData[0]);
   Serial.print("-");
@@ -220,6 +360,7 @@ void receiveEvent(int howMany) {
   uint8_t  receivedNumber = inputData[2];
   uint8_t receivedRegister[15];
   digitalWrite(RobotOutputRobotRequestPin, LOW);
+
   switch (cmd)
   {
     case idleRequest:
@@ -249,24 +390,42 @@ void receiveEvent(int howMany) {
         }
         switch (receivedNumber)
         {
-          case (2):                           // 3 registers received
+          case (2):                           // 2 registers received
             {
               switch (receivedRegister[0])
               {
+
                 case (compasHeading_Reg1):
                   {
-                    Serial.print("NO:");
-
+                    if (compasUpToDate == 0x01)
+                    {
+                      compasUpToDate = 0x02;
+                    }
                     northOrientation = inputData[4] * 256 + inputData[6];
+#if defined(debugGyroscopeOn)
+                    Serial.print("Compass:");
                     Serial.println(northOrientation);
+#endif
                     break;
                   }
-                default:
+
+                case (locationHeading_reg1):
+                  {
+                    if (getBNOLocation != 0x00)
+                    {
+                      getBNOLocation--;
+                    }
+                    BNOLocationHeading = inputData[4] * 256 + inputData[6];
+#if defined(debugGyroscopeOn)
+                    Serial.print("BNO locationHeading:");
+                    Serial.println(BNOLocationHeading);
+#endif
+                    break;
+                  }
                   break;
               }
               break;
             }
-
           case (3):                           // 3 registers received
             {
               switch (receivedRegister[0])
@@ -293,27 +452,19 @@ void receiveEvent(int howMany) {
                         relativeHeading = -relativeHeading;
                       }
                       gyroscopeHeadingIdx = (gyroscopeHeadingIdx + 1) % maxGyroscopeHeadings;
-#if defined(IMU)
-                      //                                int h1 = (360 - relativeHeading) ;
-                      //                               int h2 = -relativeHeading;
+                      //#if defined(IMU)
+                      //                      if (BNOMode == MODE_NDOF)
+                      //                     {
                       relativeHeading = (360 - relativeHeading) % 360;
-                      /*
-                        if (abs(relativeHeading) >= 180)
-                        {
-                        relativeHeading = (360 - relativeHeading);
-                        }
-                        else
-                        {
-                        relativeHeading = -relativeHeading;
-                        }
-                      */
-#endif
+                      //                     }
+
+                      //#endif
                       gyroscopeHeading[gyroscopeHeadingIdx] = relativeHeading ;
                       if (gyroUpToDate == 0x01)
                       {
                         gyroUpToDate = 0x02;
                       }
-#if defined(debugGyroscopeOn)
+#if defined(debugGyroscopeL2On)
                       Serial.print("heading:");
                       Serial.println(relativeHeading);
 #endif
@@ -323,24 +474,78 @@ void receiveEvent(int howMany) {
                   break;
                 case (absoluteHeading_Reg1):
                   {
-                    Serial.print("NO:");
-
-                    int NO = inputData[6] * 256 + inputData[8];
-                    if (inputData[4] == 0x01)
-                    {
-                      northOrientation = -NO;
-                    }
-                    else
-                    {
-                      northOrientation = NO;
-                    }
-                    Serial.println(northOrientation);
+                    absoluteHeading = (inputData[6] * 256 + inputData[8]) % 360;
+#if defined(debugGyroscopeL2On)
+                    Serial.print("absolute heading:");
+                    Serial.println(absoluteHeading);
+#endif
                     break;
                   }
               }
 
             }
-
+          case (4):                           // 4 registers received
+            {
+              switch (receivedRegister[0])    // BNO status received
+              {
+                case (BNO055Mode_Reg):
+                  {
+                    BNOMode = inputData [4];
+                    BNOCalStat = inputData [6];
+                    BNOSysStat = inputData [8];
+                    BNOSysError = inputData [10];
+#if defined(debugGyroscopeL2On)
+                    Serial.print("BNO Mode:");
+                    Serial.print(BNOMode, HEX);
+                    Serial.print(" calibration status:");
+                    Serial.print(BNOCalStat, HEX);
+                    Serial.print(" system status:");
+                    Serial.print(BNOSysStat, HEX);
+                    Serial.print(" system error:");
+                    Serial.println(BNOSysError, HEX);
+#endif
+                  }
+                  break;
+                case (deltaLeftPosX_reg1):
+                  {
+                    BNOLeftPosX = (int)((uint16_t)inputData[4] << 8 | (uint16_t) inputData[6]);
+                    BNOLeftPosX = round((float)(BNOLeftPosX * PI * iLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180));
+                    BNOLeftPosY = (int)((uint16_t)inputData[8] << 8 | (uint16_t) inputData[10]);
+                    BNOLeftPosY = round((float)(BNOLeftPosY * PI * iLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180));
+                    if (getBNOLocation != 0x00)
+                    {
+                      getBNOLocation--;
+                    }
+#if defined(debugGyroscopeOn)
+                    Serial.print("BNO Left position X:");
+                    Serial.print(BNOLeftPosX );
+                    Serial.print(" Y:");
+                    Serial.println(BNOLeftPosY);
+#endif
+                    break;
+                  }
+                case (deltaRightPosX_reg1):
+                  {
+                    BNORightPosX = (int)((uint16_t)inputData[4] << 8 | (uint16_t) inputData[6]);
+                    BNORightPosX = round((float)(BNORightPosX  * PI * iRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180));
+                    BNORightPosY  = (int)((uint16_t)inputData[8] << 8 | (uint16_t) inputData[10]);
+                    BNORightPosY  = round((float)(BNORightPosY  * PI * iRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180));
+                    if (getBNOLocation != 0x00)
+                    {
+                      getBNOLocation--;
+                    }
+#if defined(debugGyroscopeOn)
+                    Serial.print("BNO Right position X:");
+                    Serial.print(BNORightPosX);
+                    Serial.print(" Y:");
+                    Serial.println(BNORightPosY);
+#endif
+                    break;
+                  }
+                  break;
+              }
+              break;
+            }
           case (6):
             {
               boolean trameBeforeAfterNO = false;
@@ -361,27 +566,9 @@ void receiveEvent(int howMany) {
                 Serial.println(NO);
               }
               break;
-
-            }
-          case (5):
-            {
-              uint8_t receivedValue[5];
-              for (int i = 0; i < 5; i++)
-              {
-                receivedValue[i] = inputData[2 * i + 4];
-              }
-              SendUDPSubsystemRegister(receivedRegister, receivedValue);
-              break;
-            }
-          default:
-            {
-              break;
             }
         }
-      default:
-        {
-          break;
-        }
+        break;
       }
 
     case (calibrateGyro):
@@ -393,4 +580,5 @@ void receiveEvent(int howMany) {
         break;
       }
   }
+  pendingPollingResp = 0x01;
 }

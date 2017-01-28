@@ -52,7 +52,7 @@ int PingFront() {               // ping echo front
     delay(50);
     uS = pingFront.ping();
   }
-  cm = pingFront.convert_cm(uS)+shiftEchoFrontBack/2;
+  cm = pingFront.convert_cm(uS) + shiftEchoFrontBack / 2;
 #if (debugScanOn)
   Serial.print("Ping front: ");
   Serial.print(cm); // Convert ping time to distance and print result (0 = outside set distance range, no ping echo)
@@ -99,7 +99,7 @@ int PingBack() {
   */
   unsigned int uS = pingBack.ping(); // Send ping, get ping time in microseconds (uS).
   // Serial.print("Ping: ");
-  cm = pingBack.convert_cm(uS)+shiftEchoFrontBack/2;
+  cm = pingBack.convert_cm(uS) + shiftEchoFrontBack / 2;
   if (uS == 0)
   {
 #if (debugScanOn)
@@ -175,6 +175,7 @@ void ScanPosition() {
     //    myservo.write(pulseValue[(nbPulse + 1) / 2]); // remise au centre
     //   delay(1000);
     //   myservo.detach();
+    SetBNOMode(MODE_IMUPLUS);
     SendEndAction(scanEnded, 0x00);
   }
 }
