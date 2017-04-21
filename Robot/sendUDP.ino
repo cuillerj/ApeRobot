@@ -174,7 +174,7 @@ void SendStatus()
   {
     PendingDataReqSerial[14] = 0x2d;
   }
-  int angle = alpha;
+  int angle = (int)alpha % 360;
   PendingDataReqSerial[15] = uint8_t(abs(angle) / 256);
   PendingDataReqSerial[16] = uint8_t(abs(angle));
   //  PendingDataReqSerial[17] = BNOMode;
@@ -187,9 +187,9 @@ void SendStatus()
   if (BNOMode == MODE_IMUPLUS)
   {
     PendingDataReqSerial[18] = 0x00;
-    PendingDataReqSerial[19] = 0x00;
+    PendingDataReqSerial[19] = 0x00; 
   }
-  if (BNOMode == MODE_COMPASS)
+  if (BNOMode == MODE_COMPASS || getNorthOrientation == 0x01)
   {
     PendingDataReqSerial[18] = uint8_t(northOrientation / 256);
     PendingDataReqSerial[19] = uint8_t(northOrientation);
@@ -210,6 +210,7 @@ void SendStatus()
   PendingDataReqSerial[28] =  lastReceivedNumber; // for debuging
   PendingDataLenSerial = 0x1d; // 6 longueur mini max 30 pour la gateway
 }
+
 void SendPowerValue()
 {
   PendingReqSerial = PendingReqRefSerial;
@@ -309,6 +310,7 @@ void SendEncodersHolesValues()
   PendingDataReqSerial[6] = uint8_t(rightWheeelCumulative);
   PendingDataLenSerial = 0x07; // 6 longueur mini max 25  pour la gateway
 }
+
 void  SendUDPSubsystemRegister(uint8_t receivedRegister[5], uint8_t receivedValue[5])
 {
   PendingReqSerial = PendingReqRefSerial;

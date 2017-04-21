@@ -17,32 +17,6 @@ int IncPulse(int sens) { // compute servo motor value depending on sens
 }
 int PingFront() {               // ping echo front
   float cm;
-  /*
-    unsigned long lecture_echo;   //
-    unsigned long time1;
-    unsigned long time2;
-    unsigned long deltaT;
-    digitalWrite(trigFront, LOW);  // ajoute le 24/12/2015 a avlider
-    delayMicroseconds(3);      // // modify 23/10/2016
-    digitalWrite(trigFront, HIGH);
-    delayMicroseconds(1); // 10 micro sec mini
-    time1 = micros();
-    digitalWrite(trigFront, LOW);
-    lecture_echo = pulseIn(echoFront, HIGH, durationMaxEcho);
-    time2 = micros();
-    deltaT = (time2 - time1);
-    if (deltaT >= durationMaxEcho)
-    {
-    deltaT = 0;
-    }
-    else
-    {
-    deltaT = deltaT * 0.905;
-    }
-
-    cm = deltaT / 58  ;
-    //Serial.println(cm);
-  */
   unsigned int uS = pingFront.ping(); // Send ping, get ping time in microseconds (uS).
   if (uS == 0)
   {
@@ -52,7 +26,11 @@ int PingFront() {               // ping echo front
     delay(50);
     uS = pingFront.ping();
   }
-  cm = pingFront.convert_cm(uS) + shiftEchoFrontBack / 2;
+  cm = pingFront.convert_cm(uS);
+  if (cm != 0)                  // keep 0 value (no mesurment)
+  {
+    cm = cm + shiftEchoFrontBack / 2;   // add  to adjust center location
+  }
 #if (debugScanOn)
   Serial.print("Ping front: ");
   Serial.print(cm); // Convert ping time to distance and print result (0 = outside set distance range, no ping echo)
@@ -63,43 +41,11 @@ int PingFront() {               // ping echo front
 
 int PingBack() {
   float cm;
-  /*
-    unsigned long lecture_echo;   //
-    unsigned long time1;
-    unsigned long time2;
-    unsigned long deltaT;
-    digitalWrite(trigBack, LOW);
-    delayMicroseconds(3);      // modify 23/10/2016
-    digitalWrite(trigBack, HIGH);
 
-    delayMicroseconds(10); // 10 micro sec mini
-    time1 = micros();
-    digitalWrite(trigBack, LOW);
-    lecture_echo = pulseIn(echoBack, HIGH, durationMaxEcho);
-    time2 = micros();
-    deltaT = (time2 - time1);
-    if (deltaT >= durationMaxEcho)
-    {
-    deltaT = 0;
-    }
-    else
-    {
-    deltaT = deltaT * 0.905;
-    }
-    #if defined(debugScanOn)
-    Serial.println();
-    Serial.print("echo:");
-    Serial.print(lecture_echo);
-    Serial.println();
-
-    Serial.print("deltaT Back:");
-    Serial.println(time2 - time1);
-    #endif
-    cm = deltaT / 58  ;
-  */
   unsigned int uS = pingBack.ping(); // Send ping, get ping time in microseconds (uS).
   // Serial.print("Ping: ");
-  cm = pingBack.convert_cm(uS) + shiftEchoFrontBack / 2;
+
+
   if (uS == 0)
   {
 #if (debugScanOn)
@@ -107,6 +53,11 @@ int PingBack() {
 #endif
     delay(50);
     uS = pingFront.ping();
+  }
+  cm = pingBack.convert_cm(uS) ;
+  if (cm != 0)
+  {
+    cm = cm + shiftEchoFrontBack / 2;
   }
 #if (debugScanOn)
   Serial.print("Ping back: ");
@@ -171,7 +122,7 @@ void ScanPosition() {
     bitWrite(toDo, toDoScan, 0);       // position bit toDo scan
     timeScanBack = millis();
     switchFB = 0;
-    EchoServoAlign(90);
+    EchoServoAlign(servoAlignedPosition,false);
     //    myservo.write(pulseValue[(nbPulse + 1) / 2]); // remise au centre
     //   delay(1000);
     //   myservo.detach();
@@ -215,9 +166,9 @@ int ScanOnceBack(int numStep)
   return distB;
 
 }
-void EchoServoAlign(uint8_t angle)    // to align echo servo motor with robot
+void EchoServoAlign(uint8_t angle, boolean report)   // to align echo servo motor with robot
 {
-  AngleDegre = angle;
+  AngleDegre = max(miniServoAngle,min(angle,maxiServoAngle));
   myservo.attach(servoPin);
   // unsigned int value = map(angle, 0, 180, pulseValue[0],  pulseValue[nbPulse - 1]);
 
@@ -230,5 +181,9 @@ void EchoServoAlign(uint8_t angle)    // to align echo servo motor with robot
   myservo.write(AngleDegre + shiftPulse);
   delay(750);
   myservo.detach();
-  SendEndAction(servoAlignEnded, 0x00);
+  if (report)
+  {
+    SendEndAction(servoAlignEnded, 0x00);
+  }
+
 }

@@ -7,14 +7,14 @@
 
 String Version = "RobotV2";
 // uncomment #define debug to get log on serial link
-//#define debugScanOn true
+#define debugScanOn true
 //#define debugMoveOn true
-//#define debugObstacleOn true
+#define debugObstacleOn true
 //#define debugLocalizationOn true
 //#define debugMagnetoOn true
-//#define debugMotorsOn true
+#define debugMotorsOn true
 //#define debugWheelControlOn true
-//#define wheelEncoderDebugOn true
+#define wheelEncoderDebugOn true
 //#define debugConnection true
 //#define debugPowerOn true
 //#define debugLoop true
@@ -168,6 +168,7 @@ unsigned long iRightCentiRevolutions; // nmuber of done revolutions * 100
 #define toWait 0        // wait before moving
 #define toEndPause 1     // could restart
 #define toPause 2     // move to be temporaly paused
+#define requestUpdateNO 0x7b
 int gyroTargetRotation = 0; // expected rotation based on gyroscope
 uint8_t gyroRotationRetry = 0;
 #define maxGyroRotationRetry 30
@@ -176,7 +177,7 @@ int reqAng = 0;          // requested rotation
 int reqMove = 0;         // requested move
 uint8_t resumeCount = 0; // nb of echo check before resume move
 int movePingInit;     // echo value mesured before moving
-uint8_t rotationType = 0x00;
+uint8_t rotationType = rotationTypeGyro;     // default rotation type
 //-- accelerometer and magnetometer
 // powered by arduino 3.3v
 //LSM303 compass;
@@ -195,6 +196,7 @@ unsigned int northAlignShift = 0;
 boolean northAligned = false;
 uint8_t retryAlign = 0x00;
 uint8_t stepBNOInitLocation = 0x00;
+uint8_t getNorthOrientation = 0xff;
 // compass calibration to be made
 #define compassMin1 -661
 #define compassMin2 -1792
@@ -231,7 +233,7 @@ int BNORightPosX = 0;
 int BNORightPosY = 0;
 int BNOLocationHeading = 0;
 //-- scan control --
-#define servoPin 6    //  servo motor Pin (28)
+#define servoPin 6    //  servo motor Pin 
 #define echoFront 19  // arduino pin for mesuring echo delay for front 
 #define echFrontId 0 //
 #define trigFront  23     // arduino pin for trigerring front echo
@@ -244,6 +246,7 @@ int BNOLocationHeading = 0;
 #define echo4 false  // does not exit
 #define echo4Alert false  // does not exit
 #define echoPinInterrupt 2 // pin  dedicated to software usage 
+#define echoShift 15       // angle step used when checking obstacle
 boolean toDoEchoFront = true;   // to set echo front on when obstacle detection is running
 boolean echoFrontAlertOn = true; // // to set echo front threshold on when obstacle detection is running
 boolean toDoEchoBack = true;    // to set echo back on when obstacle detection is running
@@ -258,6 +261,7 @@ boolean switchFB = 0;  // switch front back scan
 #define nbPulse 15    // nb of servo positions for a 360Â° scan
 #define miniServoAngle 0    // corresponding to the lowest value of pulseValue
 #define maxiServoAngle 180   // corresponding to the highest value of pulseValue
+#define servoAlignedPosition 90 // define the servo angle aligned with robot
 //int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 180° split in 15 steps
 //int pulseValue[nbPulse] = {0, 13, 26, 39, 52, 65, 78, 90, 103, 116, 129, 142, 155, 168, 180}; // corresponding to 180° split in 15 steps
 int pulseValue[nbPulse] = {0, 13, 26, 38, 52, 65, 78, 90, 103, 116, 129, 142, 154, 166, 178}; // corresponding to 180° split in 15 steps
@@ -320,12 +324,12 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetweenScanFB 700  // delay between front and back scan of the same step
 #define delayBetweenInfo 3000   // delay before sending new status to the server  
 #define delayPowerCheck 5000    // delay before next checking of power
-#define delayBeforeRestartAfterAbstacle 5000 // delay before taking into account obstacle disappearance
+#define delayBeforeRestartAfterAbstacle 3000 // delay before taking into account obstacle disappearance
 #define delayBetweenCheckPosition 200       // delay between 2 check position
 #define delayBetween2NO 500          // delay between 2 NO update
 #define delayBetween2BNOStatus 500
 #define delayBetweenlastUpdateBNOMoveTime 200
-#define maxPauseDuration 30000
+#define maxPauseDuration 15000
 //-- robot status & diagnostics
 volatile uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
 uint8_t diagPower = 0x00;   // bit 0 power1, 1 power2, 2 power3 0 Ok 1 Ko
@@ -383,9 +387,9 @@ void setup() {
   Serial.println("reboot started");
   pinMode(trigFront, OUTPUT);
   pinMode(encoderPower, OUTPUT);
-  digitalWrite(trigBack, LOW);
   pinMode(trigBack, OUTPUT);
   digitalWrite(trigFront, LOW);
+  digitalWrite(trigBack, LOW);
   pinMode(echoFront, INPUT);
   pinMode(echoBack, INPUT);
   pinMode(servoPin, OUTPUT);
@@ -569,13 +573,17 @@ void loop() {
         {
           if (compasUpToDate == 0x00)
           {
+#if defined(debugGyroscopeOn)
             Serial.println("request compas");
+#endif
             GyroGetHeadingRegisters();
             compasUpToDate = 0x01;
           }
           if (compasUpToDate == 0x02)
           {
+#if defined(debugGyroscopeOn)
             Serial.println("got heading");
+#endif
             compasUpToDate = 0x00;
             northAlign();
             timeCompasRotation = millis();
@@ -646,18 +654,27 @@ void loop() {
     if (bitRead(waitFlag, toPause) == 1 && (millis() - pauseSince) > maxPauseDuration)
     {
 #if defined(debugObstacleOn)
-      Serial.print("end of pause due to timer");
+      Serial.print("end of pause due to timer:");
       Serial.println((millis() - pauseSince));
 #endif
-      bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
-      bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo straight
-      bitWrite(waitFlag, toPause, 0);       // clear wait & pause flag
-      bitWrite(waitFlag, toEndPause, 0);
-      bitWrite(waitFlag, toWait, 0);
-      resumeCount = 0;                      // clear count
-      toDo = 0x00;                                         // clear flag todo
-      actStat = moveEnded;                                      // status move completed
-      SendEndAction(moveEnded, moveKoDueToObstacle);                       // move not completed due to obstacle
+      InterruptMove(moveKoDueToObstacle);
+      /*
+            bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
+            bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo straight
+            bitWrite(waitFlag, toPause, 0);       // clear wait & pause flag
+            bitWrite(waitFlag, toEndPause, 0);
+            bitWrite(waitFlag, toWait, 0);
+            leftMotor.StopMotor();
+            rightMotor.StopMotor();
+            timeMotorStarted = 0;
+            GyroGetHeadingRegisters();
+            StopEchoInterrupt(true, true);                    // stop obstacles detection
+            Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
+            resumeCount = 0;                      // clear count
+            toDo = 0x00;                                         // clear flag todo
+            actStat = moveEnded;                                      // status move completed
+            SendEndAction(moveEnded, moveKoDueToObstacle);                       // move not completed due to obstacle
+      */
     }
     // *** end of loop checking obstacles
 
@@ -716,7 +733,7 @@ void loop() {
         Serial.println("gyro to many retry");
         bitWrite(diagRobot, diagRobotGyroRotation, 1);
         bitWrite(toDoDetail, toDoGyroRotation, 0);
-        SendEndAction(moveEnded, 0xfe);
+        SendEndAction(moveEnded, rotationKoToManyRetry);
       }
       else
       {
@@ -796,10 +813,46 @@ void loop() {
   }
   if (getBNOLocation == 0x01 && PendingReqSerial == 0x00 && millis() - timeSendSecSerial > 250)
   {
+#if defined(debugGyroscopeOn)
     Serial.println("send bno loc");
+#endif
     getBNOLocation = 0x00;
     SendBNOLocation ();
   }
+  if (getNorthOrientation == 0x01 || getNorthOrientation == 0x02)
+  {
+    if (BNOMode == MODE_COMPASS)
+    {
+
+      if (compasUpToDate == 0x00)
+      {
+        //#if defined(debugGyroscopeOn)
+        Serial.println("request compas");
+        //#endif
+        GyroGetHeadingRegisters();
+        compasUpToDate = 0x01;
+      }
+      if (compasUpToDate == 0x02)
+      {
+        //        #if defined(debugGyroscopeOn)
+        Serial.println("got heading");
+        //#endif
+        compasUpToDate = 0x00;
+        getNorthOrientation = 0x00;
+        SendEndAction(requestUpdateNO, 0x00);
+      }
+    }
+    else {
+      //        #if defined(debugGyroscopeOn)
+      if (getNorthOrientation  == 0x02)
+      {
+        Serial.println("set mode compas");
+        SetBNOMode(MODE_COMPASS);
+        getNorthOrientation = 0x01;
+      }
+    }
+  }
+
   if (pendingPollingResp == 0x01)           // to be kept at the end of the loop in order to be sure every subsytem response will be taken into account
   {
     pendingPollingResp = 0x00;
@@ -829,55 +882,60 @@ void Move(int orientation, int lenghtToDo)
   }
 }
 void Rotate( int orientation) {
-  //  GyroGetHeadingRegisters();
-  // EchoServoAlign();
-  // trigCurrent = trigFront;
-  // trigBoth = true;         // need to scan front and back during rotation for obstacle detection
-  //  echoCurrent = echoFront; // start echo front
-  // StartEchoInterrupt(1, 1);
-  posRotationCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
-  posRotationCenterY = posY + shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
-  //  NOBeforeRotation = NorthOrientation();
-  currentMove = 0x00;
-  saveCurrentMove = 0x00;
-  bitWrite(currentMove, toDoRotation, true);
-  bitWrite(saveCurrentMove, toDoRotation, true);
-  bitWrite(toDo, toDoRotation, false);       // position bit toDo move
-  deltaPosX = 0;
-  deltaPosY = 0;
-  unsigned int lentghLeftToDo = 0;
-  unsigned int lentghRightToDo = 0;
-  if (orientation != 0)
+  if (CheckRotationAvaibility(orientation))    // check rotation
   {
-    Serial.print("rotationToDo:");
-    Serial.println(orientation);
-    // Rotate
-    lentghLeftToDo = RotationCalculation(abs(orientation));
-    lentghRightToDo = lentghLeftToDo;
-    ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, leftMotorPWM * leftRotatePWMRatio, lentghRightToDo, rightMotorPWM * rightRotatePWMRatio);
-    if (orientation > 0)
+    //  GyroGetHeadingRegisters();
+    // EchoServoAlign();
+    // trigCurrent = trigFront;
+    // trigBoth = true;         // need to scan front and back during rotation for obstacle detection
+    //  echoCurrent = echoFront; // start echo front
+    // StartEchoInterrupt(1, 1);
+    posRotationCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
+    posRotationCenterY = posY + shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
+    //  NOBeforeRotation = NorthOrientation();
+    currentMove = 0x00;
+    saveCurrentMove = 0x00;
+    bitWrite(currentMove, toDoRotation, true);
+    bitWrite(saveCurrentMove, toDoRotation, true);
+    bitWrite(toDo, toDoRotation, false);       // position bit toDo move
+    deltaPosX = 0;
+    deltaPosY = 0;
+    unsigned int lentghLeftToDo = 0;
+    unsigned int lentghRightToDo = 0;
+    if (orientation != 0)
     {
-      bLeftClockwise = true;
-      bitWrite(currentMove, toDoClockwise, true);
-      bitWrite(saveCurrentMove, toDoClockwise, true);
-    }
-    else {
-      bLeftClockwise = false;
-      bitWrite(currentMove, toDoClockwise, false);
-      bitWrite(saveCurrentMove, toDoClockwise, false);
-    }
-    bRightClockwise = bLeftClockwise;
+      Serial.print("rotationToDo:");
+      Serial.println(orientation);
+      // Rotate
+      lentghLeftToDo = RotationCalculation(abs(orientation));
+      lentghRightToDo = lentghLeftToDo;
+      ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, leftMotorPWM * leftRotatePWMRatio, lentghRightToDo, rightMotorPWM * rightRotatePWMRatio);
+      if (orientation > 0)
+      {
+        bLeftClockwise = true;
+        bitWrite(currentMove, toDoClockwise, true);
+        bitWrite(saveCurrentMove, toDoClockwise, true);
+      }
+      else {
+        bLeftClockwise = false;
+        bitWrite(currentMove, toDoClockwise, false);
+        bitWrite(saveCurrentMove, toDoClockwise, false);
+      }
+      bRightClockwise = bLeftClockwise;
 
-    startMotors();
+      startMotors();
+    }
+    Serial.println("rotate ");
   }
-  Serial.println("rotate ");
+  else {
 
+  }
 }
 
 void MoveForward(int lengthToDo ) {
   //  GyroGetHeadingRegisters();
   delay(10);
-  EchoServoAlign(90);
+
   //  NOBeforeMoving = NorthOrientation();
   bitWrite(toDo, toDoStraight, false);       // position bit toDo move
   //  currentMove = 0x00;
@@ -899,13 +957,16 @@ void MoveForward(int lengthToDo ) {
     ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, leftMotorPWM, lentghRightToDo, rightMotorPWM);
     boolean doEchoFront;
     boolean doEchoBack;
-
+    int *minFB = MinEchoFB(servoAlignedPosition - echoShift, 2 * echoShift);          // get minimal echo distance front and back
+    int minEchoF = minFB[0];
+    int minEchoB = minFB[1];
     if (lengthToDo < 0)
     {
       bLeftClockwise = bForward;
       bRightClockwise = !bForward;
       moveForward = false;
-      movePingInit = -PingBack();
+
+      movePingInit = -minEchoB;
       echoCurrent = echoBack;
       trigCurrent = trigBack;
       doEchoFront = false;
@@ -916,7 +977,7 @@ void MoveForward(int lengthToDo ) {
       bLeftClockwise = !bForward;
       bRightClockwise = bForward;
       moveForward = true;
-      movePingInit = PingFront();
+      movePingInit = minEchoF;
       echoCurrent = echoFront;
       trigCurrent = trigFront;
       doEchoBack = false;
@@ -925,6 +986,22 @@ void MoveForward(int lengthToDo ) {
     trigBoth == false;
     unsigned int distF = 0;
     unsigned int distB = 0 ;
+    if (abs(movePingInit) - abs(lengthToDo) < (frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack)
+    {
+#if defined(debugObstacleOn)
+      Serial.print("not enough free space to move:");
+      Serial.print(lengthToDo);
+      Serial.print(" obstacle:");
+      Serial.print(movePingInit);
+      Serial.print(" security:");
+      Serial.println((frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack);
+#endif
+      SendEndAction(moveEnded, moveKoDueToNotEnoughSpace);
+      bitWrite(currentMove, toDoStraight, false);
+      bitWrite(saveCurrentMove, toDoStraight, false);
+      lengthToDo = 0;
+      return;
+    }
     /*
       if (abs(movePingInit) > abs(lengthToDo))
       {
@@ -932,6 +1009,7 @@ void MoveForward(int lengthToDo ) {
       distB = (abs(movePingInit) - abs(lengthToDo)) * doEchoBack * .9;
       }
     */
+    EchoServoAlign(servoAlignedPosition, false);
     distF = (frontLenght + securityLenght) * doEchoFront;
     distB = (backLenght + securityLenght) * doEchoBack;
 #if defined(debugObstacleOn)
@@ -1120,17 +1198,20 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
 
   if (pbSynchro == true)
   {
+
     leftMotor.StopMotor();
     rightMotor.StopMotor();
     timeMotorStarted = 0;
     delay(100);
-    GyroGetHeadingRegisters();
-    StopEchoInterrupt(true, true);                    // stop obstacles detection
-    Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
-    digitalWrite(encoderPower, LOW);
-    detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
-    bitWrite(diagMotor, diagMotorPbSynchro, 1);       // position bit diagMotor
-    pinMode(wheelPinInterrupt, INPUT);
+    /*
+      GyroGetHeadingRegisters();interruptmov
+      StopEchoInterrupt(true, true);                    // stop obstacles detection
+      Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
+      digitalWrite(encoderPower, LOW);
+      detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+      bitWrite(diagMotor, diagMotorPbSynchro, 1);       // position bit diagMotor
+      pinMode(wheelPinInterrupt, INPUT);
+    */
 #if defined(debugMotorsOn)
     Serial.print("move synchro pb deltaMove:");
     Serial.print(deltaMove);
@@ -1145,7 +1226,8 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     else {
       ComputeNewLocalization(0xff);
     }
-    SendEndAction(moveEnded, moveKoDueToSpeedInconsistancy);
+    InterruptMove(moveKoDueToSpeedInconsistancy);
+    // SendEndAction(moveEnded, moveKoDueToSpeedInconsistancy);
 #if defined(debugMotorsOn)
     Serial.print("min level left:");
     Serial.print(Wheels.GetMinLevel(leftWheelId));
@@ -1254,6 +1336,8 @@ void ComputeNewLocalization(uint8_t param)  // compute localization according to
     alpha = int((deltaAlpha + alpha)) % 360;
     posX = posRotationCenterX + shiftEchoVsRotationCenter * cos(alpha * PI / 180);    // to take into account the distance beetwen (X,Y) reference and rotation center
     posY = posRotationCenterY + shiftEchoVsRotationCenter * sin(alpha * PI / 180);
+    BNOprevSentRightHoles = currentRightHoles;            // to avoid subsystem take into account the rotation when computing the next location
+    BNOprevSentLeftHoles = currentLeftHoles;               // to avoid subsystem take into account the rotation when computing the next location
 #if defined(debugLocalizationOn)
     Serial.print("new pos X:");
     Serial.print(posX);
@@ -1521,7 +1605,7 @@ void CheckNoMoreObstacle()              // check if obstacle still close to the 
   {
     Serial.println("pause due to obstacle");
   }
-  Serial.print(" echo number:");
+  Serial.print(" check echo number:");
   Serial.print(echo.GetAlertEchoNumber());
   Serial.print(" dist:");
   Serial.print(dist);
@@ -1542,7 +1626,7 @@ void PauseMove()                  //
 #if debugObstacleOn
   {
     Serial.print("stop obstacle ");
-    Serial.print("threshold left:");
+    Serial.print("encoder left:");
     Serial.print(currentLeftWheelThreshold);
     Serial.print(" right:");
     Serial.println(currentRightWheelThreshold);
@@ -1556,11 +1640,11 @@ void PauseMove()                  //
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
 #if debugObstacleOn
   {
-    Serial.print("pause left:");
+    Serial.print("pause encoder left:");
     Serial.print(pauseLeftWheelInterrupt);
     Serial.print(" right:");
-    Serial.println(pauseRightWheelInterrupt);
-    Serial.println("stop obstacle");
+    Serial.print(pauseRightWheelInterrupt);
+    Serial.println(" due to obstacle");
   }
 #endif
   detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
@@ -1655,7 +1739,8 @@ void ResumeMove()  // no more obstacle resume moving
   {
     actStat = moveEnded;                                      // status move completed
     toDo = 0x00;                                         // clear flag todo
-    SendEndAction(moveEnded, moveUnderLimitation);                       //
+    InterruptMove(moveUnderLimitation);
+    //  SendEndAction(moveEnded, moveUnderLimitation);                       //
   }
   SendStatus();
 }
@@ -1735,7 +1820,7 @@ void CheckEndOfReboot()  //
   if (rebootPhase == 3 && millis() > rebootDuration) // end of arduino reboot
   {
     Serial.println("reboot phase:3");
-    EchoServoAlign(90);                               // adjust servo motor to center position
+    EchoServoAlign(servoAlignedPosition, false);                              // adjust servo motor to center position
     delay(1000);
     //   northOrientation = NorthOrientation();            // added 24/10/2016
     PingFrontBack();
@@ -1764,21 +1849,30 @@ void CheckEndOfReboot()  //
   }
 }
 
-void obstacleInterrupt()        // Obstacles detection system set a softare interrupt due to threshold reaching
+void obstacleInterrupt()        // Obstacles detection system set a softare interrupt due to threshold
 {
   obstacleDetectionCount++;
   volatile uint8_t echoID = echo.GetAlertEchoNumber();
   volatile unsigned int obstacleDistance = echo.GetDistance(echoID);
 #if defined(debugObstacleOn)
   Serial.print("obstacle a:");
-  Serial.println(obstacleDistance);
+  Serial.print(obstacleDistance);
+  Serial.print("cm echoId:");
+  Serial.println(echoID);
 #endif
   if (obstacleDistance != 0 && obstacleDetectionCount >= 2)
   {
-    bitWrite(waitFlag, toPause, true);     // position bit pause to end
-    bitWrite(diagRobot, diagRobotObstacle, 1);       // position bit diagRobot
+    if (bitRead(waitFlag, toPause) == false)
+    {
+#if defined(debugObstacleOn)
+      Serial.println("init pause");
+#endif
+      pauseSince = millis();
+      bitWrite(waitFlag, toPause, true);     // position bit pause to end
+      bitWrite(diagRobot, diagRobotObstacle, 1);       // position bit diagRobot
+    }
+
     //  digitalWrite(echoPinInterrupt, LOW);
-    pauseSince = millis();
     PauseMove();
   }
 }
@@ -1972,10 +2066,10 @@ void CalibrateWheels()           // calibrate encoder levels and leftToRightDyna
   unsigned int rightDiffLevel = (maxRightLevel - minRightLevel) / 4;
   rightIncoderLowValue = rightAvgLevel - rightDiffLevel;
   rightIncoderHighValue = rightAvgLevel + rightDiffLevel;
-  Serial.println(leftWheeelCumulative - rightWheeelCumulative);
+  Serial.print(leftWheeelCumulative - rightWheeelCumulative);
   if (leftHoles != rightHoles)
   {
-    Serial.print ("diff ");
+    Serial.print (" > diff ");
     if ((leftWheeelCumulative - rightWheeelCumulative > 0) && (leftHoles > rightHoles) )
     {
       Serial.println("+");
@@ -2062,6 +2156,7 @@ void Horn(boolean hornOn, unsigned int hornDuration)  //
 #define maxAlign 357
 void northAlign()
 { // aligning anti-clockwise positive    - robot rotation clockwise positive
+
   compasUpToDate = 0x00;
   //  uint8_t retry = 0;
 
@@ -2085,7 +2180,10 @@ void northAlign()
     {
       if (alignTarget > 15)
       {
-        Rotate(alignTarget);
+        if (CheckRotationAvaibility(alignTarget))    // check rotation
+        {
+          Rotate(alignTarget);
+        }
       }
       else
       {
@@ -2101,7 +2199,10 @@ void northAlign()
     {
       if (alignTarget < 345)
       {
-        Rotate(alignTarget - 360);
+        if (CheckRotationAvaibility(alignTarget - 360))  // check rotation
+        {
+          Rotate(alignTarget - 360);
+        }
       }
       else
       {
@@ -2160,6 +2261,7 @@ uint8_t GyroscopeRotate()
     //   timeGyroRotation = millis();
     gyroRotationRetry++;
 #if defined(gyroDebugOn)
+    Serial.print("gyro retry");
     Serial.println(gyroRotationRetry);
 #endif
     boolean aligned = false;
@@ -2357,6 +2459,7 @@ void OptimizeGyroRotation (int rotation)
     {
       Rotate(rotation - maxInertialRotation);
 #if defined(gyroDebugOn)
+      Serial.print("gyro:");
       Serial.println( rotation - maxInertialRotation);
 #endif
     }
@@ -2364,6 +2467,7 @@ void OptimizeGyroRotation (int rotation)
     {
       Rotate(rotation + maxInertialRotation);
 #if defined(gyroDebugOn)
+      Serial.print("gyro:");
       Serial.println( rotation + maxInertialRotation);
 #endif
     }
@@ -2374,6 +2478,7 @@ void OptimizeGyroRotation (int rotation)
     {
       Rotate(max(round(rotation * 0.8), minRotEncoderAbility));
 #if defined(gyroDebugOn)
+      Serial.print("gyro:");
       Serial.println( max(round(rotation * 0.8), minRotEncoderAbility));
 #endif
     }
@@ -2381,6 +2486,7 @@ void OptimizeGyroRotation (int rotation)
     {
       Rotate(min(round(rotation * 0.8), -minRotEncoderAbility));
 #if defined(gyroDebugOn)
+      Serial.print("gyro:");
       Serial.println( min(round(rotation * 0.8), -minRotEncoderAbility));
 #endif
     }
@@ -2423,6 +2529,210 @@ void PrintRobotParameters()
   Serial.println(maxInertialRotation);
 }
 
+boolean CheckRotationAvaibility(int rotation)
+{
+
+  if (rotation >= -90 && rotation <= 90)
+  {
+    int *minFB = MinEchoFB(90, rotation);              // get minimal echo distance front and back
+    int minEchoF = minFB[0];
+    int minEchoB = minFB[1];
+    if (minEchoF + securityLenght < iRobotFrontDiag || minEchoB + securityLenght < iRobotBackDiag)
+    {
+#if defined(debugObstacleOn)
+      Serial.println("rotation not possible");
+#endif
+      return false; // not enough space to rotate
+
+    }
+    else
+    {
+#if defined(debugObstacleOn)
+      Serial.println("rotation possible");
+#endif
+      return true;
+    }
+  }
+  if (rotation > 90)
+  {
+    int *minFB = MinEchoFB(90, 90);              // get minimal echo distance front and back
+    int minEchoF = minFB[0];
+    int minEchoB = minFB[1];
+    if (minEchoF + securityLenght < iRobotFrontDiag || minEchoB + securityLenght < iRobotBackDiag)
+    {
+#if defined(debugObstacleOn)
+      Serial.println("rotation not possible");
+#endif
+      return false; // not enough space to rotate
+
+    }
+    else
+    {
+      int *minFB = MinEchoFB(180 - rotation, 90 - rotation);          // get minimal echo distance front and back
+      minEchoF = minFB[0];
+      minEchoB = minFB[1];
+      if (minEchoF + securityLenght < iRobotBackDiag || minEchoB + securityLenght < iRobotFrontDiag)
+      {
+#if defined(debugObstacleOn)
+        Serial.println("rotation not possible");
+#endif
+        return false; // not enough space to rotate
+
+      }
+      else {
+#if defined(debugObstacleOn)
+        Serial.println("rotation possible");
+#endif
+        return true;
+      }
+
+    }
+  }
+  if (rotation < -90)
+  {
+    int *minFB = MinEchoFB(90, -90);              // get minimal echo distance front and back
+    int minEchoF = minFB[0];
+    int minEchoB = minFB[1];
+    if (minEchoF + securityLenght < iRobotFrontDiag || minEchoB + securityLenght < iRobotBackDiag)
+    {
+#if defined(debugObstacleOn)
+      Serial.println("rotation not possible");
+#endif
+      return false; // not enough space to rotate
+
+    }
+    else
+    {
+      int *minFB = MinEchoFB( rotation + 180, 90 - rotation);       // get minimal echo distance front and back
+      minEchoF = minFB[0];
+      minEchoB = minFB[1];
+      if (minEchoF + securityLenght < iRobotBackDiag || minEchoB + securityLenght < iRobotFrontDiag)
+      {
+#if defined(debugObstacleOn)
+        Serial.println("rotation not possible");
+#endif
+        return false; // not enough space to rotate
+
+      }
+      else {
+#if defined(debugObstacleOn)
+        Serial.println("rotation possible");
+#endif
+        return true;
+      }
+
+    }
+  }
+  /*
+    else {
+    if (minEchoF + securityLenght < iRobotBackDiag || minEchoB + securityLenght < iRobotFrontDiag)
+    {
+    #if defined(debugObstacleOn)
+      Serial.println("rotation not possible");
+    #endif
+      return false; // not enough space to rotate
+
+    }
+    else
+    {
+    #if defined(debugObstacleOn)
+      Serial.println("rotation possible");
+    #endif
+      return true;
+    }
+    }
+  */
+}
+
+int * MinEchoFB(int fromPosition, int rotation)
+{
+  /*
+     This function return the minimum echo distance got by a scan from 'fromPostion' taken into account the rotation
+  */
+  int MinFB[2];
+  MinFB[0] = 9999;
+  MinFB[1] = 9999;
+  int rotationSens = rotation / abs(rotation);
+  //maxiServoAngle
+  //miniServoAngle
+
+  rotation = rotation % 180;
+  int servoRotation = rotation ;
+
+#if defined(debugObstacleOn)
+  Serial.print("from:");
+  Serial.print(fromPosition);
+  Serial.print(" rotation:");
+  Serial.print(rotation);
+  Serial.print(" servo rotation:");
+  Serial.println(servoRotation);
+#endif
+  if ((rotation >= 0 && rotation <= 90) || rotation < -90)
+  {
+    for (int servoOrientation = fromPosition;
+         (servoOrientation <= min(maxiServoAngle, (fromPosition + echoShift / 2 + servoRotation)));
+         servoOrientation = servoOrientation + echoShift )
+    {
+      EchoServoAlign( servoOrientation, false);
+      int echoF = PingFront();
+      if (echoF != 0 && echoF < MinFB[0])
+      {
+        MinFB[0] = echoF;
+      }
+      delay(100);
+      int echoB = PingBack();
+      if (echoB != 0 && echoB < MinFB[1])
+      {
+        MinFB[1] = echoB;
+      }
+    }
+  }
+  else {
+    for (int servoOrientation = fromPosition;
+         ( servoOrientation >= max(miniServoAngle, (fromPosition - echoShift / 2 + servoRotation )));
+         servoOrientation = servoOrientation - echoShift )
+    {
+      EchoServoAlign( servoOrientation, false);
+      int echoF = PingFront();
+      if (echoF != 0 && echoF < MinFB[0])
+      {
+        MinFB[0] = echoF;
+      }
+      delay(100);
+      int echoB = PingBack();
+      if (echoB != 0 && echoB < MinFB[1])
+      {
+        MinFB[1] = echoB;
+      }
+    }
+  }
+
+#if defined(debugObstacleOn)
+  Serial.print("minEchoF:");
+  Serial.print(MinFB[0]);
+  Serial.print(" minEchoB:");
+  Serial.println(MinFB[1]);
+#endif
+  return MinFB;
+}
+void InterruptMove(uint8_t retCode)
+{
+  bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
+  bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo straight
+  bitWrite(waitFlag, toPause, 0);       // clear wait & pause flag
+  bitWrite(waitFlag, toEndPause, 0);
+  bitWrite(waitFlag, toWait, 0);
+  leftMotor.StopMotor();
+  rightMotor.StopMotor();
+  timeMotorStarted = 0;
+  GyroGetHeadingRegisters();
+  StopEchoInterrupt(true, true);                    // stop obstacles detection
+  Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
+  resumeCount = 0;                      // clear count
+  toDo = 0x00;                                         // clear flag todo
+  actStat = moveEnded;                                      // status move completed
+  SendEndAction(moveEnded, retCode);                       // move not completed due to obstacle
+}
 /*
   void readParameters(uint8_t number, uint8_t list[maxReadParamtersList])
   {

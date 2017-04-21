@@ -1,3 +1,4 @@
+/*
 void SetGyroBiasMicrosec(uint8_t registerValue)
 {
   uint8_t registers[3];
@@ -26,6 +27,7 @@ void GyroSetPollingRegister(int cycleValue)
   SubsystemSetRegisters(2, reg, regVal);
   RequestForPolling();
 }
+*/
 void SubsystemReadRegisters(uint8_t number, uint8_t registers[maxRegsNumberRead])
 {
   InitOutData();
@@ -161,7 +163,7 @@ void GetBNO055Status()
 }
 void GetBNOHeadingLocation()
 {
-  Serial.println(getBNOLocation, HEX);
+ // Serial.println(getBNOLocation, HEX);
   uint8_t reqRegisters[2] = {BNO055LocationHeading[0], BNO055LocationHeading[1]};
   SubsystemReadRegisters(0x02, reqRegisters);          // read z registers
   if (getBNOLocation != 0x00)
@@ -259,7 +261,7 @@ void InitBNOLocation()
 {
   uint16_t uInitX = (int)round(posRotationGyroCenterX * leftWheelEncoderHoles / (iLeftWheelDiameter * PI));
   uint16_t uInitY = (int)round(posRotationGyroCenterY * rightWheelEncoderHoles / (iRightWheelDiameter * PI));
-  uint16_t uAlpha = (int)round(alpha);
+  uint16_t uAlpha = (int)(round(alpha)) % 360;
 #if defined(debugGyroscopeOn)
   Serial.print("InitBNOLocation:");
   Serial.println(stepBNOInitLocation, HEX);
@@ -268,25 +270,22 @@ void InitBNOLocation()
   {
     case 1:
       {
-        //       Serial.print(" 1 ");
-        uint8_t regLoc[3] = {initPosX_Reg1, initPosX_Reg2, initPosY_Reg1};
-        uint8_t regLocValue[3] = {((uint8_t)((uInitX & 0x7fff) >> 8) | ((uInitX & 0x8000) >> 8)), (uint8_t)uInitX , ((uint8_t)((uInitY & 0x7fff) >> 8) | ((uInitY & 0x8000) >> 8))};
+        uint8_t regLoc[3] = {initPosY_Reg2, initHeading_reg1, initHeading_reg2};
+        uint8_t regLocValue[3] = {(uint8_t)uInitY, (uint8_t)(uAlpha  >> 8 ), (uint8_t)uAlpha};
         SubsystemSetMoveRegisters(3, regLoc, regLocValue);
         stepBNOInitLocation++;
         break;
       }
     case 2:
       {
-        //       Serial.print(" 2 ");
-        uint8_t regLoc[3] = {initPosY_Reg2, initHeading_reg1, initHeading_reg2};
-        uint8_t regLocValue[3] = {(uint8_t)uInitY, ((uint8_t)(uAlpha & 0x7fff) >> 8 | ((uAlpha & 0x8000) >> 8)), (uint8_t)uAlpha};
+        uint8_t regLoc[3] = {initPosX_Reg1, initPosX_Reg2, initPosY_Reg1};
+        uint8_t regLocValue[3] = {((uint8_t)((uInitX & 0x7fff) >> 8) | ((uInitX & 0x8000) >> 8)), (uint8_t)uInitX , ((uint8_t)((uInitY & 0x7fff) >> 8) | ((uInitY & 0x8000) >> 8))};
         SubsystemSetMoveRegisters(3, regLoc, regLocValue);
         stepBNOInitLocation++;
         break;
       }
     case 3:
       {
-        //      Serial.print(" 3 ");
         GyroInitLocation();
         stepBNOInitLocation = 0x00;
         break;

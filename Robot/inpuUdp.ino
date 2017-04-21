@@ -1,3 +1,4 @@
+
 void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   //  Serial.println("serialInput");
   bitWrite(diagConnection, diagConnectionIP, 0);      // connection is active
@@ -184,7 +185,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case 0x53: // commande S align servo
       Serial.println("align servo");
-      EchoServoAlign(DataInSerial[3]); // align according to data received - orientation in degres
+      EchoServoAlign(DataInSerial[3], true); // align according to data received - orientation in degres
       iddleTimer = millis();
       break;
     case 0x61: // we received a ack from the server
@@ -332,7 +333,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         ResetGyroscopeHeadings();
         GyroStartInitMonitor();
         delay(100);
-        bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
+
         int reqN = ((DataInSerial[3] & 0b01111111) * 256 + DataInSerial[4]) % 360;
         if (bitRead(DataInSerial[3], 7) == 1)    // means negative rotation
         {
@@ -347,12 +348,16 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         Serial.println( reqN);
         timeGyroRotation = millis();
         gyroTargetRotation = reqN;
-        Serial.print("request gyro rotate:");
-        Serial.println( gyroTargetRotation);
-        gyroRotationRetry = 0;
-        //       uint8_t retCode = GyroscopeRotate();
-        //        targetAfterGyroRotation = ((int) alpha + reqN) % 360;
-        //       northAlign((NorthOrientation() - reqN + 360) % 360);
+        if (CheckRotationAvaibility(gyroTargetRotation))    // check rotation
+        {
+          bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
+          Serial.print("request gyro rotate:");
+          Serial.println( gyroTargetRotation);
+          gyroRotationRetry = 0;
+          //       uint8_t retCode = GyroscopeRotate();
+          //        targetAfterGyroRotation = ((int) alpha + reqN) % 360;
+          //       northAlign((NorthOrientation() - reqN + 360) % 360);
+        }
         break;
       }
     case 0x70: // commande p ping front back
@@ -401,6 +406,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case 0x7a: // get subsytem location
       getBNOLocation = 0x07;
       Serial.println("getBNOLocation");
+      break;
+    case requestUpdateNO: // get north orientation
+      getNorthOrientation = 0x02;
+      compasUpToDate = 0x00;
+      Serial.println("getNorthOrientation");
       break;
     default:
 
