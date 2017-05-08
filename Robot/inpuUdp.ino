@@ -4,7 +4,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   bitWrite(diagConnection, diagConnectionIP, 0);      // connection is active
   timeReceiveSerial = millis();         // reset check receive timer
   sendInfoSwitch = 1;                   // next info to send will be status
-  lastReceivedNumber = DataInSerial[1];
+  lastReceivedNumber = GatewayLink.DataInSerial[1];
   switch (cmdInput) {                   // first byte of input is the command type
     case 0x2b: // commande + means scan 360
       if (appStat != 0xff)
@@ -23,22 +23,22 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case 0x3a: // commande : power on/off encoder
       Serial.print("commande : power on/off encoder:");
-      Serial.println(DataInSerial[3]);
-      digitalWrite(encoderPower, DataInSerial[3]);
+      Serial.println(GatewayLink.DataInSerial[3]);
+      digitalWrite(encoderPower, GatewayLink.DataInSerial[3]);
       break;
     case 0x3c: // commande : set encoder threshold
       Serial.print("commande : set threshold encoder ");
-      //     Serial.println(DataInSerial[3]);
-      if (DataInSerial[3] == 0x4c)
+      //     Serial.println(GatewayLink.GatewayLink.DataInSerial[3]);
+      if (GatewayLink.DataInSerial[3] == 0x4c)
       {
-        leftIncoderLowValue = DataInSerial[5] * 256 + DataInSerial[6];
-        leftIncoderHighValue = DataInSerial[8] * 256 + DataInSerial[9];
+        leftIncoderLowValue = GatewayLink.DataInSerial[5] * 256 + GatewayLink.DataInSerial[6];
+        leftIncoderHighValue = GatewayLink.DataInSerial[8] * 256 + GatewayLink.DataInSerial[9];
         Serial.println("left");
       }
-      if (DataInSerial[3] == 0x52)
+      if (GatewayLink.DataInSerial[3] == 0x52)
       {
-        rightIncoderLowValue = DataInSerial[5] * 256 + DataInSerial[6];
-        rightIncoderHighValue = DataInSerial[8] * 256 + DataInSerial[9];
+        rightIncoderLowValue = GatewayLink.DataInSerial[5] * 256 + GatewayLink.DataInSerial[6];
+        rightIncoderHighValue = GatewayLink.DataInSerial[8] * 256 + GatewayLink.DataInSerial[9];
         Serial.println("right");
       }
       break;
@@ -46,7 +46,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       {
         Serial.print("commande : set motors ratio:");
         float inpValue = 0.;
-        inpValue = DataInSerial[3] * 256 + DataInSerial[4];
+        inpValue = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
         leftToRightDynamicAdjustRatio = inpValue / 100;
         Serial.println(leftToRightDynamicAdjustRatio);
         break;
@@ -60,14 +60,14 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case 0x3f: // commande : set motors PMW values
       {
         Serial.print("commande : set motors PMW values :");
-        Serial.println(DataInSerial[3], HEX);
-        if (DataInSerial[3] == 0x4c)
+        Serial.println(GatewayLink.DataInSerial[3], HEX);
+        if (GatewayLink.DataInSerial[3] == 0x4c)
         {
-          leftMotorPWM =  DataInSerial[6];
+          leftMotorPWM =  GatewayLink.DataInSerial[6];
         }
-        if (DataInSerial[3] == 0x52)
+        if (GatewayLink.DataInSerial[3] == 0x52)
         {
-          rightMotorPWM =  DataInSerial[6];
+          rightMotorPWM =  GatewayLink.DataInSerial[6];
         }
         break;
       }
@@ -80,31 +80,31 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case 0x41: // commande : set gyro selected range
       {
         Serial.print("commande : set gyro selected range :");
-        Serial.println(DataInSerial[3], HEX);
-        SetGyroSelectedRange(DataInSerial[3]);
+        Serial.println(GatewayLink.DataInSerial[3], HEX);
+        SetGyroSelectedRange(GatewayLink.DataInSerial[3]);
         break;
       }
     case 0x42: // commande : set gyro ODR
       {
         Serial.print("commande : set gyro ODR :");
-        Serial.println(DataInSerial[3], HEX);
-        SetGyroODR(DataInSerial[3]);
+        Serial.println(GatewayLink.DataInSerial[3], HEX);
+        SetGyroODR(GatewayLink.DataInSerial[3]);
         break;
       }
     case 0x43: // commande : read subsytem register
       {
         Serial.print("commande : read subsytem register:");
-        Serial.print(DataInSerial[3], HEX);
+        Serial.print(GatewayLink.DataInSerial[3], HEX);
         Serial.print("-");
         uint8_t registers[5];
         for (int i = 0; i < 5; i++)
         {
-          registers[i] = DataInSerial[i + 4];
+          registers[i] = GatewayLink.DataInSerial[i + 4];
           Serial.print(registers[i], HEX);
           Serial.print(".");
         }
         Serial.println();
-        GetSubsystemRegister(DataInSerial[3], registers);
+        GetSubsystemRegister(GatewayLink.DataInSerial[3], registers);
         break;
       }
     case 0x44: // commande : set subsystem registers
@@ -112,58 +112,61 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         uint8_t registers[3];
         uint8_t registersValues[3];
         Serial.print("commande : set GyroBiasMicrosec:");
-        Serial.print(DataInSerial[3], HEX);
+        Serial.print(GatewayLink.DataInSerial[3], HEX);
         Serial.print(" ");
-        for (int i = 0; i < DataInSerial[3]; i++)
+        for (int i = 0; i < GatewayLink.DataInSerial[3]; i++)
         {
-          Serial.print(DataInSerial[i + 4]);
+          Serial.print(GatewayLink.DataInSerial[i + 4]);
           Serial.print("=");
-          Serial.print(DataInSerial[i + 5]);
-          registers[i] = DataInSerial[i + 4];
-          registersValues[i] = DataInSerial[i + 5];
+          Serial.print(GatewayLink.DataInSerial[i + 5]);
+          registers[i] = GatewayLink.DataInSerial[i + 4];
+          registersValues[i] = GatewayLink.DataInSerial[i + 5];
         }
         Serial.println();
-        SubsystemSetRegisters(max(DataInSerial[3], 3), registers, registersValues);
+        SubsystemSetRegisters(max(GatewayLink.DataInSerial[3], 3), registers, registersValues);
         break;
       }
 
     case 0x45: // E north align
       {
-        northAligned = false;
-        ResetGyroscopeHeadings();
-        GyroStartInitMonitor();
-        northAlignShift = DataInSerial[3] * 256 + DataInSerial[4];
-        bitWrite(toDo, toDoAlign, 1);       // position bit toDo
-        iddleTimer = millis();
+        if (bitRead(toDoDetail, toDoAlign) == 0)   // no pending rotation
+        {
+          northAligned = false;
+          ResetGyroscopeHeadings();
+          GyroStartInitMonitor();
+          northAlignShift = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
+          bitWrite(toDo, toDoAlign, 1);       // position bit toDo
+          iddleTimer = millis();
 #if defined(debugConnection)
-        Serial.print("north align:");
-        Serial.println(northAlignShift);
+          Serial.print("north align:");
+          Serial.println(northAlignShift);
 #endif
-        //       targetAfterNORotation= ((int) alpha + reqN) % 360;
-        targetAfterNORotation = 0;
-        //       northAlign(reqN);
-        break;
+          //       targetAfterNORotation= ((int) alpha + reqN) % 360;
+          targetAfterNORotation = 0;
+          //       northAlign(reqN);
+          break;
+        }
       }
     case 0x49: // commande I init robot postion
       {
-        posX = DataInSerial[4] * 256 + DataInSerial[5]; // received X cm position on 3 bytes including 1 byte for sign
-        if (DataInSerial[3] == 0x2d) {                  // check sign + or -
+        posX = GatewayLink.DataInSerial[4] * 256 + GatewayLink.DataInSerial[5]; // received X cm position on 3 bytes including 1 byte for sign
+        if (GatewayLink.DataInSerial[3] == 0x2d) {                  // check sign + or -
           posX = -posX;
         }
-        posY = DataInSerial[7] * 256 + DataInSerial[8]; //received Y cm position on 3 bytes including 1 byte for sign
-        if (DataInSerial[6] == 0x2d) {                 // check sign + or -
+        posY = GatewayLink.DataInSerial[7] * 256 + GatewayLink.DataInSerial[8]; //received Y cm position on 3 bytes including 1 byte for sign
+        if (GatewayLink.DataInSerial[6] == 0x2d) {                 // check sign + or -
           posY = -posY;
         }
-        alpha = DataInSerial[10] * 256 + DataInSerial[11]; //received orientation (degre) on 3 bytes including 1 byte for sign
+        alpha = GatewayLink.DataInSerial[10] * 256 + GatewayLink.DataInSerial[11]; //received orientation (degre) on 3 bytes including 1 byte for sign
 
-        if (DataInSerial[9] == 0x2d) {                 // check sign + or -
+        if (GatewayLink.DataInSerial[9] == 0x2d) {                 // check sign + or -
           alpha = -alpha;
         }
         deltaPosX = 0;
         deltaPosY = 0;
         posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180); // x position of the rotation center
         posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180); // y position of the rotation center
-        currentLocProb = DataInSerial[13];   // localisation probability
+        currentLocProb = GatewayLink.DataInSerial[13];   // localisation probability
         sendInfoSwitch = 1;                  // to force next sent info to be status
         SendStatus();
         stepBNOInitLocation = 0x01;
@@ -180,21 +183,21 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
     case 0x4f: // commande O obstacle detection
       Serial.print("commande O obstacle detection:");
-      obstacleDetectionOn = (DataInSerial[3]); // 1 on 0 off
+      obstacleDetectionOn = (GatewayLink.DataInSerial[3]); // 1 on 0 off
       Serial.println(obstacleDetectionOn);
       break;
     case 0x53: // commande S align servo
       Serial.println("align servo");
-      EchoServoAlign(DataInSerial[3], true); // align according to data received - orientation in degres
+      EchoServoAlign(GatewayLink.DataInSerial[3], true); // align according to data received - orientation in degres
       iddleTimer = millis();
       break;
     case 0x61: // we received a ack from the server
-      lastAckTrameNumber = DataInSerial[3];
+      lastAckTrameNumber = GatewayLink.DataInSerial[3];
 #if defined(debugConnection)
       Serial.print("ack: ");
       for (int i = 0; i < 5; i++)
       {
-        Serial.print(DataInSerial[i], HEX);
+        Serial.print(GatewayLink.DataInSerial[i], HEX);
         Serial.print(":");
       }
       Serial.println();
@@ -220,13 +223,13 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       {
         ResetGyroscopeHeadings();
         GyroStartInitMonitor();
-        int reqX = DataInSerial[4] * 256 + DataInSerial[5];
+        int reqX = GatewayLink.DataInSerial[4] * 256 + GatewayLink.DataInSerial[5];
         moveForward = true;           // goto forward
-        if (DataInSerial[3] == 0x2d) {
+        if (GatewayLink.DataInSerial[3] == 0x2d) {
           reqX = -reqX;
         }
-        int reqY = DataInSerial[7] * 256 + DataInSerial[8];
-        if (DataInSerial[6] == 0x2d) {
+        int reqY = GatewayLink.DataInSerial[7] * 256 + GatewayLink.DataInSerial[8];
+        if (GatewayLink.DataInSerial[6] == 0x2d) {
           reqY = -reqY;
         }
 #if defined(debugConnection)
@@ -249,30 +252,24 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case 0x68: // commande h horn
       {
         Serial.println("horn");
-        unsigned int duration = DataInSerial[3];
+        unsigned int duration = GatewayLink.DataInSerial[3];
         Horn(true, duration * 1000);
         break;
       }
     case 0x69: // commande i adujst shiftPulse
       {
         Serial.println("set shift pulse:");
-        shiftPulse = DataInSerial[3];
+        shiftPulse = GatewayLink.DataInSerial[3];
         break;
       }
     case 0x6d: // commande m means move
-      if (appStat != 0xff)
+      if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0)
       {
-        getBNOLocation = 0xff;
-        iddleTimer = millis();
-        ResetGyroscopeHeadings();
-        GyroStartInitMonitor();
-        appStat = appStat & 0x1f;
-        actStat = 0x68; // moving
-        toDo = 0x00;
-        bitWrite(toDo, toDoMove, 1);       // position bit toDo move
-        reqAng = DataInSerial[4] * 256 + DataInSerial[5];
 
-        if (DataInSerial[3] == 0x2d) {
+        toDo = 0x00;
+        reqAng = GatewayLink.DataInSerial[4] * 256 + GatewayLink.DataInSerial[5];
+
+        if (GatewayLink.DataInSerial[3] == 0x2d) {
           reqAng = -reqAng;
         }
         if (reqAng != 0)
@@ -283,8 +280,20 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         Serial.print("Move: ");
         Serial.print(reqAng);
 #endif
-        reqMove = DataInSerial[7] * 256 + DataInSerial[8];
-        if (DataInSerial[6] == 0x2d) {
+        reqMove = GatewayLink.DataInSerial[7] * 256 + GatewayLink.DataInSerial[8];
+        if ((abs(reqMove) > 0 && abs(reqMove) < minDistToBeDone) || (abs(reqAng) < 0 && abs(reqAng) < minRotToBeDone))
+        {
+          SendEndAction(moveEnded, moveUnderLimitation);
+          break;
+        }
+        getBNOLocation = 0xff;
+        iddleTimer = millis();
+        ResetGyroscopeHeadings();
+        GyroStartInitMonitor();
+        appStat = appStat & 0x1f;
+        actStat = 0x68; // moving
+        bitWrite(toDo, toDoMove, 1);       // position bit toDo move
+        if (GatewayLink.DataInSerial[6] == 0x2d) {
           reqMove = -reqMove;
         }
         if (reqMove > 0)
@@ -308,55 +317,49 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 #endif
       }
       break;
-    /*
-        case 0x6e: // r rotate VS north
-          {
-            ResetGyroscopeHeadings();
-            GyroStartInitMonitor();
-            unsigned int reqN = DataInSerial[3] * 256 + DataInSerial[4];
 
-      #if defined(debugConnection)
-            Serial.print("north rotate:");
-            Serial.println( reqN);
-      #endif
-            targetAfterNORotation = ((int) alpha + reqN) % 360;
-            northAlign((NorthOrientation() - reqN + 360) % 360);
-            break;
-          }
-    */
     case 0x6f: // r rotate VS gyroscope
       {
-        iddleTimer = millis();
-        rotationType = cmdInput;
-        posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
-        posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
-        ResetGyroscopeHeadings();
-        GyroStartInitMonitor();
-        delay(100);
+        int reqN = ((GatewayLink.DataInSerial[3] & 0b01111111) * 256 + GatewayLink.DataInSerial[4]) % 360;
+        if (bitRead(toDoDetail, toDoGyroRotation) == 0)   // no pending rotation
+        {
+          if (abs(reqN) < minRotGyroAbility )
+          {
+            SendEndAction(moveEnded, moveUnderLimitation);
+            break;
+          }
+          iddleTimer = millis();
+          rotationType = cmdInput;
+          posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
+          posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
+          ResetGyroscopeHeadings();
+          GyroStartInitMonitor();
+          delay(100);
 
-        int reqN = ((DataInSerial[3] & 0b01111111) * 256 + DataInSerial[4]) % 360;
-        if (bitRead(DataInSerial[3], 7) == 1)    // means negative rotation
-        {
-          reqN = -reqN;
-          gyroInitRotationSens = -1;
-        }
-        else
-        {
-          gyroInitRotationSens = 1;
-        }
-        Serial.print("request gyro rotate:");
-        Serial.println( reqN);
-        timeGyroRotation = millis();
-        gyroTargetRotation = reqN;
-        if (CheckRotationAvaibility(gyroTargetRotation))    // check rotation
-        {
-          bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
+
+          if (bitRead(GatewayLink.DataInSerial[3], 7) == 1)    // means negative rotation
+          {
+            reqN = -reqN;
+            gyroInitRotationSens = -1;
+          }
+          else
+          {
+            gyroInitRotationSens = 1;
+          }
           Serial.print("request gyro rotate:");
-          Serial.println( gyroTargetRotation);
+          Serial.println( reqN);
+          timeGyroRotation = millis();
+          gyroTargetRotation = reqN;
+          bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
           gyroRotationRetry = 0;
-          //       uint8_t retCode = GyroscopeRotate();
-          //        targetAfterGyroRotation = ((int) alpha + reqN) % 360;
-          //       northAlign((NorthOrientation() - reqN + 360) % 360);
+          iddleTimer = millis();
+          rotationType = cmdInput;
+          posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
+          posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
+          ResetGyroscopeHeadings();
+          GyroStartInitMonitor();
+          delay(100);
+
         }
         break;
       }
@@ -375,10 +378,10 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case 0x72: // commande r menus reset
       Serial.print("cmd reset:");
-      Serial.println(DataInSerial[3], HEX);
+      Serial.println(GatewayLink.DataInSerial[3], HEX);
       ResetGyroscopeHeadings();
       GyroStopInitMonitor();
-      resetStatus(DataInSerial[3]); // reset according to data receveid
+      resetStatus(GatewayLink.DataInSerial[3]); // reset according to data receveid
       SendStatus();
       break;
     case 0x77: // commande w means calibrate wheels
@@ -399,9 +402,9 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case 0x79: // commande x menus start
       iddleTimer = millis();
-      SetBNOMode(DataInSerial[3]);
+      SetBNOMode(GatewayLink.DataInSerial[3]);
       Serial.print("set BNOMode");
-      Serial.println(DataInSerial[3]);
+      Serial.println(GatewayLink.DataInSerial[3]);
       break;
     case 0x7a: // get subsytem location
       getBNOLocation = 0x07;
