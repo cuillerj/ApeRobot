@@ -254,7 +254,7 @@ int BNOLocationHeading = 0;
 #define echo4 false  // does not exit
 #define echo4Alert false  // does not exit
 #define echoPinInterrupt 2 // pin  dedicated to software usage 
-#define echoShift 15       // angle step used when checking obstacle
+#define echoShift 10      // angle step used when checking obstacle
 boolean toDoEchoFront = true;   // to set echo front on when obstacle detection is running
 boolean echoFrontAlertOn = true; // // to set echo front threshold on when obstacle detection is running
 boolean toDoEchoBack = true;    // to set echo back on when obstacle detection is running
@@ -979,8 +979,9 @@ void MoveForward(int lengthToDo ) {
 #if defined(debugObstacleOn)
     Serial.println("check straight move possible");
 #endif
-    int shift = echoShift;
-    shift =  echoShift * lengthToDo / 100;
+//    int shift = echoShift;
+ //   shift =  echoShift * lengthToDo / 100;
+    int *minFB = MinEchoFB(90 - echoShift, 2*echoShift);          // get minimal echo distance front and back
     int minEchoF = minFB[0];
     int minEchoB = minFB[1];
     if (lengthToDo < 0)
