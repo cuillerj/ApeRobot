@@ -304,15 +304,15 @@ void SendPWMValues()
 {
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = 0x73; //
-  GatewayLink.PendingDataReqSerial[1] = 0x02;   // paramters number
+  GatewayLink.PendingDataReqSerial[1] = 0x03;   // paramters number
   GatewayLink.PendingDataReqSerial[2] = uint8_t(leftMotorPWM / 256);
   GatewayLink.PendingDataReqSerial[3] = uint8_t(leftMotorPWM );
   GatewayLink.PendingDataReqSerial[4] = 0x00;
   GatewayLink.PendingDataReqSerial[5] = uint8_t(rightMotorPWM / 256);
   GatewayLink.PendingDataReqSerial[6] = uint8_t(rightMotorPWM );
   GatewayLink.PendingDataReqSerial[7] = 0x00;
-  GatewayLink.PendingDataReqSerial[8] = uint8_t((leftRotatePWMRatio * 100) / 256);
-  GatewayLink.PendingDataReqSerial[9] = uint8_t(leftRotatePWMRatio * 100);
+  GatewayLink.PendingDataReqSerial[8] = uint8_t((SlowPWMRatio * 100) / 256);
+  GatewayLink.PendingDataReqSerial[9] = uint8_t(SlowPWMRatio * 100);
   GatewayLink.PendingDataLenSerial = 0x0a; // 6 longueur mini max 25  pour la gateway
 }
 void SendEncodersHolesValues()
@@ -394,8 +394,8 @@ void SendBNOLocation ()
   {
     GatewayLink.PendingDataReqSerial[4] = 0x2d;
   }
-  GatewayLink.PendingDataReqSerial[5] = uint8_t(abs(BNOLeftPosX) / 256);
-  GatewayLink.PendingDataReqSerial[6] = uint8_t(abs(BNOLeftPosX));
+  GatewayLink.PendingDataReqSerial[5] = uint8_t(abs(round(BNOLeftPosX) / 256));
+  GatewayLink.PendingDataReqSerial[6] = uint8_t(abs(round(BNOLeftPosX)));
 
   if (BNOLeftPosY >= 0)
   {
@@ -405,8 +405,8 @@ void SendBNOLocation ()
   {
     GatewayLink.PendingDataReqSerial[7] = 0x2d;
   }
-  GatewayLink.PendingDataReqSerial[8] = uint8_t(abs(BNOLeftPosY) / 256);
-  GatewayLink.PendingDataReqSerial[9] = uint8_t(abs(BNOLeftPosY));
+  GatewayLink.PendingDataReqSerial[8] = uint8_t(abs(round(BNOLeftPosY) / 256));
+  GatewayLink.PendingDataReqSerial[9] = uint8_t(abs(round(BNOLeftPosY)));
 
   if (BNORightPosX >= 0)
   {
@@ -416,8 +416,8 @@ void SendBNOLocation ()
   {
     GatewayLink.PendingDataReqSerial[10] = 0x2d;
   }
-  GatewayLink.PendingDataReqSerial[11] = uint8_t(abs(BNORightPosX) / 256);
-  GatewayLink.PendingDataReqSerial[12] = uint8_t(abs(BNORightPosX));
+  GatewayLink.PendingDataReqSerial[11] = uint8_t(abs(round(BNORightPosX) / 256));
+  GatewayLink.PendingDataReqSerial[12] = uint8_t(abs(round(BNORightPosX)));
 
   if (BNORightPosY >= 0)
   {
@@ -427,8 +427,8 @@ void SendBNOLocation ()
   {
     GatewayLink.PendingDataReqSerial[13] = 0x2d;
   }
-  GatewayLink.PendingDataReqSerial[14] = uint8_t(abs(BNORightPosY) / 256);
-  GatewayLink.PendingDataReqSerial[15] = uint8_t(abs(BNORightPosY));
+  GatewayLink.PendingDataReqSerial[14] = uint8_t(abs(round(BNORightPosY) / 256));
+  GatewayLink.PendingDataReqSerial[15] = uint8_t(abs(round(BNORightPosY)));
   if (gyroscopeHeading[gyroscopeHeadingIdx] >= 0)
   {
     GatewayLink.PendingDataReqSerial[16] = 0x2b;

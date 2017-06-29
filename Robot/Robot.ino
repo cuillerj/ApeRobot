@@ -60,8 +60,8 @@ int retryCount = 0;            // number of retry for sending
 #include <ApeRobotCommonDefine.h>
 uint8_t rebootPhase = 3;
 
-float iLeftTractionDistPerRev =  (PI * iLeftWheelDiameter) ;
-float iRightTractionDistPerRev = (PI * iRightWheelDiameter);
+float fLeftTractionDistPerRev =  (PI * fLeftWheelDiameter) ;
+float fRightTractionDistPerRev = (PI * fRightWheelDiameter);
 float coeffGlissementRotation = 1.;
 #define rebootDuration 20000 // delay to completly start arduino
 #define hornPin 49           // to activate horn
@@ -96,18 +96,20 @@ unsigned int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revoluti
 unsigned int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
 //float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
 unsigned int leftMotorPWM = 230;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
-#define iLeftSlowPWM 150        // PMW value to slowdown motor at the end of the run
+float SlowPWMRatio = 0.60;              // PWM ratio for a low speed move
+#define iLeftSlowPWM leftMotorPWM * SlowPWMRatio        // PMW value to slowdown motor at the end of the run
 #define leftRotatePWMRatio 0.8    // 
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPWM); // define left Motor
-unsigned int rightMotorPWM = 200;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
-#define iRightSlowPWM 110  // PMW value to slowdown motor at the end of the run
+unsigned int rightMotorPWM = 210;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
+#define iRightSlowPWM rightMotorPWM * SlowPWMRatio  // PMW value to slowdown motor at the end of the run
 //#define iRightRotatePWM 170   // PMW value
-#define rightRotatePWMRatio 0.9    // 
+#define rightRotatePWMRatio 0.8    // 
 #define pendingRightMotor 1    // define pendingAction bit used for right motor
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPWM); // define right Motor
 float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
 #define pulseLenght 5   // pulse duration
+#define slowMoveHolesDuration 12     // target distance expressed in term of numbers of holes under that slow move is required
 //-- wheel control --
 #define wheelPinInterrupt 3    // used by sotfware interrupt when rotation reach threshold
 #define leftAnalogEncoderInput A8   // analog input left encoder
@@ -143,11 +145,11 @@ boolean pbSynchro = false;
   unsigned int rightIncoderHighValue = 610; // define value above that signal is high
   unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
 */
-unsigned int leftIncoderHighValue = 650;  // define value mV above that signal is high
-unsigned int leftIncoderLowValue = 250;  // define value mV below that signal is low
+unsigned int leftIncoderHighValue = 770;  // define value mV above that signal is high
+unsigned int leftIncoderLowValue = 280;  // define value mV below that signal is low
 // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
-unsigned int rightIncoderHighValue = 640; // define value mV above that signal is high
-unsigned int rightIncoderLowValue = 220;  // define value mV below that signal is low
+unsigned int rightIncoderHighValue = 770; // define value mV above that signal is high
+unsigned int rightIncoderLowValue = 270;  // define value mV below that signal is low
 //#define delayBetweenEncoderAnalogRead  750 //  micro second between analog read of wheel encoder level
 #define delayMiniBetweenHoles  35  //  delay millis second between 2 encoder holes at the maximum speed
 // create wheel control object
@@ -175,6 +177,7 @@ unsigned long iRightCentiRevolutions; // nmuber of done revolutions * 100
 #define toEndPause 1     // could restart
 #define toPause 2     // move to be temporaly paused
 #define requestUpdateNO 0x7b
+#define requestBNOData 0x7c
 int gyroTargetRotation = 0; // expected rotation based on gyroscope
 uint8_t gyroRotationRetry = 0;
 #define maxGyroRotationRetry 30
@@ -185,6 +188,8 @@ uint8_t resumeCount = 0; // nb of echo check before resume move
 int movePingInit;     // echo value mesured before moving
 int movePingMax;     // echo value mesured before moving to be taken into account
 uint8_t rotationType = rotationTypeGyro;     // default rotation type
+boolean bSpeedHigh[2] ;        // true means motors [left,right] high PWM false low
+
 //-- accelerometer and magnetometer
 // powered by arduino 3.3v
 //LSM303 compass;
@@ -235,10 +240,10 @@ uint8_t BNOUpToDateFlag = 0x00;
 uint8_t compasUpToDate = 0x00;
 uint8_t pendingPollingResp = 0x00;
 uint8_t getBNOLocation = 0xff;
-int BNOLeftPosX = 0;
-int BNOLeftPosY = 0;
-int BNORightPosX = 0;
-int BNORightPosY = 0;
+float BNOLeftPosX = 0;
+float BNOLeftPosY = 0;
+float BNORightPosX = 0;
+float BNORightPosY = 0;
 int BNOLocationHeading = 0;
 //-- scan control --
 #define servoPin 6    //  servo motor Pin 
@@ -326,6 +331,7 @@ unsigned long timeUpdateBNOStatus;           // used for reguraly update subsyte
 unsigned long lastSetModeTime;           // used to BNO055 status
 unsigned long iddleTimer;               // used to detect robot iddle status
 unsigned long lastUpdateBNOMoveTime;    // used to update BNO with robot move
+unsigned long lowHighSpeedTimer;       // delat time between change speed of wheels
 #if defined debugLoop
 unsigned long timeLoop;  // cycle demande heure
 #endif
@@ -339,6 +345,7 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetween2BNOStatus 500
 #define delayBetweenlastUpdateBNOMoveTime 200
 #define delayGyro360Rotation 4000 // mawimum duration for 360° rotation
+#define delaylowHighSpeedTimer 10
 unsigned int delayGyroRotation = 100;  //
 #define maxPauseDuration 15000
 //-- robot status & diagnostics
@@ -526,7 +533,7 @@ void loop() {
 
   if (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66 && pendingAckSerial == 0x00) // alternatively send status and power to the server
   {
-    //   Serial.println(leftMotor.CheckMotor(1, 1), HEX);
+
     if (sendInfoSwitch % 5 == 1)
     {
       SendStatus();                 // send robot status to the server
@@ -627,7 +634,21 @@ void loop() {
     // *** end of checking resqueted actions
 
     // *** wheels speed control and localization
+    if (bSpeedHigh[leftWheelId] != bSpeedHigh[leftWheelId])
+    {
+      if (millis() > lowHighSpeedTimer + delaylowHighSpeedTimer)
+        if (bSpeedHigh[leftWheelId] > bSpeedHigh[leftWheelId])
+        {
+          leftMotor.AdjustMotorPWM(leftMotorPWM * SlowPWMRatio);
+          Wheels.IncreaseThreshold ( leftWheelId, slowMoveHolesDuration );
+        }
+        else
+        {
+          rightMotor.AdjustMotorPWM(rightMotorPWM * SlowPWMRatio);
+          Wheels.IncreaseThreshold ( rightWheelId, slowMoveHolesDuration );
+        }
 
+    }
     if ( millis() - delayCheckPosition > delayBetweenCheckPosition  && bitRead(currentMove, toDoStraight) == true && pendingPollingResp == 0x00 && (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true))
     { // Update robot position
       delayCheckPosition = millis();  // reset timer
@@ -979,9 +1000,9 @@ void MoveForward(int lengthToDo ) {
 #if defined(debugObstacleOn)
     Serial.println("check straight move possible");
 #endif
-//    int shift = echoShift;
- //   shift =  echoShift * lengthToDo / 100;
-    int *minFB = MinEchoFB(90 - echoShift, 2*echoShift);          // get minimal echo distance front and back
+    //    int shift = echoShift;
+    //   shift =  echoShift * lengthToDo / 100;
+    int *minFB = MinEchoFB(90 - echoShift, 2 * echoShift);        // get minimal echo distance front and back
     int minEchoF = minFB[0];
     int minEchoB = minFB[1];
     if (lengthToDo < 0)
@@ -1011,8 +1032,13 @@ void MoveForward(int lengthToDo ) {
     unsigned int distF = 0;
     unsigned int distB = 0 ;
     movePingMax = 0;
+
     if (abs(movePingInit) - abs(lengthToDo) < (frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack)
     {
+      if (doEchoFront)
+        {
+          int retryPing=pingFront();
+        }
       movePingMax = abs(movePingInit) - abs((frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack);
 #if defined(debugObstacleOn)
       Serial.print("not enough free space to move: ");
@@ -1114,6 +1140,7 @@ void startMotors()
 {
   GyroGetHeadingRegisters();
   digitalWrite(encoderPower, HIGH);
+  delay(15);
   prevCheckLeftHoles = 0;
   prevCheckRightHoles = 0;
   BNOprevSentLeftHoles = 0;
@@ -1125,10 +1152,10 @@ void startMotors()
     bitWrite(pendingAction, pendingLeftMotor, true);
     bitWrite(pendingAction, pendingRightMotor, true);
 #if defined(debugMotorsOn)
-    Serial.print("reqSpeed: ");
-    Serial.print(iLeftRevSpeed);
-    Serial.print(" ");
-    Serial.println(iRightRevSpeed);
+    Serial.print("iLeftCentiRevolutions:");
+    Serial.print(iLeftCentiRevolutions);
+    Serial.print(" iRightCentiRevolutions:");
+    Serial.println(iRightCentiRevolutions);
 #endif
     diagMotor = 0x00;
     saveLeftWheelInterrupt = 0;
@@ -1136,9 +1163,10 @@ void startMotors()
     pbSynchro = false;
     digitalWrite(wheelPinInterrupt, LOW);
     attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+    //  delay(15);
     Wheels.StartWheelControl(true, true, iLeftCentiRevolutions , true, true, iRightCentiRevolutions , false, false, 0, false, false, 0);
-    leftMotor.RunMotor(bLeftClockwise,  iLeftRevSpeed);
     rightMotor.RunMotor(bRightClockwise,  iRightRevSpeed);
+    leftMotor.RunMotor(bLeftClockwise,  iLeftRevSpeed);
     timeMotorStarted = millis();
   }
 }
@@ -1167,8 +1195,8 @@ void pulseMotors(unsigned int pulseNumber)
 void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int leftMotorPWM, unsigned long iRightDistance, int rightMotorPWM)
 {
   // float powerAdustment = float (uRefMotorVoltage) / (3 * map(analogRead(power1Value), 0, 1023, 0, 467)); // speed adjustement to power supply
-  float fLeftHoles = (float (iLeftDistance) * leftWheelEncoderHoles / iLeftTractionDistPerRev) ; // Centi-revolutions
-  float fRightHoles  = (float (iRightDistance) * rightWheelEncoderHoles / iRightTractionDistPerRev) ; // ms
+  float fLeftHoles = (float (iLeftDistance) * leftWheelEncoderHoles / fLeftTractionDistPerRev) ; // Centi-revolutions
+  float fRightHoles  = (float (iRightDistance) * rightWheelEncoderHoles / fRightTractionDistPerRev) ; // ms
   iLeftCentiRevolutions = int(round(fLeftHoles));
   if (fLeftHoles - iLeftCentiRevolutions > 0.5)
   {
@@ -1181,12 +1209,41 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int l
   }
   iLeftRevSpeed = leftMotorPWM ; // revolutions per minute
   iRightRevSpeed = rightMotorPWM * leftToRightDynamicAdjustRatio ; // revolutions per minute
+  bSpeedHigh[0] = true;
+  bSpeedHigh[1] = true;
 #if defined(debugMotorsOn)
   Serial.print("compute L: ");
   Serial.print(iLeftCentiRevolutions);
+  Serial.print(" PWM:");
+  Serial.print(iLeftRevSpeed);
   Serial.print(" R: ");
-  Serial.println(iRightCentiRevolutions);
+  Serial.print(iRightCentiRevolutions);
+  Serial.print(" PWM:");
+  Serial.println(iRightRevSpeed);
 #endif
+  if (iLeftCentiRevolutions <= slowMoveHolesDuration + leftWheelEncoderHoles || iRightCentiRevolutions <= slowMoveHolesDuration + rightWheelEncoderHoles )
+  {
+    iLeftRevSpeed = iLeftRevSpeed * SlowPWMRatio;
+    iRightRevSpeed = iRightRevSpeed * SlowPWMRatio;
+    bSpeedHigh[leftWheelId] = false;
+    bSpeedHigh[rightWheelId] = false;
+#if defined(debugMotorsOn)
+    Serial.println("low speed motion");
+#endif
+  }
+  else
+  {
+#if defined(debugMotorsOn)
+    Serial.println("high speed motion");
+#endif
+    iLeftRevSpeed = leftMotorPWM ; // revolutions per minute
+    iRightRevSpeed = rightMotorPWM * leftToRightDynamicAdjustRatio ; // revolutions per minute
+    bSpeedHigh[leftWheelId] = true;
+    bSpeedHigh[rightWheelId] = true;
+    iLeftCentiRevolutions = iLeftCentiRevolutions - slowMoveHolesDuration;
+    iRightCentiRevolutions = iRightCentiRevolutions - slowMoveHolesDuration;
+  }
+
 }
 
 void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at the same pace
@@ -1207,7 +1264,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
   Serial.print(currentLeftHoles);
   Serial.print(" prevright: ");
   Serial.print(prevCheckRightHoles);
-  Serial.print(" currentrightt: ");
+  Serial.print(" currentright: ");
   Serial.println(currentRightHoles);
 #endif
   if (currentLeftHoles == 0 || currentLeftHoles == prevCheckLeftHoles)
@@ -1286,8 +1343,8 @@ void ComputeNewLocalization(uint8_t param)  // compute localization according to
   unsigned int currentLeftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
   unsigned int currentRightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
   float deltaAlpha = 0; // modification of robot angles (in degres) since last call of the function
-  float deltaLeft = ((float (currentLeftHoles) - saveLeftWheelInterrupt) * PI * iLeftWheelDiameter / leftWheelEncoderHoles); // number of centimeters done by left wheel since last call of the function
-  float deltaRight = ((float (currentRightHoles) - saveRightWheelInterrupt) * PI * iRightWheelDiameter / rightWheelEncoderHoles); // number of centimeters done by right wheel since last call of the function
+  float deltaLeft = ((float (currentLeftHoles) - saveLeftWheelInterrupt) * PI * fLeftWheelDiameter / leftWheelEncoderHoles); // number of centimeters done by left wheel since last call of the function
+  float deltaRight = ((float (currentRightHoles) - saveRightWheelInterrupt) * PI * fRightWheelDiameter / rightWheelEncoderHoles); // number of centimeters done by right wheel since last call of the function
   float alphaRadian = alpha * PI / 180;
   if (bitRead(currentMove, toDoStraight) == true )  // is robot  supposed to go straight ?
   {
@@ -1778,7 +1835,7 @@ void ResumeMove()  // no more obstacle resume moving
 void ResumeMoveAfterPause()  // no more obstacle resume moving
 {
   bitWrite(diagRobot, diagRobotPause, 0);       // position bit diagRobot
-  float lenToDo = (((pauseLeftWheelInterrupt * iLeftWheelDiameter) / leftWheelEncoderHoles + (pauseRightWheelInterrupt * iRightWheelDiameter) / rightWheelEncoderHoles ) * PI / 2);
+  float lenToDo = (((pauseLeftWheelInterrupt * fLeftWheelDiameter) / leftWheelEncoderHoles + (pauseRightWheelInterrupt * fRightWheelDiameter) / rightWheelEncoderHoles ) * PI / 2);
   bitWrite(toDo, toDoStraight, true);
   if (pauseDirectionBackward == true)
   {
@@ -1910,7 +1967,7 @@ void obstacleInterrupt()        // Obstacles detection system set a softare inte
 void WheelInterrupt()   // wheel controler set a software interruption due to threshold reaching
 {
   uint8_t wheelId = Wheels.GetLastWheelInterruptId();  // get which wheel Id reached the threshold
-  if (wheelId != 5)
+  if (wheelId != 5 && bSpeedHigh[wheelId] == false)    //
   {
     Wheels.ClearThreshold(wheelId);                      // clear the threshold flag to avoid any more interruption
   }
@@ -1919,8 +1976,29 @@ void WheelInterrupt()   // wheel controler set a software interruption due to th
 
 void WheelThresholdReached( uint8_t wheelId)
 {
+
   if (wheelId != 5)
   {
+    if (wheelId == leftWheelId && bSpeedHigh[wheelId])
+    {
+      digitalWrite(wheelPinInterrupt, LOW);
+      attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+      bSpeedHigh[wheelId] = false;
+      leftMotor.AdjustMotorPWM(leftMotorPWM * SlowPWMRatio);
+      Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
+      lowHighSpeedTimer = millis();
+      return;
+    }
+    if (wheelId == rightWheelId && bSpeedHigh[wheelId])
+    {
+      digitalWrite(wheelPinInterrupt, LOW);
+      attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+      bSpeedHigh[wheelId] = false;
+      rightMotor.AdjustMotorPWM(rightMotorPWM * SlowPWMRatio);
+      Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
+      lowHighSpeedTimer = millis();
+      return;
+    }
     if (wheelId == leftWheelId)
     {
       leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
@@ -1935,12 +2013,12 @@ void WheelThresholdReached( uint8_t wheelId)
     timeMotorStarted = 0;
     StopEchoInterrupt(true, true);                    // stop obstacles detection
     delay(200);                                      // wait a little for robot intertia
-    gyroUpToDate = 0x00;
-    GyroGetHeadingRegisters();
     Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
     detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
     pinMode(wheelPinInterrupt, INPUT);
     digitalWrite(encoderPower, LOW);
+    gyroUpToDate = 0x00;
+    GyroGetHeadingRegisters();
     leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
     rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
     unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
@@ -2342,13 +2420,13 @@ uint8_t GyroscopeRotate()
     int gyroH = gyroscopeHeading[gyroscopeHeadingIdx];
     int rotation = 0;
     //    gyroH = (360 - gyroH)%360;        // change to anti clockwiseint totation=0;
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
     Serial.print("gyro relativeheading: ");
     Serial.println(gyroH);
 #endif
     if ((gyroTargetRotation > 0 && gyroTargetRotation < 90) && (gyroH > 270 && gyroH < 360))
     {
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
       Serial.print("case 1 over 0: ");
       Serial.print(gyroTargetRotation);
       Serial.print(" ");
@@ -2365,7 +2443,7 @@ uint8_t GyroscopeRotate()
     }
     else if ((gyroTargetRotation > 270 && gyroTargetRotation < 360) && (gyroH > 0 && gyroH < 90))
     {
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
       Serial.print("case 1 over 0: ");
       Serial.print(gyroTargetRotation);
       Serial.print(" ");
@@ -2384,19 +2462,19 @@ uint8_t GyroscopeRotate()
     else
     {
       rotation = (gyroTargetRotation - gyroH) ;
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
       Serial.print("new rotation: ");
       Serial.println(rotation);
 #endif
     }
     prevGyroRotation = rotation;
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
     Serial.print("gyro: ");
     Serial.println(rotation);
 #endif
     if (abs(rotation) < minRotationTarget)
     {
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
       Serial.print("end gyro: ");
       Serial.println(rotation);
 #endif
@@ -2411,7 +2489,7 @@ uint8_t GyroscopeRotate()
     {
       if (abs(rotation) < minRotEncoderAbility)
       {
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
         Serial.print(" gyro pulse: ");
 #endif
         if (rotation >= 0)
@@ -2429,7 +2507,7 @@ uint8_t GyroscopeRotate()
       }
       else
       {
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
         Serial.print(" gyro rotate: ");
         Serial.println(rotation);
 #endif
@@ -2448,9 +2526,11 @@ uint8_t GyroscopeRotate()
   else
   {
     ResetGyroscopeHeadings();
-    GyroStartInitMonitor();
-    Serial.println("start gyro monitor");
-
+    GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+#if defined(debugGyroscopeOn)
+    Serial.print("start gyro monitor:");
+    Serial.println(!bitRead(toDo, toDoBackward), HEX);
+#endif
     return -1;
   }
 }
@@ -2517,7 +2597,7 @@ void OptimizeGyroRotation (int rotation)
       int newRotation = rotation + maxInertialRotation;
       //delayGyroRotation = delayGyro360Rotation * abs(newRotation) / 360; // adust timer to the acual duration
       Rotate(rotation + maxInertialRotation);
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println( rotation + maxInertialRotation);
 #endif
@@ -2530,7 +2610,7 @@ void OptimizeGyroRotation (int rotation)
       int newRotation = max(round(rotation * 0.8), minRotEncoderAbility);
       //delayGyroRotation = delayGyro360Rotation * abs(newRotation) / 360; // adust timer to the acual duration
       Rotate(newRotation);
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println( max(round(rotation * 0.8), minRotEncoderAbility));
 #endif
@@ -2540,7 +2620,7 @@ void OptimizeGyroRotation (int rotation)
       int newRotation = min(round(rotation * 0.8), -minRotEncoderAbility);
       // delayGyroRotation = delayGyro360Rotation * abs(newRotation) / 360; // adust timer to the acual duration
       Rotate(newRotation);
-#if defined(gyroDebugOn)
+#if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println( min(round(rotation * 0.8), -minRotEncoderAbility));
 #endif
@@ -2551,9 +2631,9 @@ void OptimizeGyroRotation (int rotation)
 void PrintRobotParameters()
 {
   Serial.print("Wheel diameter left: ");
-  Serial.print(iLeftWheelDiameter);
+  Serial.print(fLeftWheelDiameter);
   Serial.print(" right: ");
-  Serial.println(iRightWheelDiameter);
+  Serial.println(fRightWheelDiameter);
   Serial.print("Width front: ");
   Serial.print(iRobotFrontWidth);
   Serial.print(" back: ");

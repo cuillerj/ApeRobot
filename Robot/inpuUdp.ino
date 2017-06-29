@@ -69,6 +69,10 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         {
           rightMotorPWM =  GatewayLink.DataInSerial[6];
         }
+        if (GatewayLink.DataInSerial[3] == 0x72)
+        {
+          SlowPWMRatio = (float(GatewayLink.DataInSerial[5]) * 256 + GatewayLink.DataInSerial[6]) / 100;
+        }
         break;
       }
     case 0x40: // commande : query encoders values
@@ -133,7 +137,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         {
           northAligned = false;
           ResetGyroscopeHeadings();
-          GyroStartInitMonitor();
+          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
           northAlignShift = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
           bitWrite(toDo, toDoAlign, 1);       // position bit toDo
           iddleTimer = millis();
@@ -222,7 +226,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case 0x67: // commande goto X Y position
       {
         ResetGyroscopeHeadings();
-        GyroStartInitMonitor();
+        GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
         int reqX = GatewayLink.DataInSerial[4] * 256 + GatewayLink.DataInSerial[5];
         moveForward = true;           // goto forward
         if (GatewayLink.DataInSerial[3] == 0x2d) {
@@ -251,7 +255,6 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
     case 0x68: // commande h horn
       {
-        Serial.println("horn");
         unsigned int duration = GatewayLink.DataInSerial[3];
         Horn(true, duration * 1000);
         break;
@@ -289,7 +292,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         getBNOLocation = 0xff;
         iddleTimer = millis();
         ResetGyroscopeHeadings();
-        GyroStartInitMonitor();
+
         appStat = appStat & 0x1f;
         actStat = 0x68; // moving
         bitWrite(toDo, toDoMove, 1);       // position bit toDo move
@@ -306,6 +309,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           bitWrite(toDo, toDoStraight, true);
           bitWrite(toDo, toDoBackward, true);  // to go backward
         }
+        GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+#if defined(debugGyroscopeOn)
+        Serial.print("start gyro monitor:");
+        Serial.println(!bitRead(toDo, toDoBackward));
+#endif
         SendStatus();
 #if defined(debugConnection)
         Serial.print(" ");
@@ -333,7 +341,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
           posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
           ResetGyroscopeHeadings();
-          GyroStartInitMonitor();
+          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
           delay(100);
 
 
@@ -357,7 +365,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
           posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
           ResetGyroscopeHeadings();
-          GyroStartInitMonitor();
+          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
           delay(100);
 
         }
@@ -374,7 +382,6 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       ResetGyroscopeHeadings();
       //    GyroStopInitMonitor();
       StopAll();
-      SendStatus();
       break;
     case 0x72: // commande r menus reset
       Serial.print("cmd reset:");
@@ -388,7 +395,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       iddleTimer = millis();
       Serial.println("calibrate");
       ResetGyroscopeHeadings();
-      GyroStartInitMonitor();
+      GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
       CalibrateWheels();
       break;
     case 0x78: // commande x menus start
@@ -414,6 +421,10 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       getNorthOrientation = 0x02;
       compasUpToDate = 0x00;
       Serial.println("getNorthOrientation");
+      break;
+    case requestBNOData: // send
+      SendBNOLocation ();
+      Serial.println("SendBNOLocation");
       break;
     default:
 

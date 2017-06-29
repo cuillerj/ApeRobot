@@ -1,21 +1,21 @@
 /*
-void SetGyroBiasMicrosec(uint8_t registerValue)
-{
+  void SetGyroBiasMicrosec(uint8_t registerValue)
+  {
   uint8_t registers[3];
   uint8_t registersValues[3];
   registers[0] = 0x18;
   registersValues[0] = registerValue;
   SubsystemSetRegisters(1, registers, registersValues);
-}
-void GyroResetRegisters()
-{
+  }
+  void GyroResetRegisters()
+  {
   uint8_t registers[maxRegsNumberUpdate];
   uint8_t registersValues[maxRegsNumberUpdate];
   SubsystemSetRegisters(0xff, registers, registersValues);
   RequestForPolling();
-}
-void GyroSetPollingRegister(int cycleValue)
-{
+  }
+  void GyroSetPollingRegister(int cycleValue)
+  {
   uint8_t reg[maxRegsNumberUpdate];
   reg[0] = robotPollingTimer_Reg1;
   reg[1] = robotPollingTimer_Reg2;
@@ -26,7 +26,7 @@ void GyroSetPollingRegister(int cycleValue)
   // robotPollingTimer_Reg1 = (cycleValue / 256);
   SubsystemSetRegisters(2, reg, regVal);
   RequestForPolling();
-}
+  }
 */
 void SubsystemReadRegisters(uint8_t number, uint8_t registers[maxRegsNumberRead])
 {
@@ -67,10 +67,11 @@ void SubsystemSetMoveRegisters(uint8_t number, uint8_t registers[3], uint8_t reg
   outData[8] = registersValues[2];
   RequestForPolling();
 }
-void GyroStartMonitor()
+void GyroStartMonitor(boolean forward)
 {
   InitOutData();
   outData[1] = startMonitorGyro;
+  outData[2] = uint8_t(forward);
   RequestForPolling();
 }
 void GyroInitLocation()
@@ -79,13 +80,14 @@ void GyroInitLocation()
   outData[1] = initLocation;
   RequestForPolling();
 }
-void GyroStartInitMonitor()
+void GyroStartInitMonitor(boolean forward)
 {
 #if defined(debugGyroscopeL2On)
   Serial.println("startinit");
 #endif
   InitOutData();
   outData[1] = startInitMonitorGyro;
+  outData[2] = uint8_t(forward);
   RequestForPolling();
 }
 void GyroStopMonitor()
@@ -163,7 +165,7 @@ void GetBNO055Status()
 }
 void GetBNOHeadingLocation()
 {
- // Serial.println(getBNOLocation, HEX);
+  // Serial.println(getBNOLocation, HEX);
   uint8_t reqRegisters[2] = {BNO055LocationHeading[0], BNO055LocationHeading[1]};
   SubsystemReadRegisters(0x02, reqRegisters);          // read z registers
   if (getBNOLocation != 0x00)
@@ -259,8 +261,8 @@ void SetBNOMode(uint8_t value)
 }
 void InitBNOLocation()
 {
-  uint16_t uInitX = (int)round(posRotationGyroCenterX * leftWheelEncoderHoles / (iLeftWheelDiameter * PI));
-  uint16_t uInitY = (int)round(posRotationGyroCenterY * rightWheelEncoderHoles / (iRightWheelDiameter * PI));
+  uint16_t uInitX = (int)round(posRotationGyroCenterX * leftWheelEncoderHoles / (fLeftWheelDiameter * PI));        // center position expressed in term of holes
+  uint16_t uInitY = (int)round(posRotationGyroCenterY * rightWheelEncoderHoles / (fLeftWheelDiameter * PI));
   uint16_t uAlpha = (int)(round(alpha)) % 360;
 #if defined(debugGyroscopeOn)
   Serial.print("InitBNOLocation:");
@@ -508,9 +510,9 @@ void receiveEvent(int howMany) {
                 case (deltaLeftPosX_reg1):
                   {
                     BNOLeftPosX = (int)((uint16_t)inputData[4] << 8 | (uint16_t) inputData[6]);
-                    BNOLeftPosX = round((float)(BNOLeftPosX * PI * iLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180));
+                    BNOLeftPosX = (float)(BNOLeftPosX * PI * fLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180);
                     BNOLeftPosY = (int)((uint16_t)inputData[8] << 8 | (uint16_t) inputData[10]);
-                    BNOLeftPosY = round((float)(BNOLeftPosY * PI * iLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180));
+                    BNOLeftPosY = (float)(BNOLeftPosY * PI * fLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180);
                     if (getBNOLocation != 0x00)
                     {
                       getBNOLocation--;
@@ -526,9 +528,9 @@ void receiveEvent(int howMany) {
                 case (deltaRightPosX_reg1):
                   {
                     BNORightPosX = (int)((uint16_t)inputData[4] << 8 | (uint16_t) inputData[6]);
-                    BNORightPosX = round((float)(BNORightPosX  * PI * iRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180));
+                    BNORightPosX = (float)(BNORightPosX  * PI * fRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180);
                     BNORightPosY  = (int)((uint16_t)inputData[8] << 8 | (uint16_t) inputData[10]);
-                    BNORightPosY  = round((float)(BNORightPosY  * PI * iRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180));
+                    BNORightPosY  = (float)(BNORightPosY  * PI * fRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180);
                     if (getBNOLocation != 0x00)
                     {
                       getBNOLocation--;
