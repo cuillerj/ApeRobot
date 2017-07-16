@@ -114,7 +114,7 @@ float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed 
 #define wheelPinInterrupt 3    // used by sotfware interrupt when rotation reach threshold
 #define leftAnalogEncoderInput A8   // analog input left encoder
 #define rightAnalogEncoderInput A7  // analog input right encoder
-#define leftWheelId 0           // to identify left wheel Id 
+#define leftWheelId 0          // to identify left wheel Id 
 #define rightWheelId 1         // to identify right wheel Id
 unsigned int iLeftRevSpeed;              // instant left wheel speed
 unsigned int iRightRevSpeed;             // instant right wheel speed
@@ -151,7 +151,7 @@ unsigned int leftIncoderLowValue = 280;  // define value mV below that signal is
 unsigned int rightIncoderHighValue = 770; // define value mV above that signal is high
 unsigned int rightIncoderLowValue = 270;  // define value mV below that signal is low
 //#define delayBetweenEncoderAnalogRead  750 //  micro second between analog read of wheel encoder level
-#define delayMiniBetweenHoles  35  //  delay millis second between 2 encoder holes at the maximum speed
+#define delayMiniBetweenHoles  20  //  delay millis second between 2 encoder holes at the maximum speed  (35)
 // create wheel control object
 WheelControl Wheels(leftWheelEncoderHoles, leftIncoderHighValue, leftIncoderLowValue, leftAnalogEncoderInput,
                     rightWheelEncoderHoles, rightIncoderHighValue , rightIncoderLowValue, rightAnalogEncoderInput,
@@ -246,7 +246,7 @@ float BNORightPosX = 0;
 float BNORightPosY = 0;
 int BNOLocationHeading = 0;
 //-- scan control --
-#define servoPin 6    //  servo motor Pin 
+#define servoPin 31    //  servo motor Pin 
 #define echoFront 19  // arduino pin for mesuring echo delay for front 
 #define echFrontId 0 //
 #define trigFront  23     // arduino pin for trigerring front echo
@@ -259,7 +259,9 @@ int BNOLocationHeading = 0;
 #define echo4 false  // does not exit
 #define echo4Alert false  // does not exit
 #define echoPinInterrupt 2 // pin  dedicated to software usage 
-#define echoShift 10      // angle step used when checking obstacle
+#define echoShift 2      // angle step used when checking obstacle
+#define echoShiftBack 12
+#define echoShiftRotation 12
 boolean toDoEchoFront = true;   // to set echo front on when obstacle detection is running
 boolean echoFrontAlertOn = true; // // to set echo front threshold on when obstacle detection is running
 boolean toDoEchoBack = true;    // to set echo back on when obstacle detection is running
@@ -277,7 +279,7 @@ boolean switchFB = 0;  // switch front back scan
 #define servoAlignedPosition 90 // define the servo angle aligned with robot
 //int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 180° split in 15 steps
 //int pulseValue[nbPulse] = {0, 13, 26, 39, 52, 65, 78, 90, 103, 116, 129, 142, 155, 168, 180}; // corresponding to 180° split in 15 steps
-int pulseValue[nbPulse] = {0, 13, 26, 38, 52, 65, 78, 90, 103, 116, 129, 142, 154, 166, 178}; // corresponding to 180° split in 15 steps
+int pulseValue[nbPulse] = {0, 13, 26, 36, 52, 65, 78, 90, 103, 116, 129, 142, 154, 166, 178}; // corresponding to 180° split in 15 steps
 uint8_t shiftPulse = 0;             // eventually used to adjust servo motor reference position
 float coefAngRef = PI / (pulseValue[14] - pulseValue[0]);  // angle value beetwen 2 pulses
 uint8_t pulseNumber = 0;  // pointer to pulseValue array
@@ -1035,10 +1037,6 @@ void MoveForward(int lengthToDo ) {
 
     if (abs(movePingInit) - abs(lengthToDo) < (frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack)
     {
-      if (doEchoFront)
-        {
-          int retryPing=pingFront();
-        }
       movePingMax = abs(movePingInit) - abs((frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack);
 #if defined(debugObstacleOn)
       Serial.print("not enough free space to move: ");
@@ -1051,6 +1049,8 @@ void MoveForward(int lengthToDo ) {
       Serial.println(movePingMax);
 #endif
       SendEndAction(moveEnded, moveKoDueToNotEnoughSpace);
+      bitWrite(pendingAction, pendingLeftMotor, false);
+      bitWrite(pendingAction, pendingRightMotor, false);
       bitWrite(currentMove, toDoStraight, false);
       bitWrite(saveCurrentMove, toDoStraight, false);
       lengthToDo = 0;
@@ -2807,17 +2807,20 @@ int * MinEchoFB(int fromPosition, int rotation)
   if ((rotation >= 0 && rotation <= 90) || rotation < -90)
   {
     for (int servoOrientation = fromPosition;
-         (servoOrientation <= min(maxiServoAngle, (fromPosition + echoShift / 2 + servoRotation)));
-         servoOrientation = servoOrientation + echoShift )
+         (servoOrientation <= min(maxiServoAngle, (fromPosition + echoShiftRotation / 2 + servoRotation)));
+         servoOrientation = servoOrientation + echoShiftRotation )
     {
       EchoServoAlign( servoOrientation, false);
       int echoF = PingFront();
+      delay(100);
+      echoF = max(echoF, PingFront());
       if (echoF != 0 && echoF < MinFB[0])
       {
         MinFB[0] = echoF;
       }
       delay(100);
       int echoB = PingBack();
+      echoB = max(echoB, PingBack());
       if (echoB != 0 && echoB < MinFB[1])
       {
         MinFB[1] = echoB;
@@ -2825,9 +2828,10 @@ int * MinEchoFB(int fromPosition, int rotation)
     }
   }
   else {
+
     for (int servoOrientation = fromPosition;
-         ( servoOrientation >= max(miniServoAngle, (fromPosition - echoShift / 2 + servoRotation )));
-         servoOrientation = servoOrientation - echoShift )
+         ( servoOrientation >= max(miniServoAngle, (fromPosition - echoShiftRotation / 2 + servoRotation )));
+         servoOrientation = servoOrientation - echoShiftRotation )
     {
       EchoServoAlign( servoOrientation, false);
       int echoF = PingFront();

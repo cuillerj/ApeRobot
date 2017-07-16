@@ -4,6 +4,13 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   bitWrite(diagConnection, diagConnectionIP, 0);      // connection is active
   timeReceiveSerial = millis();         // reset check receive timer
   sendInfoSwitch = 1;                   // next info to send will be status
+  if (cmdInput != 0x61 && cmdInput != 0x65 && lastReceivedNumber == GatewayLink.DataInSerial[1])
+  {                                     // check duplicate for frame that are echo or ack frame
+    Serial.print("duplicate receive number:");
+    Serial.println(GatewayLink.DataInSerial[1]);
+    SendStatus();
+    return;
+  }
   lastReceivedNumber = GatewayLink.DataInSerial[1];
   switch (cmdInput) {                   // first byte of input is the command type
     case 0x2b: // commande + means scan 360
@@ -266,6 +273,10 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         break;
       }
     case 0x6d: // commande m means move
+      bitWrite(diagMotor, diagMotorPbSynchro, 0);       // position bit diagMotor
+      bitWrite(diagMotor, diagMotorPbLeft, 0);       // position bit diagMotor
+      bitWrite(diagMotor, diagMotorPbRight, 0);       // position bit diagMotor
+      gyroTargetRotation = 0;                        // clear previous rotation
       if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0)
       {
 
@@ -324,6 +335,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         Serial.println(waitFlag, HEX);
 #endif
       }
+      else
+      {
+        SendEndAction(moveEnded, requestRejected);
+        break;
+      }
       break;
 
     case 0x6f: // r rotate VS gyroscope
@@ -368,6 +384,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
           delay(100);
 
+        }
+        else
+        {
+          SendEndAction(moveEnded, requestRejected);
+          break;
         }
         break;
       }

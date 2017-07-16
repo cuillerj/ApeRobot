@@ -170,6 +170,7 @@ void EchoServoAlign(uint8_t angle, boolean report)   // to align echo servo moto
 {
   AngleDegre = max(miniServoAngle,min(angle,maxiServoAngle));
   myservo.attach(servoPin);
+  delay(5);
   // unsigned int value = map(angle, 0, 180, pulseValue[0],  pulseValue[nbPulse - 1]);
 
 #if(debugScanOn)
@@ -181,6 +182,7 @@ void EchoServoAlign(uint8_t angle, boolean report)   // to align echo servo moto
   myservo.write(AngleDegre + shiftPulse);
   delay(750);
   myservo.detach();
+  delay(10);
   if (report)
   {
     SendEndAction(servoAlignEnded, 0x00);
