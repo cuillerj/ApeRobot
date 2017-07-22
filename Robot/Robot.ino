@@ -1140,7 +1140,7 @@ void startMotors()
 {
   GyroGetHeadingRegisters();
   digitalWrite(encoderPower, HIGH);
-  delay(15);
+  delay(50);
   prevCheckLeftHoles = 0;
   prevCheckRightHoles = 0;
   BNOprevSentLeftHoles = 0;
@@ -2012,7 +2012,7 @@ void WheelThresholdReached( uint8_t wheelId)
 
     timeMotorStarted = 0;
     StopEchoInterrupt(true, true);                    // stop obstacles detection
-    delay(200);                                      // wait a little for robot intertia
+    delay(500);                                      // wait a little for robot intertia
     Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
     detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
     pinMode(wheelPinInterrupt, INPUT);
