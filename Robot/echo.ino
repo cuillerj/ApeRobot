@@ -17,13 +17,13 @@ int IncPulse(int sens) { // compute servo motor value depending on sens
 }
 int PingFront() {               // ping echo front
   float cm;
-  unsigned int uS = pingFront.ping(); // Send ping, get ping time in microseconds (uS).
+  unsigned int uS = pingFront.ping_median(3); // Send ping, get ping time in microseconds (uS).
   if (uS == 0)
   {
 #if (debugScanOn)
     Serial.println("retry front");
 #endif
-    delay(50);
+    delay(70);
     uS = pingFront.ping();
   }
   cm = pingFront.convert_cm(uS);
@@ -51,7 +51,7 @@ int PingBack() {
 #if (debugScanOn)
     Serial.println("retry back");
 #endif
-    delay(50);
+    delay(70);
     uS = pingFront.ping();
   }
   cm = pingBack.convert_cm(uS) ;

@@ -69,15 +69,27 @@ float coeffGlissementRotation = 1.;
 //-- power control --
 int uRefMotorVoltage = 1200; // mVolt for maxRPM
 //#define power1Pin 53  // power 1 servomoteur
-#define power1Value A13  // 9v power for motors
-#define power2Value A14  // 5v power for arduino mega
-//#define power3Value A15  // 12V power for esp8266 and components
+#define power1Value A13  // 9v power input arduino mega
+#define power2Value A14  // 5v power input esp8266
+#define power3Value A2  // 15v output battery for electronics
+#define power4Value A1  // 5v power input servo & echo
+#define power5Value A0  // 15v output battery for motors
+#define power6Value A3  // 10v power input motors
 #define power1LowLimit 750   // minimum centi volt before warning
 #define power2LowLimit 475   // minimum centi volt before warning
-//#define power3LowLimit 750  // minimum centi volt before warning
+#define power3LowLimit 1300   // minimum centi volt before warning
+#define power4LowLimit 475   // minimum centi volt before warning
+#define power5LowLimit 1300   // minimum centi volt before warning
+#define power6LowLimit 900   // minimum centi volt before warning
 int power1Mesurt = 0;   // current power1 value
 int power2Mesurt = 0;   // current power2 value
-#define encoderPower 48
+int power3Mesurt = 0;   // current power3 value
+int power4Mesurt = 0;   // current power4 value
+int power5Mesurt = 0;   // current power5 value
+int power6Mesurt = 0;   // current power6 value
+boolean newPowerCycle = true;  // new mesurment cycle each time data are sent to the server
+
+#define encoderPower 48   // used to power on the encoders
 //int power3Mesurt = 0;   // current power3 value
 
 //-- left Motor connection --
@@ -158,6 +170,7 @@ WheelControl Wheels(leftWheelEncoderHoles, leftIncoderHighValue, leftIncoderLowV
                     0, 0, 0, 0,
                     0, 0, 0, 0,
                     wheelPinInterrupt, delayMiniBetweenHoles);
+boolean encodersToStop = false;
 //-- move control --
 # define bForward  true; //Used to drive traction chain forward
 boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left motor to get forward
@@ -319,7 +332,7 @@ unsigned long serialTimer;       //   for serial link communication
 unsigned long checkObstacleTimer;     // to regurarly check obstacle when moving
 unsigned long durationMaxEcho = 25000; // maximum scan echo duration en us
 unsigned long timeSendInfo;     // to regurarly send information to th server
-unsigned long delayAfterStopMotors;     // to avoid I2C perturbations
+unsigned long timeAfterStopMotors;     // to avoid I2C perturbations
 unsigned long timeBetweenOnOffObstacle;  // use to compute delay between obstacle detection sitch on off
 unsigned long timeMotorStarted;          // set to time motors started
 unsigned long timerHorn   ;          // set to time horn started
@@ -334,13 +347,14 @@ unsigned long lastSetModeTime;           // used to BNO055 status
 unsigned long iddleTimer;               // used to detect robot iddle status
 unsigned long lastUpdateBNOMoveTime;    // used to update BNO with robot move
 unsigned long lowHighSpeedTimer;       // delat time between change speed of wheels
+
 #if defined debugLoop
 unsigned long timeLoop;  // cycle demande heure
 #endif
 #define delayBetween2Scan 1500  // delay between to scan steps - must take into account the transmission duration
 #define delayBetweenScanFB 700  // delay between front and back scan of the same step
 #define delayBetweenInfo 3000   // delay before sending new status to the server  
-#define delayPowerCheck 5000    // delay before next checking of power
+#define delayPowerCheck 1000    // delay before next checking of power
 #define delayBeforeRestartAfterAbstacle 3000 // delay before taking into account obstacle disappearance
 #define delayBetweenCheckPosition 200       // delay between 2 check position
 #define delayBetween2NO 500          // delay between 2 NO update
@@ -348,6 +362,7 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetweenlastUpdateBNOMoveTime 200
 #define delayGyro360Rotation 4000 // mawimum duration for 360° rotation
 #define delaylowHighSpeedTimer 10
+#define delayToStopEnocder 300        // 
 unsigned int delayGyroRotation = 100;  //
 #define maxPauseDuration 15000
 //-- robot status & diagnostics
@@ -543,6 +558,7 @@ void loop() {
     if (sendInfoSwitch % 5 == 2)
     {
       SendPowerValue();             // send power info to the server
+      newPowerCycle = true;
     }
     if (sendInfoSwitch % 5 == 3)
     {
@@ -562,7 +578,8 @@ void loop() {
   // *** end loop keep in touch with the server
 
   // *** power check
-  if ((millis() - timePowerCheck) >= delayPowerCheck && toDo == 0x00 ) // regularly check power values
+  //  if ((millis() - timePowerCheck) >= delayPowerCheck && toDo == 0x00 ) // regularly check power values
+  if ((millis() - timePowerCheck) >= delayPowerCheck  ) // regularly check power values
   {
     PowerCheck();
   }
@@ -897,6 +914,10 @@ void loop() {
   {
     pendingPollingResp = 0x00;
   }
+  if (encodersToStop && millis() > (timeAfterStopMotors + delayToStopEnocder))
+  {
+    StopEncoders();
+  }
 }
 
 
@@ -1034,8 +1055,11 @@ void MoveForward(int lengthToDo ) {
     unsigned int distF = 0;
     unsigned int distB = 0 ;
     movePingMax = 0;
-
-    if (abs(movePingInit) - abs(lengthToDo) < (frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack)
+    /*
+        if movePingInit=0 most likely  the next obstacle beyond sensor limitation
+        else check move possibility
+    */
+    if (movePingInit != 0 && (abs(movePingInit) - abs(lengthToDo) < (frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack))
     {
       movePingMax = abs(movePingInit) - abs((frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack);
 #if defined(debugObstacleOn)
@@ -1093,11 +1117,21 @@ float  RotationCalculation(int orientation) {
 
 void PowerCheck()
 {
+  /*
+   *  keep the lowest voltage values for each power mesurments during the cycle
+   *  cycle when is initialyse when sending data to the server
+   */
   timePowerCheck = millis();                       // reset timer
   //  Serial.print("power1: ");
+  float tempVoltage = 0;
   unsigned int power1 = analogRead(power1Value); // read power1 analog value and map to fit real voltage
   power1 = analogRead(power1Value);              // read twice to get a better value
-  power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
+  tempVoltage = (power1 * float (1005) / 1023);  // map to fit real voltage
+  if (tempVoltage < power1Mesurt || newPowerCycle)              // keep the lowest value a a cycle
+  {
+    power1Mesurt = tempVoltage;
+  }
+  //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
   if (power1Mesurt < power1LowLimit)                                    // check power voltage is over minimum threshold
   {
     bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
@@ -1108,17 +1142,12 @@ void PowerCheck()
   }
   unsigned int power2 = analogRead(power2Value); // read power1 analog value and map to fit real voltage
   power2 = analogRead(power2Value);               // read twice to get a better value
-  power2Mesurt = (power2 * float (990) / 1023);  // map to fit real voltage
-#if defined(debugPowerOn)
-  Serial.print(power1);
-  Serial.print(" ");
-  Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 9v
-  Serial.println("cV 1");
-  Serial.print(power2); // calibre avec 1+1 resitances 1Mg ohm 5v
-  Serial.print(" ");
-  Serial.print(power2Mesurt);
-  Serial.println("cV 2");
-#endif
+  tempVoltage = (power2 * float (1005) / 1023);  // map to fit real voltage
+  if (tempVoltage < power2Mesurt || newPowerCycle)              // keep the lowest value a a cycle
+  {
+    power2Mesurt = tempVoltage;
+  }
+
   if (power2Mesurt < power2LowLimit)                // check power voltage is over minimum threshold
   {
     bitWrite(diagPower, 1, true);                  // set diag bit power 2 ok
@@ -1128,12 +1157,104 @@ void PowerCheck()
   {
     bitWrite(diagPower, 1, false);                      // set diag bit power 2 ok
   }
+  unsigned int power3 = analogRead(power3Value); // read power1 analog value and map to fit real voltage
+  power3 = analogRead(power3Value);              // read twice to get a better value
+  //  tempVoltage = (power3 * float (1005) / 1023);  // map to fit real voltage
+  tempVoltage = map(power3, 0, 1023, 0, 2000);
+  if (tempVoltage < power3Mesurt || newPowerCycle)               // keep the lowest value a a cycle
+  {
+    power3Mesurt = tempVoltage;
+  }
+  //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
+  if (power3Mesurt < power3LowLimit)                                    // check power voltage is over minimum threshold
+  {
+    bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
+  }
+  else
+  {
+    bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
+  }
+  unsigned int power4 = analogRead(power4Value); // read power1 analog value and map to fit real voltage
+  power4 = analogRead(power4Value);              // read twice to get a better value
+  tempVoltage = map(power4, 0, 1023, 0, 1010);
+  if (tempVoltage < power4Mesurt || newPowerCycle)               // keep the lowest value a a cycle
+  {
+    power4Mesurt = tempVoltage;
+  }
+  //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
+  if (power4Mesurt < power4LowLimit)                                    // check power voltage is over minimum threshold
+  {
+    bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
+  }
+  else
+  {
+    bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
+  }
+  unsigned int power5 = analogRead(power5Value); // read power1 analog value and map to fit real voltage
+  power5 = analogRead(power5Value);              // read twice to get a better value
+  //tempVoltage = (power5 * float (1005) / 1023);  // map to fit real voltage
+  tempVoltage = map(power5, 0, 1023, 0, 2050);
+  if (tempVoltage < power5Mesurt || newPowerCycle)               // keep the lowest value a a cycle
+  {
+    power5Mesurt = tempVoltage;
+  }
+  //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
+  if (power5Mesurt < power5LowLimit)                                    // check power voltage is over minimum threshold
+  {
+    bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
+  }
+  else
+  {
+    bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
+  }
+  unsigned int power6 = analogRead(power6Value); // read power1 analog value and map to fit real voltage
+  power6 = analogRead(power6Value);              // read twice to get a better value
+  //  tempVoltage = (power6 * float (1000) / 545);  // map to fit real voltage
+  tempVoltage = map(power6, 0, 1023, 0, 1873);
+  if (tempVoltage < power6Mesurt || newPowerCycle)               // keep the lowest value a a cycle
+  {
+    power6Mesurt = tempVoltage;
+  }
+  //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
+  if (power5Mesurt < power6LowLimit)                                    // check power voltage is over minimum threshold
+  {
+    bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
+  }
+  else
+  {
+    bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
+  }
 
   if (diagPower >= 0x03 && appStat != 0xff)             // global power issue set appStat flag
   {
     //   StopAll();
   }
-
+#if defined(debugPowerOn)
+  Serial.print(power1);
+  Serial.print(" ");
+  Serial.print(power1Mesurt); // calibre avec 2+1 resitances 1Mg ohm 9v
+  Serial.println("cV 1");
+  Serial.print(power2); // calibre avec 1+1 resitances 1Mg ohm 5v
+  Serial.print(" ");
+  Serial.print(power2Mesurt);
+  Serial.println("cV 2");
+  Serial.print(power3);
+  Serial.print(" ");
+  Serial.print(power3Mesurt); // calibre avec 2+1 resitances 1Mg ohm 9v
+  Serial.println("cV 3");
+  Serial.print(power4); // calibre avec 1+1 resitances 1Mg ohm 5v
+  Serial.print(" ");
+  Serial.print(power4Mesurt);
+  Serial.println("cV 4");
+  Serial.print(power5);
+  Serial.print(" ");
+  Serial.print(power5Mesurt); // calibre avec 2+1 resitances 1Mg ohm 9v
+  Serial.println("cV 5");
+  Serial.print(power6); // calibre avec 1+1 resitances 1Mg ohm 5v
+  Serial.print(" ");
+  Serial.print(power6Mesurt);
+  Serial.println("cV 6");
+#endif
 }
 
 void startMotors()
@@ -1976,7 +2097,6 @@ void WheelInterrupt()   // wheel controler set a software interruption due to th
 
 void WheelThresholdReached( uint8_t wheelId)
 {
-
   if (wheelId != 5)
   {
     if (wheelId == leftWheelId && bSpeedHigh[wheelId])
@@ -2012,137 +2132,11 @@ void WheelThresholdReached( uint8_t wheelId)
 
     timeMotorStarted = 0;
     StopEchoInterrupt(true, true);                    // stop obstacles detection
-    delay(500);                                      // wait a little for robot intertia
-    Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
-    detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
-    pinMode(wheelPinInterrupt, INPUT);
-    digitalWrite(encoderPower, LOW);
-    gyroUpToDate = 0x00;
-    GyroGetHeadingRegisters();
-    leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
-    rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
-    unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
-    unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
-    delayAfterStopMotors = millis();
-    //  Serial.println(leftWheeelCumulative - rightWheeelCumulative);
-    /*
-      if (leftHoles != rightHoles)
-      {
-      if ((leftWheeelCumulative - rightWheeelCumulative > 0) && (leftHoles > rightHoles) )
-      {
-      leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio + 0.1;
-      }
-      if ((leftWheeelCumulative - rightWheeelCumulative < 0) && (leftHoles < rightHoles) )
-      {
-      leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio - 0.1;
-      }
-      }
-    */
-
-#if defined(debugMoveOn)
-    Serial.print("RPM: ");
-    Serial.print(wheelId);
-    Serial.print(" ");
-    Serial.print(Wheels.GetLastTurnSpeed(wheelId) * 60);
-    Serial.print(" ");
-    Serial.println(Wheels.Get2LastTurnSpeed(wheelId) * 60);
-    Serial.print("Holesleft: ");
-    Serial.print(leftHoles);
-    Serial.print(" right: ");
-    Serial.println(rightHoles);
+    timeAfterStopMotors = millis();
+    encodersToStop = true;
+#if debugWheelControlOn
+    Serial.println("encoders to be stopped");
 #endif
-    /*
-      if ( bitRead(currentMove, toDoStraight) == true)      // robot was moving straight
-      {
-      ComputeNewLocalization(0xff);                       // compute new  robot position
-      bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
-      }
-    */
-    bitWrite(pendingAction, pendingLeftMotor, false);     // clear the flag pending action motor
-    bitWrite(pendingAction, pendingRightMotor, false);    // clear the flag pending action motor
-    if ( bitRead(currentMove, toDoRotation) == true)      // robot was turning around
-    {
-      ComputeNewLocalization(0x01);                       // compute new  robot position
-      bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation
-      delay(100);
-      //      NOAfterRotation = NorthOrientation();
-      if (bitRead(toDo, toDoStraight) == false && bitRead(toDoDetail, toDoGyroRotation) == 0)
-      {
-        if (pbSynchro) {
-          SendEndAction(moveEnded, moveWheelSpeedInconsistancy);
-        }
-        else
-        {
-          SendEndAction(moveEnded, 0x00);
-        }
-
-      }
-    }
-    else
-    {
-      UpdateBNOMove();
-      ComputeNewLocalization(0xff);                       // compute new  robot position
-      bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
-      actStat = moveEnded;                                      // status move completed
-      toDo = 0x00;                                         // clear flag todo
-      uint8_t retCode = 0x00;
-      bitWrite(diagMotor, diagMotorPbEncoder, 0);
-      bitWrite(diagMotor, diagMotorPbLeft, 0);
-      bitWrite(diagMotor, diagMotorPbRight, 0);
-      delay(100);
-      //    NOAfterMoving = NorthOrientation();
-      if (Wheels.GetMinLevel(leftWheelId) > leftIncoderLowValue * 1.3)
-      {
-        retCode = moveRetcodeEncoderLeftLowLevel;
-        bitWrite(diagMotor, diagMotorPbLeft, 1);
-      }
-      if (Wheels.GetMinLevel(rightWheelId) > rightIncoderLowValue * 1.3)
-      {
-        retCode = moveRetcodeEncoderRightLowLevel;
-        bitWrite(diagMotor, diagMotorPbRight, 1);
-      }
-      if (Wheels.GetMaxLevel(leftWheelId) < leftIncoderHighValue * 0.7)
-      {
-        retCode = moveRetcodeEncoderLeftHighLevel;
-        bitWrite(diagMotor, diagMotorPbLeft, 1);
-      }
-      if (Wheels.GetMaxLevel(rightWheelId) < rightIncoderHighValue * 0.7)
-      {
-        retCode = moveRetcodeEncoderRightHighLevel;
-        bitWrite(diagMotor, diagMotorPbRight, 1);
-      }
-      if (retCode != 0x00)
-      {
-        bitWrite(diagMotor, diagMotorPbEncoder, 1);
-#if defined(debugMoveOn)
-        Serial.print("pb level encoder minLeft; ");
-        Serial.print(Wheels.GetMinLevel(leftWheelId));
-        Serial.print(" min right: ");
-        Serial.print(Wheels.GetMinLevel(rightWheelId));
-        Serial.print( "max left: ");
-        Serial.print(Wheels.GetMaxLevel(leftWheelId));
-        Serial.print( "max right: ");
-        Serial.println(Wheels.GetMaxLevel(rightWheelId));
-#endif
-      }
-      if (retCode == 0 && pbSynchro)
-      {
-        SendEndAction(moveEnded, moveWheelSpeedInconsistancy);
-      }
-      else
-      {
-        SendEndAction(moveEnded, retCode);
-      }
-
-    }
-    /*
-      if ( bitRead(waitFlag, toWait) == 0 && actStat == moving)           // no more move to do
-      {
-      actStat = moveEnded;                                      // status move completed
-      toDo = 0x00;                                         // clear flag todo
-      SendEndAction(moveEnded);
-      }
-    */
   }
   else                      // wheel mode pulse
   {
@@ -2151,6 +2145,146 @@ void WheelThresholdReached( uint8_t wheelId)
     timeMotorStarted = 0;
     //  GyroGetHeadingRegisters();
   }
+}
+void StopEncoders()
+{
+  //  delay(500);                                      // wait a little for robot intertia
+#if debugWheelControlOn
+  Serial.println("stopping encoders");
+#endif
+  encodersToStop = false;
+  Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
+  detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+  pinMode(wheelPinInterrupt, INPUT);
+  digitalWrite(encoderPower, LOW);
+  gyroUpToDate = 0x00;
+  GyroGetHeadingRegisters();
+  leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
+  rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
+  unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
+  unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
+
+  //  Serial.println(leftWheeelCumulative - rightWheeelCumulative);
+  /*
+    if (leftHoles != rightHoles)
+    {
+    if ((leftWheeelCumulative - rightWheeelCumulative > 0) && (leftHoles > rightHoles) )
+    {
+    leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio + 0.1;
+    }
+    if ((leftWheeelCumulative - rightWheeelCumulative < 0) && (leftHoles < rightHoles) )
+    {
+    leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio - 0.1;
+    }
+    }
+  */
+
+#if defined(debugMoveOn)
+  Serial.print("RPM: ");
+  Serial.print(wheelId);
+  Serial.print(" ");
+  Serial.print(Wheels.GetLastTurnSpeed(wheelId) * 60);
+  Serial.print(" ");
+  Serial.println(Wheels.Get2LastTurnSpeed(wheelId) * 60);
+  Serial.print("Holesleft: ");
+  Serial.print(leftHoles);
+  Serial.print(" right: ");
+  Serial.println(rightHoles);
+#endif
+  /*
+    if ( bitRead(currentMove, toDoStraight) == true)      // robot was moving straight
+    {
+    ComputeNewLocalization(0xff);                       // compute new  robot position
+    bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
+    }
+  */
+  bitWrite(pendingAction, pendingLeftMotor, false);     // clear the flag pending action motor
+  bitWrite(pendingAction, pendingRightMotor, false);    // clear the flag pending action motor
+  if ( bitRead(currentMove, toDoRotation) == true)      // robot was turning around
+  {
+    ComputeNewLocalization(0x01);                       // compute new  robot position
+    bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation
+    delay(100);
+    //      NOAfterRotation = NorthOrientation();
+    if (bitRead(toDo, toDoStraight) == false && bitRead(toDoDetail, toDoGyroRotation) == 0)
+    {
+      if (pbSynchro) {
+        SendEndAction(moveEnded, moveWheelSpeedInconsistancy);
+      }
+      else
+      {
+        SendEndAction(moveEnded, 0x00);
+      }
+
+    }
+  }
+  else
+  {
+    UpdateBNOMove();
+    ComputeNewLocalization(0xff);                       // compute new  robot position
+    bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
+    actStat = moveEnded;                                      // status move completed
+    toDo = 0x00;                                         // clear flag todo
+    uint8_t retCode = 0x00;
+    bitWrite(diagMotor, diagMotorPbEncoder, 0);
+    bitWrite(diagMotor, diagMotorPbLeft, 0);
+    bitWrite(diagMotor, diagMotorPbRight, 0);
+    delay(100);
+    //    NOAfterMoving = NorthOrientation();
+    if (Wheels.GetMinLevel(leftWheelId) > leftIncoderLowValue * 1.3)
+    {
+      retCode = moveRetcodeEncoderLeftLowLevel;
+      bitWrite(diagMotor, diagMotorPbLeft, 1);
+    }
+    if (Wheels.GetMinLevel(rightWheelId) > rightIncoderLowValue * 1.3)
+    {
+      retCode = moveRetcodeEncoderRightLowLevel;
+      bitWrite(diagMotor, diagMotorPbRight, 1);
+    }
+    if (Wheels.GetMaxLevel(leftWheelId) < leftIncoderHighValue * 0.7)
+    {
+      retCode = moveRetcodeEncoderLeftHighLevel;
+      bitWrite(diagMotor, diagMotorPbLeft, 1);
+    }
+    if (Wheels.GetMaxLevel(rightWheelId) < rightIncoderHighValue * 0.7)
+    {
+      retCode = moveRetcodeEncoderRightHighLevel;
+      bitWrite(diagMotor, diagMotorPbRight, 1);
+    }
+    if (retCode != 0x00)
+    {
+      bitWrite(diagMotor, diagMotorPbEncoder, 1);
+#if defined(debugMoveOn)
+      Serial.print("pb level encoder minLeft; ");
+      Serial.print(Wheels.GetMinLevel(leftWheelId));
+      Serial.print(" min right: ");
+      Serial.print(Wheels.GetMinLevel(rightWheelId));
+      Serial.print( "max left: ");
+      Serial.print(Wheels.GetMaxLevel(leftWheelId));
+      Serial.print( "max right: ");
+      Serial.println(Wheels.GetMaxLevel(rightWheelId));
+#endif
+    }
+    if (retCode == 0 && pbSynchro)
+    {
+      SendEndAction(moveEnded, moveWheelSpeedInconsistancy);
+    }
+    else
+    {
+      SendEndAction(moveEnded, retCode);
+    }
+
+  }
+  /*
+    if ( bitRead(waitFlag, toWait) == 0 && actStat == moving)           // no more move to do
+    {
+    actStat = moveEnded;                                      // status move completed
+    toDo = 0x00;                                         // clear flag todo
+    SendEndAction(moveEnded);
+    }
+  */
+
+
 }
 
 void CalibrateWheels()           // calibrate encoder levels and leftToRightDynamicAdjustRatio according to mesurments
