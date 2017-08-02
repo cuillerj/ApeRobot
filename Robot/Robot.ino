@@ -8,7 +8,7 @@
 String Version = "RobotV2.2";
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
-//#define debugMoveOn true
+#define debugMoveOn true
 //#define debugObstacleOn true
 //#define debugLocalizationOn true
 //#define debugMagnetoOn true
@@ -79,8 +79,8 @@ int uRefMotorVoltage = 1200; // mVolt for maxRPM
 #define power2LowLimit 475   // minimum centi volt before warning
 #define power3LowLimit 1300   // minimum centi volt before warning
 #define power4LowLimit 475   // minimum centi volt before warning
-#define power5LowLimit 1300   // minimum centi volt before warning
-#define power6LowLimit 900   // minimum centi volt before warning
+#define power5LowLimit 1100   // minimum centi volt before warning
+#define power6LowLimit 700   // minimum centi volt before warning
 int power1Mesurt = 0;   // current power1 value
 int power2Mesurt = 0;   // current power2 value
 int power3Mesurt = 0;   // current power3 value
@@ -157,11 +157,11 @@ boolean pbSynchro = false;
   unsigned int rightIncoderHighValue = 610; // define value above that signal is high
   unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
 */
-unsigned int leftIncoderHighValue = 770;  // define value mV above that signal is high
-unsigned int leftIncoderLowValue = 280;  // define value mV below that signal is low
+unsigned int leftIncoderHighValue = 800;  // define value mV above that signal is high
+unsigned int leftIncoderLowValue = 200;  // define value mV below that signal is low
 // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
-unsigned int rightIncoderHighValue = 770; // define value mV above that signal is high
-unsigned int rightIncoderLowValue = 270;  // define value mV below that signal is low
+unsigned int rightIncoderHighValue = 800; // define value mV above that signal is high
+unsigned int rightIncoderLowValue = 200;  // define value mV below that signal is low
 //#define delayBetweenEncoderAnalogRead  750 //  micro second between analog read of wheel encoder level
 #define delayMiniBetweenHoles  20  //  delay millis second between 2 encoder holes at the maximum speed  (35)
 // create wheel control object
@@ -362,7 +362,7 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetweenlastUpdateBNOMoveTime 200
 #define delayGyro360Rotation 4000 // mawimum duration for 360° rotation
 #define delaylowHighSpeedTimer 10
-#define delayToStopEnocder 300        // 
+#define delayToStopEnocder 60        // 
 unsigned int delayGyroRotation = 100;  //
 #define maxPauseDuration 15000
 //-- robot status & diagnostics
@@ -1118,9 +1118,9 @@ float  RotationCalculation(int orientation) {
 void PowerCheck()
 {
   /*
-   *  keep the lowest voltage values for each power mesurments during the cycle
-   *  cycle when is initialyse when sending data to the server
-   */
+      keep the lowest voltage values for each power mesurments during the cycle
+      cycle when is initialyse when sending data to the server
+  */
   timePowerCheck = millis();                       // reset timer
   //  Serial.print("power1: ");
   float tempVoltage = 0;
@@ -2133,10 +2133,46 @@ void WheelThresholdReached( uint8_t wheelId)
     timeMotorStarted = 0;
     StopEchoInterrupt(true, true);                    // stop obstacles detection
     timeAfterStopMotors = millis();
-    encodersToStop = true;
+    bitWrite(pendingAction, pendingLeftMotor, false);     // clear the flag pending action motor
+    bitWrite(pendingAction, pendingRightMotor, false);    // clear the flag pending action motor
+    if ( bitRead(currentMove, toDoStraight) == true)      // robot was moving straight
+    {
+      encodersToStop = true;                               // to keep wheel ecoders running a little bit
+    }
+    if ( bitRead(currentMove, toDoRotation) == true)      // robot was turning around
+    {
+      delay(500);                                      // wait a little for robot intertia
+      Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
+      detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+      pinMode(wheelPinInterrupt, INPUT);
+      digitalWrite(encoderPower, LOW);
+      gyroUpToDate = 0x00;
+      GyroGetHeadingRegisters();
+ //     leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
+ //     rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
+//      unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
+//      unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
+      timeAfterStopMotors = millis();
+      ComputeNewLocalization(0x01);                       // compute new  robot position
+      bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation
+      delay(100);
+      //      NOAfterRotation = NorthOrientation();
+      if (bitRead(toDo, toDoStraight) == false && bitRead(toDoDetail, toDoGyroRotation) == 0)
+      {
+        if (pbSynchro) {
+          SendEndAction(moveEnded, moveWheelSpeedInconsistancy);
+        }
+        else
+        {
+          SendEndAction(moveEnded, 0x00);
+        }
+      }
+      //   bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation
+
 #if debugWheelControlOn
-    Serial.println("encoders to be stopped");
+      Serial.println("encoders to be stopped");
 #endif
+    }
   }
   else                      // wheel mode pulse
   {
@@ -2180,12 +2216,12 @@ void StopEncoders()
   */
 
 #if defined(debugMoveOn)
-  Serial.print("RPM: ");
-  Serial.print(wheelId);
+  Serial.print("RPM left: ");
+  Serial.print(leftWheelId);
   Serial.print(" ");
-  Serial.print(Wheels.GetLastTurnSpeed(wheelId) * 60);
+  Serial.print(Wheels.GetLastTurnSpeed(leftWheelId) * 60);
   Serial.print(" ");
-  Serial.println(Wheels.Get2LastTurnSpeed(wheelId) * 60);
+  Serial.println(Wheels.Get2LastTurnSpeed(leftWheelId) * 60);
   Serial.print("Holesleft: ");
   Serial.print(leftHoles);
   Serial.print(" right: ");
