@@ -122,7 +122,7 @@ void ScanPosition() {
     bitWrite(toDo, toDoScan, 0);       // position bit toDo scan
     timeScanBack = millis();
     switchFB = 0;
-    EchoServoAlign(servoAlignedPosition,false);
+    EchoServoAlign(servoAlignedPosition, false);
     //    myservo.write(pulseValue[(nbPulse + 1) / 2]); // remise au centre
     //   delay(1000);
     //   myservo.detach();
@@ -168,7 +168,7 @@ int ScanOnceBack(int numStep)
 }
 void EchoServoAlign(uint8_t angle, boolean report)   // to align echo servo motor with robot
 {
-  AngleDegre = max(miniServoAngle,min(angle,maxiServoAngle));
+  AngleDegre = max(miniServoAngle, min(angle, maxiServoAngle));
   myservo.attach(servoPin);
   delay(5);
   // unsigned int value = map(angle, 0, 180, pulseValue[0],  pulseValue[nbPulse - 1]);
@@ -188,4 +188,70 @@ void EchoServoAlign(uint8_t angle, boolean report)   // to align echo servo moto
     SendEndAction(servoAlignEnded, 0x00);
   }
 
+}
+void StartEchoPassMonitor(uint8_t stepID, uint8_t echoByte, unsigned int distance, uint8_t action, uint8_t margin)
+{
+  digitalWrite(echoPinInterrupt, HIGH);
+  attachInterrupt(digitalPinToInterrupt(echoPinInterrupt), monitorInterrupt, RISING);
+  bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
+  bitWrite(passMonitorStepID, passMonitorRequestBit, 1);
+  echo.StartDetection(bitRead(echoByte, 0), bitRead(echoByte, 1), false, false, echoMonitorCycleDuration);
+#if defined(debugObstacleOn)
+  Serial.print("start monitor interrupt step:");
+  Serial.println(stepID);
+#endif
+  if (stepID == 0x01)
+  {
+    echo.SetMonitorOn(bitRead(echoByte, 0), distance, action, bitRead(echoByte, 1), distance, action, false, 0, 0x00, false, 0, 0x00, 0x00, 0, margin );
+  }
+  if (stepID == 0x02 || stepID == 0x03)
+  {
+    echo.SetMonitorOn(bitRead(echoByte, 0), 0, 0x00, bitRead(echoByte, 1), 0, 0x00, false, 0, 0x00, false, 0, 0x00, action, distance, margin );
+  }
+}
+
+/*
+
+*/
+void obstacleInterrupt()        // Obstacles detection system set a softare interrupt due to threshold
+{
+  obstacleDetectionCount++;
+  volatile uint8_t echoID = echo.GetAlertEchoNumber();
+  volatile unsigned int obstacleDistance = echo.GetDistance(echoID);
+#if defined(debugObstacleOn)
+  Serial.print("obstacle a: ");
+  Serial.print(obstacleDistance);
+  Serial.print("cm echoId: ");
+  Serial.println(echoID);
+#endif
+  if (obstacleDistance != 0 && obstacleDetectionCount >= 2)
+  {
+    if (bitRead(waitFlag, toPause) == false)
+    {
+#if defined(debugObstacleOn)
+      Serial.println("init pause");
+#endif
+      pauseSince = millis();
+      bitWrite(waitFlag, toPause, true);     // position bit pause to end
+      bitWrite(diagRobot, diagRobotObstacle, 1);       // position bit diagRobot
+    }
+
+    //  digitalWrite(echoPinInterrupt, LOW);
+    PauseMove();
+  }
+}
+void monitorInterrupt()
+{
+  volatile uint8_t echoID = echo.GetAlertEchoNumber();
+  volatile unsigned int obstacleDistance = echo.GetDistance(echoID);
+  bitWrite(passMonitorStepID, passMonitorInterruptBit, 1);
+  bitWrite(passMonitorStepID, passMonitorRequestBit, 0);
+#if defined(debugObstacleOn)
+  Serial.print("monitor: ");
+  Serial.print(obstacleDistance);
+  Serial.print(" cm echoId: ");
+  Serial.print(echoID);
+  Serial.print(" passMonitorStepID: ");
+  Serial.println (passMonitorStepID, HEX);
+#endif
 }

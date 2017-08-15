@@ -5,7 +5,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   timeReceiveSerial = millis();         // reset check receive timer
   sendInfoSwitch = 1;                   // next info to send will be status
   if (cmdInput != 0x61 && cmdInput != 0x65 && lastReceivedNumber == GatewayLink.DataInSerial[1])
-  {                                     // check duplicate for frame that are echo or ack frame
+  { // check duplicate for frame that are echo or ack frame
     Serial.print("duplicate receive number:");
     Serial.println(GatewayLink.DataInSerial[1]);
     SendStatus();
@@ -140,7 +140,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 
     case 0x45: // E north align
       {
-        if (bitRead(toDoDetail, toDoAlign) == 0)   // no pending rotation
+        if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
         {
           northAligned = false;
           ResetGyroscopeHeadings();
@@ -307,6 +307,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         appStat = appStat & 0x1f;
         actStat = 0x68; // moving
         bitWrite(toDo, toDoMove, 1);       // position bit toDo move
+        bitWrite(toDoDetail, toDoMoveAcrossPass, 0);       // position bit toDodetail
         if (GatewayLink.DataInSerial[6] == 0x2d) {
           reqMove = -reqMove;
         }
@@ -341,8 +342,72 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         break;
       }
       break;
+    case moveAcrossPass: //
+      {
+        if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0)
+        {
+          bitWrite(diagMotor, diagMotorPbSynchro, 0);       // position bit diagMotor
+          bitWrite(diagMotor, diagMotorPbLeft, 0);       // position bit diagMotor
+          bitWrite(diagMotor, diagMotorPbRight, 0);       // position bit diagMotor
+          gyroTargetRotation = 0;                        // clear previous rotation
+          passDistance = GatewayLink.DataInSerial[4];
+          passWidth = GatewayLink.DataInSerial[6];
+          passLength = GatewayLink.DataInSerial[8];
+          reqMove = (GatewayLink.DataInSerial[10] & 0b01111111) * 256 + GatewayLink.DataInSerial[11];
+          passMonitorStepID=0x00;
+          if (GatewayLink.DataInSerial[3] == 0x2d) {
+            passDistance = -passDistance;
+          }
+          if (GatewayLink.DataInSerial[9] == 0x2d) {
+            reqMove = -reqMove;
+          }
+          if (reqMove / passDistance < 0)      // must have  the same sign
+          {
+            SendEndAction(moveAcrossPassEnd, requestRejected);
+            break;
+          }
+          if (max(abs(passDistance), abs(reqMove)) < minDistToBeDone )
+          {
+            SendEndAction(moveAcrossPassEnd, moveUnderLimitation);
+            break;
+          }
+          echoToGet = (GatewayLink.DataInSerial[13] & 0b01111111) * 256 + GatewayLink.DataInSerial[14];
+          iddleTimer = millis();
 
-    case 0x6f: // r rotate VS gyroscope
+#if defined(debugMoveOn)
+          Serial.print("move across pass dist:");
+          Serial.print( passDistance);
+          Serial.print(" width:");
+          Serial.print( passWidth);
+          Serial.print(" length:");
+          Serial.print( passLength);
+          Serial.print(" reqMove:");
+          Serial.print( reqMove);
+          Serial.print(" echoToGet:");
+          Serial.println( echoToGet);
+#endif
+          bitWrite(toDoDetail, toDoMoveAcrossPass, true);       // position bit toDo
+          bitWrite(toDo, toDoMove, true);
+          if (reqMove > 0)
+          {
+            bitWrite(toDo, toDoStraight, true);
+            bitWrite(toDo, toDoBackward, false);   // to go forward
+          }
+          if (reqMove < 0)
+          {
+            bitWrite(toDo, toDoStraight, true);
+            bitWrite(toDo, toDoBackward, true);  // to go backward
+          }
+
+        }
+        else
+        {
+          SendEndAction(moveAcrossPassEnd, requestRejected);
+          break;
+        }
+        break;
+      }
+    case rotateTypeGyro: // r rotate VS gyroscope
       {
         int reqN = ((GatewayLink.DataInSerial[3] & 0b01111111) * 256 + GatewayLink.DataInSerial[4]) % 360;
         if (bitRead(toDoDetail, toDoGyroRotation) == 0)   // no pending rotation
@@ -370,8 +435,10 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           {
             gyroInitRotationSens = 1;
           }
+#if defined(debugGyroscopeOn)
           Serial.print("request gyro rotate:");
           Serial.println( reqN);
+#endif
           timeGyroRotation = millis();
           gyroTargetRotation = reqN;
           bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
@@ -392,7 +459,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         }
         break;
       }
-    case 0x70: // commande p ping front back
+    case pingFrontBack: // commande p ping front back
       iddleTimer = millis();
       Serial.println("ping FB");
       bitWrite(toDo, toDoPingFB, 1);
