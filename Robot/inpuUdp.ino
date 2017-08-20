@@ -355,6 +355,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           passLength = GatewayLink.DataInSerial[8];
           reqMove = (GatewayLink.DataInSerial[10] & 0b01111111) * 256 + GatewayLink.DataInSerial[11];
           passMonitorStepID=0x00;
+          passRetCode=0x00;
           if (GatewayLink.DataInSerial[3] == 0x2d) {
             passDistance = -passDistance;
           }
@@ -363,18 +364,18 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           }
           if (reqMove / passDistance < 0)      // must have  the same sign
           {
-            SendEndAction(moveAcrossPassEnd, requestRejected);
+            SendEndAction(moveAcrossPassEnded, requestRejected);
             break;
           }
           if (max(abs(passDistance), abs(reqMove)) < minDistToBeDone )
           {
-            SendEndAction(moveAcrossPassEnd, moveUnderLimitation);
+            SendEndAction(moveAcrossPassEnded, moveUnderLimitation);
             break;
           }
           echoToGet = (GatewayLink.DataInSerial[13] & 0b01111111) * 256 + GatewayLink.DataInSerial[14];
           iddleTimer = millis();
 
-#if defined(debugMoveOn)
+#if defined(debugAcrossPathOn)
           Serial.print("move across pass dist:");
           Serial.print( passDistance);
           Serial.print(" width:");
@@ -402,7 +403,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         }
         else
         {
-          SendEndAction(moveAcrossPassEnd, requestRejected);
+          SendEndAction(moveAcrossPassEnded, requestRejected);
           break;
         }
         break;

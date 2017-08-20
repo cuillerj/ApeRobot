@@ -14,6 +14,7 @@ void SendEndAction(int action, uint8_t retCode)
   {
     getBNOLocation = 0x07;                // to resquest BNO computed location
   }
+
   //  GetHeadingRegisters();
   //  int northOrientation = NorthOrientation();
   int deltaNORotation = NOBeforeRotation - NOAfterRotation;

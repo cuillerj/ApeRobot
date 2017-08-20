@@ -196,9 +196,9 @@ void StartEchoPassMonitor(uint8_t stepID, uint8_t echoByte, unsigned int distanc
   bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
   bitWrite(passMonitorStepID, passMonitorRequestBit, 1);
   echo.StartDetection(bitRead(echoByte, 0), bitRead(echoByte, 1), false, false, echoMonitorCycleDuration);
-#if defined(debugObstacleOn)
+#if defined(debugAcrossPathOn)
   Serial.print("start monitor interrupt step:");
-  Serial.println(stepID);
+  Serial.println(stepID,HEX);
 #endif
   if (stepID == 0x01)
   {
@@ -246,8 +246,9 @@ void monitorInterrupt()
   volatile unsigned int obstacleDistance = echo.GetDistance(echoID);
   bitWrite(passMonitorStepID, passMonitorInterruptBit, 1);
   bitWrite(passMonitorStepID, passMonitorRequestBit, 0);
-#if defined(debugObstacleOn)
-  Serial.print("monitor: ");
+ // passInterruptBy=0x01;
+#if defined(debugAcrossPathOn)
+  Serial.print("monitor int: ");
   Serial.print(obstacleDistance);
   Serial.print(" cm echoId: ");
   Serial.print(echoID);
