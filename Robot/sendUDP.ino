@@ -375,7 +375,7 @@ void SendScanResultSerial (int distF, int distB)   // send scan echo data to the
 void SendBNOSubsytemStatus()
 {
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
-  GatewayLink.PendingDataReqSerial[0] = 0x75; //
+  GatewayLink.PendingDataReqSerial[0] = respBNOSubsytemStatus; //
   GatewayLink.PendingDataReqSerial[1] = BNOMode; //
   GatewayLink.PendingDataReqSerial[2] = BNOCalStat;
   GatewayLink.PendingDataReqSerial[3] = 0x00;
@@ -388,7 +388,7 @@ void SendBNOLocation ()
   trameNumber = trameNumber + 1;
   GatewayLink.PendingDataReqSerial[0] = 0x01;
   GatewayLink.PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
-  GatewayLink.PendingDataReqSerial[2] = 0x76;
+  GatewayLink.PendingDataReqSerial[2] = respBNOLocation;
   GatewayLink.PendingDataReqSerial[3] = getBNOLocation;    // used by java to check uptodate (0x00)
   if (BNOLeftPosX >= 0)
   {
@@ -450,4 +450,36 @@ void SendBNOLocation ()
   // DataToSendSerial();
   GatewayLink.SendSecuSerial();                               // secured sending to wait for server ack
   timeSendSecSerial = millis();                   // init timer used to check for server ack
+}
+void SendNarrowPathMesurments ()
+{
+  //trameNumber = trameNumber + 1;
+  // GatewayLink.PendingDataReqSerial[0] = 0x01;
+  //  GatewayLink.PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
+  GatewayLink.PendingReqSerial = PendingReqRefSerial;
+  GatewayLink.PendingDataReqSerial[0] = respNarrowPathMesurments;
+  unsigned int passDist = round(((passTrackLeftHoles[1] - passTrackLeftHoles[0]) + (passTrackRightHoles[1] - passTrackRightHoles[0])) / 2);
+  GatewayLink.PendingDataReqSerial[1] = uint8_t(passDist / 256);
+  GatewayLink.PendingDataReqSerial[2] = uint8_t(passDist);
+  GatewayLink.PendingDataReqSerial[3] = 0x00;
+  unsigned int passLen = round(((passTrackLeftHoles[2] + passTrackLeftHoles[3] + passTrackLeftHoles[4]) + (passTrackRightHoles[2] + passTrackRightHoles[3] + passTrackRightHoles[4])) / 2);
+  GatewayLink.PendingDataReqSerial[4] = uint8_t(passLen / 256);
+  GatewayLink.PendingDataReqSerial[5] = uint8_t(passLen);
+  GatewayLink.PendingDataLenSerial = 0x06;                      // data len
+}
+void SendNarrowPathEchos ()
+{
+  //  trameNumber = trameNumber + 1;
+  // GatewayLink.PendingDataReqSerial[0] = 0x01;
+  // GatewayLink.PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
+  GatewayLink.PendingReqSerial = PendingReqRefSerial;
+  GatewayLink.PendingDataReqSerial[0] = respNarrowPathEchos;
+  for (int i = 0; i < min(9, passNumberTrack1); i++)
+  {
+    GatewayLink.PendingDataReqSerial[3 * i + 1] = uint8_t(passTrack1[2 * i]);
+    GatewayLink.PendingDataReqSerial[3 * i + 2] = uint8_t(passTrack1[2 * i + 1]);
+    GatewayLink.PendingDataReqSerial[3 * i + 3] = 0x00;
+  }
+  GatewayLink.PendingDataLenSerial = uint8_t(min(30, 3 * passNumberTrack1 + 1));                 // data len
+
 }

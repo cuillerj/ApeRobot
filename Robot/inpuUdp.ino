@@ -64,9 +64,9 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         SendEncoderValues();
         break;
       }
-    case 0x3f: // commande : set motors PMW values
+    case 0x3f: // commande : set motors PWM values
       {
-        Serial.print("commande : set motors PMW values :");
+        Serial.print("commande : set motors PWM values :");
         Serial.println(GatewayLink.DataInSerial[3], HEX);
         if (GatewayLink.DataInSerial[3] == 0x4c)
         {
@@ -277,9 +277,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       bitWrite(diagMotor, diagMotorPbLeft, 0);       // position bit diagMotor
       bitWrite(diagMotor, diagMotorPbRight, 0);       // position bit diagMotor
       gyroTargetRotation = 0;                        // clear previous rotation
-      if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0)
+      if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0 && !encodersToStop)
       {
-
         toDo = 0x00;
         reqAng = GatewayLink.DataInSerial[4] * 256 + GatewayLink.DataInSerial[5];
 
@@ -354,8 +353,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           passWidth = GatewayLink.DataInSerial[6];
           passLength = GatewayLink.DataInSerial[8];
           reqMove = (GatewayLink.DataInSerial[10] & 0b01111111) * 256 + GatewayLink.DataInSerial[11];
-          passMonitorStepID=0x00;
-          passRetCode=0x00;
+          passMonitorStepID = 0x00;
+          passRetCode = 0x00;
           if (GatewayLink.DataInSerial[3] == 0x2d) {
             passDistance = -passDistance;
           }
@@ -460,7 +459,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         }
         break;
       }
-    case pingFrontBack: // commande p ping front back
+    case requestPingFrontBack: // commande p ping front back
       iddleTimer = millis();
       Serial.println("ping FB");
       bitWrite(toDo, toDoPingFB, 1);
@@ -514,6 +513,14 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case requestBNOData: // send
       SendBNOLocation ();
       Serial.println("SendBNOLocation");
+      break;
+    case requestNarrowPathMesurments: // send
+      SendNarrowPathMesurments ();
+      Serial.println("requestNarrowPathMesurments");
+      break;
+    case requestNarrowPathEchos: // send
+      SendNarrowPathEchos ();
+      Serial.println("requestNarrowPathEchos");
       break;
     default:
 
