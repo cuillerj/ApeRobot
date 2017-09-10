@@ -195,6 +195,7 @@ void StartEchoPassMonitor(uint8_t stepID, uint8_t echoByte, unsigned int distanc
   attachInterrupt(digitalPinToInterrupt(echoPinInterrupt), monitorInterrupt, RISING);
   bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
   bitWrite(passMonitorStepID, passMonitorRequestBit, 1);
+  timePassMonitorStarted = millis();
   echo.StartDetection(bitRead(echoByte, 0), bitRead(echoByte, 1), false, false, echoMonitorCycleDuration);
 #if defined(debugAcrossPathOn)
   Serial.print("start monitor interrupt step:");

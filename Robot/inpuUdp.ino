@@ -142,18 +142,25 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       {
         if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
         {
-          northAligned = false;
-          ResetGyroscopeHeadings();
-          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
-          northAlignShift = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
-          bitWrite(toDo, toDoAlign, 1);       // position bit toDo
-          iddleTimer = millis();
+          //         northAlignTarget = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
+          initNorthAlign((unsigned int)(GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4]));
 #if defined(debugConnection)
           Serial.print("north align:");
-          Serial.println(northAlignShift);
+          Serial.println(northAlignTarget);
 #endif
-          //       targetAfterNORotation= ((int) alpha + reqN) % 360;
-          targetAfterNORotation = 0;
+          /*
+            northAligned = false;
+            ResetGyroscopeHeadings();
+            GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+            bitWrite(toDo, toDoAlign, 1);       // position bit toDo
+            iddleTimer = millis();
+            #if defined(debugConnection)
+            Serial.print("north align:");
+            Serial.println(northAlignShift);
+            #endif
+            //       targetAfterNORotation= ((int) alpha + reqN) % 360;
+            targetAfterNORotation = 0;
+          */
           //       northAlign(reqN);
           break;
         }
@@ -351,7 +358,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           gyroTargetRotation = 0;                        // clear previous rotation
           passDistance = GatewayLink.DataInSerial[4];
           passWidth = GatewayLink.DataInSerial[6];
-          passLength = GatewayLink.DataInSerial[8];
+          passLen = GatewayLink.DataInSerial[8];
           reqMove = (GatewayLink.DataInSerial[10] & 0b01111111) * 256 + GatewayLink.DataInSerial[11];
           passMonitorStepID = 0x00;
           passRetCode = 0x00;
@@ -372,6 +379,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
             break;
           }
           echoToGet = (GatewayLink.DataInSerial[13] & 0b01111111) * 256 + GatewayLink.DataInSerial[14];
+          passNO = (GatewayLink.DataInSerial[16] & 0b01111111) * 256 + GatewayLink.DataInSerial[17];
+          passStartEntryDistance = GatewayLink.DataInSerial[19];
           iddleTimer = millis();
 
 #if defined(debugAcrossPathOn)
@@ -380,11 +389,15 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           Serial.print(" width:");
           Serial.print( passWidth);
           Serial.print(" length:");
-          Serial.print( passLength);
+          Serial.print( passLen);
           Serial.print(" reqMove:");
           Serial.print( reqMove);
           Serial.print(" echoToGet:");
-          Serial.println( echoToGet);
+          Serial.print( echoToGet);
+          Serial.print(" passNO:");
+          Serial.print( passNO);
+          Serial.print(" startToEntryDistance:");
+          Serial.println( passStartEntryDistance);
 #endif
           bitWrite(toDoDetail, toDoMoveAcrossPass, true);       // position bit toDo
           bitWrite(toDo, toDoMove, true);
