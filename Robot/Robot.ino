@@ -7,25 +7,26 @@
         sonar test before rotation modified
         check wheels running during rotation
    v3.0 move acrass narrow path under development
+   v3.1 reboot modified to enventualy move a little to calibrate compass on demand of the subsystem
 */
 
-String Version = "RobotV3.0";
+String Version = "RobotV3.1";
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
-#define debugMoveOn true
+//#define debugMoveOn true
 //#define debugObstacleOn true
 //#define debugLocalizationOn true
-#define debugAcrossPathOn true
+//#define debugAcrossPathOn true
 //#define debugMagnetoOn true
-#define northAlignOn true
-#define debugMotorsOn true
+//#define northAlignOn true
+//#define debugMotorsOn true
 //#define debugWheelControlOn true
-#define wheelEncoderDebugOn true
+//#define wheelEncoderDebugOn true
 //#define debugConnection true
 //#define debugPowerOn true
 //#define debugLoop true
 //#define servoMotorDebugOn true
-#define debugGyroscopeOn true
+//#define debugGyroscopeOn true
 //#define debugGyroscopeL2On true
 #define I2CSlaveMode true
 #include <Servo.h>  // the servo library use timer 5 with atmega
@@ -64,12 +65,16 @@ int retryCount = 0;            // number of retry for sending
 
 //-- General Robot parameters --
 #include <ApeRobotCommonDefine.h>
-uint8_t rebootPhase = 3;
+uint8_t rebootPhase = 0x05;
+uint8_t rebootDiag = 0x00;
 
 float fLeftTractionDistPerRev =  (PI * fLeftWheelDiameter) ;
 float fRightTractionDistPerRev = (PI * fRightWheelDiameter);
 float coeffGlissementRotation = 1.;
 #define rebootDuration 20000 // delay to completly start arduino
+#define rebootBNODuration 2000 // reboot subsytem first step duration
+#define rebootESPDuration 40000 // ESP reboot and WIFI maximum duration
+#define rebootBNOTimeout 90000 // ESPreboot timeout
 #define hornPin 49           // to activate horn
 
 //-- power control --
@@ -506,8 +511,9 @@ void setup() {
   pinMode(hornPin, OUTPUT);
   pinMode(power1Value, INPUT);
   pinMode(power2Value, INPUT);
-  pinMode(RobotOutputRobotRequestPin, OUTPUT);
-  digitalWrite(RobotOutputRobotRequestPin, LOW);
+
+  //digitalWrite(RobotOutputRobotRequestPin, LOW);
+
   digitalWrite(hornPin, LOW);
   digitalWrite(blueLed, HIGH);
   digitalWrite(yellowLed, HIGH);
@@ -570,7 +576,7 @@ void loop() {
       SetBNOMode(MODE_NDOF);
     }
   }
-  if (millis() - OutputRobotRequestPinTimer >= minimumDurationBeetwenPolling / 2)
+  if (rebootPhase == 0x00 && millis() - OutputRobotRequestPinTimer >= minimumDurationBeetwenPolling / 2)
   {
     digitalWrite(RobotOutputRobotRequestPin, LOW);      // reset the request to the subsystem
   }
@@ -1339,7 +1345,7 @@ void PowerCheck()
     power6Mesurt = tempVoltage;
   }
   //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
-  if (power5Mesurt < power6LowLimit)                                    // check power voltage is over minimum threshold
+  if (power6Mesurt < power6LowLimit)                                    // check power voltage is over minimum threshold
   {
     bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
   }
@@ -1764,78 +1770,118 @@ void PrintSpeed()
 
 void AffLed()
 {
-  if (diagPower == 0x00)
+  if (rebootPhase == 0x00)
   {
-    digitalWrite(redLed, 1);
-    redLedOn = true;
-  }
-  else
-  {
-    if (diagPower == 0b00000111)
+    if (diagPower == 0x00)
     {
-      digitalWrite(redLed, 0);
-      redLedOn = false;
+      digitalWrite(redLed, 1);
+      redLedOn = true;
     }
     else
     {
-      redLedOn = !redLedOn;
-      digitalWrite(redLed, redLedOn);
+      if (diagPower == 0b00000111)
+      {
+        digitalWrite(redLed, 0);
+        redLedOn = false;
+      }
+      else
+      {
+        redLedOn = !redLedOn;
+        digitalWrite(redLed, redLedOn);
+      }
     }
-  }
 
-  if (diagConnection == 0x00)
-  {
-    digitalWrite(blueLed, 1);
-    blueLedOn = true;
-  }
-  else
-  {
-    blueLedOn = !blueLedOn;
-    digitalWrite(blueLed, blueLedOn);
-  }
-
-  if (diagRobot == 0x00  )
-  {
-    digitalWrite(greenLed, 1);
-    greenLedOn = true;
-  }
-  else
-  {
-    greenLedOn = !greenLedOn;
-    digitalWrite(greenLed, greenLedOn);
-  }
-  if (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true)
-  {
-    if (diagMotor == 0x00)
+    if (diagConnection == 0x00)
     {
-      //    Serial.println(diagMotor, HEX);
-      digitalWrite(yellowLed, 1);
-      yellowLedOn = true;
+      digitalWrite(blueLed, 1);
+      blueLedOn = true;
     }
     else
     {
-      yellowLedOn = !yellowLedOn;
-      digitalWrite(yellowLed, yellowLedOn);
+      blueLedOn = !blueLedOn;
+      digitalWrite(blueLed, blueLedOn);
     }
-  }
-  else
-  {
 
-    if (diagMotor == 0x00)
-    {
-
-      digitalWrite(yellowLed, 0);
-      yellowLedOn = false;
-    }
-    else
-    {
-      yellowLedOn = !yellowLedOn;
-      digitalWrite(yellowLed, yellowLedOn);
-    }
-    if (appStat == 0xff)
+    if (diagRobot == 0x00  )
     {
       digitalWrite(greenLed, 1);
-      greenLedOn = false;
+      greenLedOn = true;
+    }
+    else
+    {
+      greenLedOn = !greenLedOn;
+      digitalWrite(greenLed, greenLedOn);
+    }
+    if (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true)
+    {
+      if (diagMotor == 0x00)
+      {
+        //    Serial.println(diagMotor, HEX);
+        digitalWrite(yellowLed, 1);
+        yellowLedOn = true;
+      }
+      else
+      {
+        yellowLedOn = !yellowLedOn;
+        digitalWrite(yellowLed, yellowLedOn);
+      }
+    }
+    else
+    {
+
+      if (diagMotor == 0x00)
+      {
+
+        digitalWrite(yellowLed, 0);
+        yellowLedOn = false;
+      }
+      else
+      {
+        yellowLedOn = !yellowLedOn;
+        digitalWrite(yellowLed, yellowLedOn);
+      }
+      if (appStat == 0xff)
+      {
+        digitalWrite(greenLed, 1);
+        greenLedOn = false;
+      }
+    }
+  }
+  else {
+    if (rebootPhase == 5)
+    {
+      digitalWrite(greenLed, 0);
+      digitalWrite(blueLed, 0);
+      digitalWrite(yellowLed, 0);
+      digitalWrite(redLed, 0);
+    }
+    if (rebootPhase == 4)
+    {
+      digitalWrite(greenLed, 1);
+      digitalWrite(blueLed, 1);
+      digitalWrite(yellowLed, 1);
+      digitalWrite(redLed, 1);
+    }
+    if (rebootPhase == 3)
+    {
+      digitalWrite(greenLed, 0);
+      digitalWrite(blueLed, 1);
+      digitalWrite(yellowLed, 1);
+      digitalWrite(redLed, 1);
+    }
+    if (rebootPhase == 2)
+    {
+      digitalWrite(greenLed, 0);
+      digitalWrite(blueLed, 0);
+      digitalWrite(yellowLed, 1);
+      digitalWrite(redLed, 1);
+    }
+    if (rebootPhase == 1)
+    {
+      digitalWrite(greenLed, 0);
+      digitalWrite(blueLed, 0);
+      digitalWrite(yellowLed, 0);
+      digitalWrite(redLed, 1);
     }
   }
 }
@@ -2190,27 +2236,78 @@ void CheckBeforeStart()
 
 void CheckEndOfReboot()  //
 {
-  if (rebootPhase == 3 && millis() > rebootDuration) // end of arduino reboot
+  if (rebootPhase == 5 && millis() > rebootDuration) // end of arduino reboot
   {
-    Serial.println("reboot phase: 3");
+    rebootPhase--;
+    Serial.print("reboot phase:");
+    Serial.println(rebootPhase);
     EchoServoAlign(servoAlignedPosition, false);                              // adjust servo motor to center position
-    delay(1000);
-    //   northOrientation = NorthOrientation();            // added 24/10/2016
+  }
+  if (rebootPhase == 4 && millis() > rebootDuration + 1000) // end of arduino reboot
+  {
     PingFrontBack();
-    rebootPhase = 2;
-    Serial.println("reboot phase: 2");
+    rebootPhase--;
+    Serial.print("reboot phase:");
+    Serial.println(rebootPhase);
+
+  }
+
+  if (rebootPhase == 3 && analogRead(power6Value) > map(power6LowLimit, 0, 1873, 0, 1023)) // motors power on
+  {
+    rebootPhase--;
+    Serial.print("reboot phase:");
+    Serial.println(rebootPhase);
+    digitalWrite(RobotOutputRobotRequestPin, HIGH);
+    delay(500);
+    pinMode(RobotOutputRobotRequestPin, INPUT);     // input mode till the subsystem is ready
+  }
+  if (rebootPhase == 3 && millis() > rebootESPDuration)
+  {
+    rebootPhase--;
+    bitWrite(rebootDiag, 2, 1);
+    Serial.print("timeout>reboot phase:");
+    Serial.println(rebootPhase);
+  }
+  if ((rebootPhase == 2) && millis() > rebootBNODuration) // end of arduino reboot
+  {
+    int pulseCount = 0;
+    if (digitalRead(RobotOutputRobotRequestPin) == 1 && digitalRead(RobotInputReadyPin) == 0)
+    {
+      pulseCount++;
+      Serial.println("move a little to calibrate compass");
+      bRightClockwise = bLeftClockwise;
+      //        bitWrite(currentMove, toDoClockwise, false);
+      //        bitWrite(saveCurrentMove, toDoClockwise, false);
+      pulseMotors(3);
+      bLeftClockwise = !bLeftClockwise;
+      delay(1000);
+    }
+    if ((rebootPhase == 2) && millis() > rebootBNOTimeout) // BNU timeout
+    {
+      rebootPhase--;
+      bitWrite(rebootDiag, 1, 1);
+      Serial.print("timoeout>reboot phase:");
+      Serial.println(rebootPhase);
+    }
+    if (pulseCount % 2 == 1)     // to balance clockwise and anitclockwise move
+    {
+      bRightClockwise = bLeftClockwise;
+      pulseMotors(3);
+    }
   }
   if (rebootPhase == 2 && digitalRead(RobotInputReadyPin) == 1 && millis() > rebootDuration + 5000) // end of arduino reboot
   {
     //   northOrientation = NorthOrientation();            // added 24/10/2016
     PingFrontBack();
-    rebootPhase = 1;
-    //    CalibrateGyro();
-    Serial.println("reboot phase: 1");
+    rebootPhase--;
+    pinMode(RobotOutputRobotRequestPin, OUTPUT);     // subsystel is ready set output mode as running mode
+    digitalWrite(RobotOutputRobotRequestPin, LOW);
+    Serial.print("reboot phase:");
+    Serial.println(rebootPhase);
   }
   if (rebootPhase == 1 && gyroCalibrationOk && millis() > rebootDuration + 7000) // end of arduino reboot
   {
-    diagRobot = 0x00;
+    diagRobot = rebootDiag;
     waitFlag = 0x00;
     appStat = 0x00;
     bitWrite(diagConnection, diagConnectionI2C, 0);
@@ -2218,7 +2315,8 @@ void CheckEndOfReboot()  //
     Horn(true, 250);
     rebootPhase = 0;
     iddleTimer = millis();
-    Serial.println("reboot completed");
+    Serial.print("reboot diag:");
+    Serial.println(rebootDiag, HEX);
   }
 }
 
