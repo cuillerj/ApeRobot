@@ -355,6 +355,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           bitWrite(diagMotor, diagMotorPbSynchro, 0);       // position bit diagMotor
           bitWrite(diagMotor, diagMotorPbLeft, 0);       // position bit diagMotor
           bitWrite(diagMotor, diagMotorPbRight, 0);       // position bit diagMotor
+          tracePassMonitorStepID = 0x00;
+          traceInterruptByStepID = 0x00;
           gyroTargetRotation = 0;                        // clear previous rotation
           passDistance = GatewayLink.DataInSerial[4];
           passWidth = GatewayLink.DataInSerial[6];
@@ -362,6 +364,13 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           reqMove = (GatewayLink.DataInSerial[10] & 0b01111111) * 256 + GatewayLink.DataInSerial[11];
           passMonitorStepID = 0x00;
           passRetCode = 0x00;
+          for (int i = 0; i < nbTrackedHoles; i++) {
+            passTrackLeftHoles[i] = 0x00;
+            passTrackRightHoles[i] = 0x00;
+          }
+          for (int i = 0; i < 2 * passNumberTrack1; i++) {
+            passTrack1[i] = 0x00;
+          }
           if (GatewayLink.DataInSerial[3] == 0x2d) {
             passDistance = -passDistance;
           }

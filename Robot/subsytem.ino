@@ -304,7 +304,7 @@ void UpdateBNOMove()
   if (currentLeftHoles > BNOprevSentLeftHoles || currentRightHoles > BNOprevSentRightHoles)
   {
 #if defined(debugGyroscopeOn)
-    Serial.print ("send holes left:");
+    Serial.print ("update holes left:");
     Serial.print(currentLeftHoles);
     Serial.print(" right:");
     Serial.println(currentRightHoles);

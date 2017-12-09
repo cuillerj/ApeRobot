@@ -28,6 +28,7 @@ String Version = "RobotV3.1";
 //#define servoMotorDebugOn true
 //#define debugGyroscopeOn true
 //#define debugGyroscopeL2On true
+
 #define I2CSlaveMode true
 #include <Servo.h>  // the servo library use timer 5 with atmega
 #include <math.h>
@@ -232,17 +233,20 @@ unsigned int passNO = 0;
 uint8_t passLen = 0x00;
 #define passMonitorIddle 0x0f
 volatile uint8_t passMonitorStepID = passMonitorIddle;
+uint8_t lastPassMonitorStepID;
 #define passMonitorInterruptBit 7        // interruption has raised from the echo monitor system
 #define passMonitorRequestBit 6          // waiting for echo monitor system interruption
 #define passSkipStepBit 4                // the last step has been skipped
 #define passNumberTrack1 8              //  number of echos to be stored
-
+#define nbTrackedHoles 5
 uint8_t passTrack1[2 * passNumberTrack1];   //  contain the echos records
-unsigned int passTrackLeftHoles[5];         // contain the encoders left holes at checkpoints
-unsigned int passTrackRightHoles[5];         // contain the encoders right holes at checkpoints
+unsigned int passTrackLeftHoles[nbTrackedHoles];         // contain the encoders left holes at checkpoints
+unsigned int passTrackRightHoles[nbTrackedHoles];         // contain the encoders right holes at checkpoints
 uint8_t passTrackNumber = 0;                 // contain the current number of echos recorded
 uint8_t passInterruptBy = 0x00;            // flag to track where the monitor interruption come from
 uint8_t passRetCode = 0x00;              // contain the return move return code
+uint8_t tracePassMonitorStepID = 0x00;   // bit trace of step id
+uint8_t traceInterruptByStepID = 0x00;   // bit trace of step id interruption
 /*
 
 */
@@ -419,7 +423,7 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetween2Scan 1500  // delay between to scan steps - must take into account the transmission duration
 #define delayBetweenScanFB 700  // delay between front and back scan of the same step
 #define delayBetweenInfo 3000   // delay before sending new status to the server  
-#define delayPowerCheck 200    // delay before next checking of power
+#define delayPowerCheck 100    // delay before next checking of power
 #define delayBeforeRestartAfterAbstacle 3000 // delay before taking into account obstacle disappearance
 #define delayBetweenCheckPosition 200       // delay between 2 check position
 #define delayBetween2NO 500          // delay between 2 NO update
@@ -432,10 +436,10 @@ unsigned long timeLoop;  // cycle demande heure
    delay between wheels and encoders stop
    to keep not too high to avoid false encoders threshold in case wheel stop in border of a hole
 */
-#define delayToStopEnocder 60    // 60 adjusting by tunning
+#define delayToStopEnocder 60    // 60 adjusted by tunning
 unsigned int delayGyroRotation = 100;  //
 #define maxPauseDuration 15000
-#define maxPassMonitorDuration 20000
+#define maxPassMonitorDuration 45000
 #define echoPrecision 5
 #define echoTolerance 0.1
 //-- robot status & diagnostics
@@ -686,7 +690,7 @@ void loop() {
     {
       if (BNOMode == MODE_COMPASS)
       {
-        if (millis() -  timeCompasRotation > 500 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor())
+        if (millis() -  timeCompasRotation > 1000 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor())
         {
           if (compasUpToDate == 0x00)
           {
@@ -994,30 +998,31 @@ void loop() {
   {
     if (BNOMode == MODE_COMPASS)
     {
-
       if (compasUpToDate == 0x00)
       {
-        //#if defined(debugGyroscopeOn)
+#if defined(debugGyroscopeOn)
         Serial.println("request compas");
-        //#endif
+#endif
         GyroGetHeadingRegisters();
         compasUpToDate = 0x01;
       }
       if (compasUpToDate == 0x02)
       {
-        //        #if defined(debugGyroscopeOn)
-        Serial.println("got heading");
-        //#endif
+#if defined(debugGyroscopeOn)
+        Serial.println("got compass");
+#endif
         compasUpToDate = 0x00;
         getNorthOrientation = 0x00;
         SendEndAction(requestUpdateNO, 0x00);
       }
     }
     else {
-      //        #if defined(debugGyroscopeOn)
+
       if (getNorthOrientation  == 0x02)
       {
+#if defined(debugGyroscopeOn)
         Serial.println("set mode compas");
+#endif
         SetBNOMode(MODE_COMPASS);
         getNorthOrientation = 0x01;
       }
@@ -1136,6 +1141,15 @@ void MoveForward(int lengthToDo ) {
     lentghLeftToDo = abs(lengthToDo);
     lentghRightToDo = abs(lengthToDo);
     ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, leftMotorPWM, lentghRightToDo, rightMotorPWM);
+    if (lengthToDo < 0)
+    {
+      bLeftClockwise = bForward;
+      bRightClockwise = !bForward;
+    }
+    else {
+      bLeftClockwise = !bForward;
+      bRightClockwise = bForward;
+    }
     if (obstacleDetectionOn)
     {
       boolean doEchoFront;
@@ -1150,10 +1164,7 @@ void MoveForward(int lengthToDo ) {
       int minEchoB = minFB[1];
       if (lengthToDo < 0)
       {
-        bLeftClockwise = bForward;
-        bRightClockwise = !bForward;
         moveForward = false;
-
         movePingInit = -minEchoB;
         echoCurrent = echoBack;
         trigCurrent = trigBack;
@@ -1162,8 +1173,6 @@ void MoveForward(int lengthToDo ) {
       }
       else
       {
-        bLeftClockwise = !bForward;
-        bRightClockwise = bForward;
         moveForward = true;
         movePingInit = minEchoF;
         echoCurrent = echoFront;
@@ -2278,9 +2287,9 @@ void CheckEndOfReboot()  //
       bRightClockwise = bLeftClockwise;
       //        bitWrite(currentMove, toDoClockwise, false);
       //        bitWrite(saveCurrentMove, toDoClockwise, false);
-      pulseMotors(3);
+      pulseMotors(2);
       bLeftClockwise = !bLeftClockwise;
-      delay(1000);
+      delay(1500);
     }
     if ((rebootPhase == 2) && millis() > rebootBNOTimeout) // BNU timeout
     {
@@ -2292,7 +2301,7 @@ void CheckEndOfReboot()  //
     if (pulseCount % 2 == 1)     // to balance clockwise and anitclockwise move
     {
       bRightClockwise = bLeftClockwise;
-      pulseMotors(3);
+      pulseMotors(2);
     }
   }
   if (rebootPhase == 2 && digitalRead(RobotInputReadyPin) == 1 && millis() > rebootDuration + 5000) // end of arduino reboot
@@ -2722,8 +2731,9 @@ void initNorthAlign(unsigned int alignTarget)
 {
   northAlignTarget = alignTarget;
   northAligned = false;
-  ResetGyroscopeHeadings();
-  GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+  // ResetGyroscopeHeadings();
+  //  GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+  StartMagneto();
   bitWrite(toDo, toDoAlign, 1);       // position bit toDo
   iddleTimer = millis();
 #if defined(northAlignOn)
@@ -2773,7 +2783,7 @@ void northAlign()
     else
     {
       pulseMotors(pulseLenght);
-      delay(200);     // to let time for inertia
+      delay(500);     // to let time for inertia
     }
     delay(1000);
     retryAlign++;
@@ -2802,6 +2812,7 @@ void northAlign()
         northAligned = false;
         bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
         SendEndAction(alignEnded, 0x01);
+        StopMagneto();
       }
       else {
         actStat = alignEnded; // align required
@@ -2810,11 +2821,9 @@ void northAlign()
         {
           alpha = targetAfterNORotation;        // set orientation to the expectation
         }
-        if (bitRead(toDo, toDoAlign) == true)
-        {
-          bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
-        }
+        bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
         SendEndAction(alignEnded, 0x00);
+        StopMagneto();
       }
 
     }
@@ -3361,33 +3370,50 @@ void MoveAcrossPath()
         reqMove: the expected distance to move - if 0 it means robot must stop at the end of the pass
         echoToGet: the echo distance over that we are getting in the pass
 
+    step 0 is used to enventually north aligned the robot
+    step 1 & 2 move straight untill front echo distance is over echoToGet (0 meaning over) which means we got the path start
+        maximum distance is defined by passDistance - in this case stop and report
+    step 3 move straignt until aside echo sum distances is equal to passWidth
+        maximum distance is defined by passStartEntryDistance  - in this case stop and report
+    step 4 & 5 move straignt until aside echo sum distances is not equal to passWidth
+        maximum distance is defined by passLen  - in this case stop and report
+    step 6 & 7 move straight reqMove
+
         firstly the robot will move straight pinging continously ahead till reaching a point where echo distance is over echoToGet (0 meaning over)
             in case going farther than passDistance without reaching this point stop and send report
-        ping aside and compare the sum of echos to the passWidth
-            in case sum of echos <= passWidth stop and send report
-        secondly the robot will move straight pinging continously aside and compare the sum of echos to the passWidth
-            start recording echos and position when sum of echos around the passWidth
-            move till sum of echos over the passWidth
-            stop recodring
-            if reqMove=0 stop
-              else move(totalDistance=reqMove)
-            report endvmovepath
-        report records to improve localization
   */
-#define eFront 0          // echo front identifer for echomonitring
+#define eFront 0          // echo front identifer for echo monitoring
 #define eBack 1
 
   uint8_t echoID = 0x00;
   uint8_t action = 0x00;
 
+  if (passMonitorStepID != passMonitorIddle)
+  {
+    lastPassMonitorStepID = passMonitorStepID;
+    if (bitRead(passMonitorStepID, 3) == 0) // test ending phases
+    {
+      if (bitRead(passMonitorStepID, passSkipStepBit) == 0)
+      {
+        bitWrite(tracePassMonitorStepID, (passMonitorStepID & 0b00000111), 1);
+      }
+    }
+  }
   if (passMonitorStepID == 0x00) {
+#if defined(debugAcrossPathOn)
+    Serial.print("MoveAcrossPath:0x");
+    Serial.println(passMonitorStepID, HEX);
+#endif
+    //     bitWrite(tracePassMonitorStepID, 0, 1);
     timePassMonitorStarted = millis();
-    initNorthAlign(passNO);
+    //    initNorthAlign(passNO);
     passMonitorStepID = 0x01;
+    return;
   }
   if ( millis() < timePassMonitorStarted + maxPassMonitorDuration)
   {
     if (passMonitorStepID == 0x01 && bitRead(toDo, toDoAlign) == true) {
+      //     bitWrite(tracePassMonitorStepID, 1, 1);
       return;
     }
     obstacleDetectionOn = false;
@@ -3401,8 +3427,13 @@ void MoveAcrossPath()
       Serial.print(" passMonitorStepID:");
       Serial.println(passMonitorStepID, HEX);
 #endif
+      if ( (passInterruptBy == 0x02) && (bitRead(passMonitorStepID, 3) == 0))          // the move ended with non zero return code
+      {
+        bitWrite(traceInterruptByStepID, passMonitorStepID & 0b00000111, 1);
+      }
       if (passRetCode != 0 && passInterruptBy == 0x02)                   // the move ended with non zero return code
       {
+
         StopMonitorInterrupt();
         SendEndAction(moveAcrossPassEnded, passRetCode);                 // send move return code
         passMonitorStepID = passMonitorIddle;
@@ -3410,11 +3441,14 @@ void MoveAcrossPath()
         toDo = 0x00;
         return;
       }
+
       switch (passMonitorStepID)
       {
         case 0x02:
         case 0x42:
           {
+            //     bitWrite(tracePassMonitorStepID, 2, 1);
+            //           bitWrite(traceInterruptByStepID, 2, 1);
             StopMonitorInterrupt();
             actStat = moveEnded;                                      // status move completed
             toDo = 0x00;
@@ -3468,7 +3502,21 @@ void MoveAcrossPath()
             getBNOLocation = 0x07;                // to resquest BNO computed location
             return;
           }
-
+        case 0x06:
+        case 0x46:
+        case 0x86:
+          {
+            //           StopMonitorInterrupt();
+            actStat = moveEnded;                                      // status move completed
+            toDo = 0x00;
+            passInterruptBy = 0x00;                                   // clear move flag
+            passRetCode = 0x00;
+            //        obstacleDetectionOn = true;
+            passMonitorStepID = 0x2e;
+            timePassMonitorStarted = millis();
+            getBNOLocation = 0x07;                // to resquest BNO computed location
+            return;
+          }
 
         case 0xae:
         case 0x6e:
@@ -3485,6 +3533,8 @@ void MoveAcrossPath()
             return;
           }
         case 0x07:
+        case 0x47:
+        case 0x87:
           {
             SendEndAction(moveAcrossPassEnded, 0x00);
             passMonitorStepID = passMonitorIddle;
@@ -3507,9 +3557,11 @@ void MoveAcrossPath()
           }
       }
     }
+    /*
+
+    */
     if (!bitRead(passMonitorStepID, passMonitorRequestBit))
     {
-
       switch (passMonitorStepID)
       {
         case 0x01:
@@ -3527,9 +3579,8 @@ void MoveAcrossPath()
             Serial.print(" Whr:");
             Serial.println( Wheels.GetCurrentHolesCount(rightWheelId));
 #endif
-
-            passTrackLeftHoles[0] = Wheels.GetCurrentHolesCount(leftWheelId);
-            passTrackRightHoles[0] = Wheels.GetCurrentHolesCount(rightWheelId);
+            //          passTrackLeftHoles[0] = 0;
+            //          passTrackRightHoles[0] = 0;
             passMonitorStepID++;
             timePassMonitorStarted = millis();
             EchoServoAlign(90, false); // align servo with robot
@@ -3589,20 +3640,24 @@ void MoveAcrossPath()
               InterruptMoveAcrossPath(0x00);
             }
             else {
+              bitWrite(tracePassMonitorStepID, (passMonitorStepID & 0b00000111), 0);
               bitWrite(passMonitorStepID, passSkipStepBit, 0);
             }
-            passTrackLeftHoles[1] = Wheels.GetCurrentHolesCount(leftWheelId);
-            passTrackRightHoles[1] = Wheels.GetCurrentHolesCount(rightWheelId);
+            if (passMonitorStepID != 0x12)
+            {
+              passTrackLeftHoles[1] = Wheels.GetCurrentHolesCount(leftWheelId);
+              passTrackRightHoles[1] = Wheels.GetCurrentHolesCount(rightWheelId);
+            }
             bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
             bitWrite(passMonitorStepID, passMonitorRequestBit, 0);
             passMonitorStepID++;
-            //           break;
+            break;
           }
 
         case 0x03:
           {
             /*
-               move forward checking width to detect pass path entry - move not more than the middle of the pass
+               move forward checking width to detect pass path entry -
             */
 #if defined(debugAcrossPathOn)
             Serial.print("MoveAcrossPath:0x");
@@ -3636,14 +3691,6 @@ void MoveAcrossPath()
                keep track of some mesurments and then stop move
                and monitor side echos till getting sum not equal to pass width
             */
-            passInterruptBy = 0x00;
-            StopMonitorInterrupt();
-            echoID = 0b00000011;
-            action = echoID;
-            //bitWrite(action, actionUpper, 1);
-            bitWrite(action, actionNotEqual, 1);
-            passTrackNumber = 0;
-            StartEchoPassMonitor(passMonitorStepID, echoID, passWidth , action, echoPrecision + passWidth * echoTolerance);
 #if defined(debugAcrossPathOn)
             Serial.print("MoveAcrossPath:0x");
             Serial.print(passMonitorStepID, HEX);
@@ -3654,6 +3701,16 @@ void MoveAcrossPath()
             Serial.print(" Whr:");
             Serial.println( Wheels.GetCurrentHolesCount(rightWheelId));
 #endif
+            passInterruptBy = 0x00;
+            StopMonitorInterrupt();
+            echoID = 0b00000011;
+            action = echoID;
+            //bitWrite(action, actionUpper, 1);
+            //           bitWrite(action, actionEqualNA, 1);
+            bitWrite(action, actionNotEqual, 1);
+            passTrackNumber = 0;
+            StartEchoPassMonitor(passMonitorStepID, echoID, passWidth , action, echoPrecision + passWidth * echoTolerance);
+            delay(600); // to let time to refresh echos
             uint8_t distF = echo.GetDistance(eFront);
             uint8_t distB = echo.GetDistance(eBack);
 #if defined(debugAcrossPathOn)
@@ -3667,20 +3724,20 @@ void MoveAcrossPath()
             passTrack1[passTrackNumber] = distF;
             passTrack1[passTrackNumber + 1] = distB;
             passTrackNumber = passTrackNumber + 2;
-            bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
-            bitWrite(passMonitorStepID, passMonitorRequestBit, 0);
             passMonitorStepID++;
             passTrackLeftHoles[2] = Wheels.GetCurrentHolesCount(leftWheelId);
             passTrackRightHoles[2] = Wheels.GetCurrentHolesCount(rightWheelId);
             bitWrite(passMonitorStepID, passMonitorRequestBit, 1);
+            MoveForward(passLen);
             break;
           }
-        case 0x84:
+        case 0x64:
           {
             /*
               we are most likely inside the path
               keep moving and track of some mesurments
             */
+            //     bitWrite(tracePassMonitorStepID, 4, 1);
 #if defined(debugAcrossPathOn)
             Serial.print("MoveAcrossPath:0x");
             Serial.print(passMonitorStepID, HEX);
@@ -3705,17 +3762,26 @@ void MoveAcrossPath()
 #endif
               passTrack1[passTrackNumber] = distF;
               passTrack1[passTrackNumber + 1] = distB;
-              passTrackLeftHoles[3] = Wheels.GetCurrentHolesCount(leftWheelId);
-              passTrackRightHoles[3] = Wheels.GetCurrentHolesCount(rightWheelId);
               passTrackNumber = passTrackNumber + 2;
             }
-            bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
-            bitWrite(passMonitorStepID, passMonitorRequestBit, 1);
+          }
+        case 0x84:    // we likely have reach the pass exit
+          {
+#if defined(debugAcrossPathOn)
+            Serial.print("MoveAcrossPath:0x");
+            Serial.println(passMonitorStepID, HEX);
 
+#endif
+            bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
+            bitWrite(passMonitorStepID, passMonitorRequestBit, 0);
+            passMonitorStepID++;
+            delay(1000);
             break;
           }
-        case 0x05:
+        case 0x05:    // we are out of the pass
           {
+            passTrackLeftHoles[3] = Wheels.GetCurrentHolesCount(leftWheelId);
+            passTrackRightHoles[3] = Wheels.GetCurrentHolesCount(rightWheelId);
 #if defined(debugAcrossPathOn)
             Serial.print("MoveAcrossPath:0x");
             Serial.print(passMonitorStepID, HEX);
@@ -3726,48 +3792,54 @@ void MoveAcrossPath()
             Serial.print(" Whr:");
             Serial.println( Wheels.GetCurrentHolesCount(rightWheelId));
 #endif
-
-            if (!encodersToStop) {
-              timePassMonitorStarted = millis();
-              MoveForward(passStartEntryDistance );
-              echoID = 0b00000011;
-              action = echoID;
-              bitWrite(action, actionEqual, 1);
-              StartEchoPassMonitor(passMonitorStepID, echoID, passWidth , action, echoPrecision + passWidth * echoTolerance);
-              break;
-            }
-            break;
-          }
-        case 0x85:
-          {
-            /*
-              we most likely have reached pass exit
-            */
-#if defined(debugAcrossPathOn)
-            Serial.print("MoveAcrossPath:0");
-            Serial.print(passMonitorStepID, HEX);
-            Serial.print(" encodersToStop:");
-            Serial.print(encodersToStop, HEX);
-            Serial.print(" Whl:");
-            Serial.print( Wheels.GetCurrentHolesCount(leftWheelId));
-            Serial.print(" Whr:");
-            Serial.println( Wheels.GetCurrentHolesCount(rightWheelId));
-#endif
-            InterruptMoveAcrossPath(0x00);
-            passInterruptBy = 0x00;
-            passTrackLeftHoles[4] = Wheels.GetCurrentHolesCount(leftWheelId);
-            passTrackRightHoles[4] = Wheels.GetCurrentHolesCount(rightWheelId);
+            EchoServoAlign(90, false);
+            obstacleDetectionOn = true;
             bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
             bitWrite(passMonitorStepID, passMonitorRequestBit, 0);
             passMonitorStepID++;
-
             break;
+            //           delay(1000);
+            /*
+              if (!encodersToStop) {
+              delay(1000);
+              timePassMonitorStarted = millis();
+              echoID = 0b00000011;
+              action = echoID;
+              bitWrite(action, actionNotEqual, 1);
+              StartEchoPassMonitor(passMonitorStepID, echoID, passWidth , action, echoPrecision + passWidth * echoTolerance);
+              }
+            */
+
           }
+        /*
+          case 0x85:
+          {
+
+          //     bitWrite(tracePassMonitorStepID, 5, 1);
+          #if defined(debugAcrossPathOn)
+          Serial.print("MoveAcrossPath:0");
+          Serial.print(passMonitorStepID, HEX);
+          Serial.print(" encodersToStop:");
+          Serial.println(encodersToStop, HEX);
+
+          #endif
+          InterruptMoveAcrossPath(0x00);
+          passInterruptBy = 0x00;
+          //           passTrackLeftHoles[4] = Wheels.GetCurrentHolesCount(leftWheelId);
+          //         passTrackRightHoles[4] = Wheels.GetCurrentHolesCount(rightWheelId);
+          bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
+          bitWrite(passMonitorStepID, passMonitorRequestBit, 0);
+          passMonitorStepID++;
+          delay(1000);
+          break;
+          }
+        */
         case 0x06:
+        case 0x46:
+        case 0x86:
           {
             /*
                we are most likely out the pass
-               keep moving till the required distance
             */
             passTrackLeftHoles[4] = Wheels.GetCurrentHolesCount(leftWheelId);
             passTrackRightHoles[4] = Wheels.GetCurrentHolesCount(rightWheelId);
@@ -3800,10 +3872,11 @@ void MoveAcrossPath()
               passMonitorStepID ++;
               MoveForward(reqMove);
             }
-          case 0x07:
-            {
-
-            }
+            break;
+          }
+        case 0x07:
+          {
+            break;
           }
       }
     }
@@ -3868,6 +3941,5 @@ void InterruptMoveAcrossPath(uint8_t retCode)
     SendEndAction(moveAcrossPassEnded, timeoutRetCode);                       // move not completed due to obstacle
     obstacleDetectionOn = true;
   }
-
 }
 
