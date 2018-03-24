@@ -1,7 +1,12 @@
 void IncServo(int sens, int waitDuration) {  // increase servo motor position depending on sens value
-  valAng = IncPulse(sens ); // compute servo motor value depending on sens value
+  valAng = IncPulse(sens); // compute servo motor value depending on sens value
   myservo.attach(servoPin);
   //  delay(100);
+
+  if (defaultServoOrientation == -1)
+  {
+    valAng = (180 - valAng) % 181;
+  }
 #if(servoMotorDebugOn)
   Serial.print("servo write pulse:");
   Serial.println(valAng);
@@ -12,7 +17,7 @@ void IncServo(int sens, int waitDuration) {  // increase servo motor position de
   delay(100);                      // wait to be sure the servo reach the position
 }
 int IncPulse(int sens) { // compute servo motor value depending on sens
-  pulseNumber = pulseNumber + sens;    //
+  pulseNumber = pulseNumber + sens ;  //
   return (pulseValue[(pulseNumber) % nbPulse]) ;
 }
 int PingFront() {               // ping echo front
@@ -84,11 +89,19 @@ void InitScan(int nbS, int startingOrientation)    // int scan
   scanOrientation = startingOrientation;           // init starting servo position
   myservo.attach(servoPin);                       // attaches the servo motor
   //  delay(100);
+
+  int valAng = pulseValue[scanOrientation];
+  if (defaultServoOrientation == -1)
+  {
+    valAng = (180 - valAng) % 181;
+  }
 #if (servoMotorDebugOn)
   Serial.print("init pulse:");
-  Serial.println(pulseValue[scanOrientation]);
+  Serial.print(pulseValue[scanOrientation]);
+  Serial.print(" servo:");
+  Serial.println(valAng);
 #endif
-  myservo.write(pulseValue[scanOrientation] + shiftPulse);   // set the servo motor to the starting position
+  myservo.write(valAng + shiftPulse);   // set the servo motor to the starting position
   delay(1000);                                    // wait long enough for the servo to reach target
   myservo.detach();
 }
@@ -169,6 +182,10 @@ int ScanOnceBack(int numStep)
 void EchoServoAlign(uint8_t angle, boolean report)   // to align echo servo motor with robot
 {
   AngleDegre = max(miniServoAngle, min(angle, maxiServoAngle));
+  if (defaultServoOrientation == -1)
+  {
+    AngleDegre = 180 - AngleDegre;
+  }
   myservo.attach(servoPin);
   delay(5);
   // unsigned int value = map(angle, 0, 180, pulseValue[0],  pulseValue[nbPulse - 1]);

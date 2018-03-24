@@ -357,10 +357,11 @@ boolean switchFB = 0;  // switch front back scan
 #define miniServoAngle 0    // corresponding to the lowest value of pulseValue
 #define maxiServoAngle 180   // corresponding to the highest value of pulseValue
 #define servoAlignedPosition 90 // define the servo angle aligned with robot
-
+#define defaultServoOrientation -1  // depending on servomotor orientation (1 if 0° is at the right of the robot and -1 if 180° is at the right)
 //int pulseValue[nbPulse] = {15, 26, 37, 47, 58, 69, 79, 90, 101, 112, 122, 133, 144, 154, 165}; // corresponding to 180° split in 15 steps
-//int pulseValue[nbPulse] = {0, 13, 26, 39, 52, 65, 78, 90, 103, 116, 129, 142, 155, 168, 180}; // corresponding to 180° split in 15 steps
-int pulseValue[nbPulse] = {0, 13, 26, 36, 52, 65, 78, 90, 103, 116, 129, 142, 154, 166, 178}; // corresponding to 180° split in 15 steps
+int pulseValue[nbPulse] = {0, 13, 26, 39, 51, 64, 77, 90, 103, 116, 129, 141, 154, 167, 180}; // corresponding to 180° split in 15 steps
+//int pulseValue[nbPulse] = {0, 13, 26, 36, 52, 65, 78, 90, 103, 116, 129, 142, 154, 166, 178}; // corresponding to 180° split in 15 steps
+//int pulseValue[nbPulse] = {180, 168, 154, 142, 129, 116, 103, 90,78, 65, 52, 39, 126, 13, 0}; // corresponding to 180° split in 15 steps
 uint8_t shiftPulse = 0;             // eventually used to adjust servo motor reference position
 float coefAngRef = PI / (pulseValue[14] - pulseValue[0]);  // angle value beetwen 2 pulses
 uint8_t pulseNumber = 0;  // pointer to pulseValue array
@@ -690,7 +691,7 @@ void loop() {
     {
       if (BNOMode == MODE_COMPASS)
       {
-        if (millis() -  timeCompasRotation > 1000 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor())
+        if (millis() -  timeCompasRotation > 5000 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor())
         {
           if (compasUpToDate == 0x00)
           {
@@ -777,7 +778,7 @@ void loop() {
          check wheels are correctly running and update robot dynamic location
       */
       delayCheckPosition = millis();  // reset timer
-      if (timeMotorStarted != 0 && millis() - timeMotorStarted > 500 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
+      if (timeMotorStarted != 0 && millis() - timeMotorStarted > 750 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
       {
         CheckMoveSynchronisation();
       }
@@ -789,7 +790,7 @@ void loop() {
           check wheels are correctly running
       */
       delayCheckPosition = millis();  // reset timer
-      if (timeMotorStarted != 0 && millis() - timeMotorStarted > 750 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
+      if (timeMotorStarted != 0 && millis() - timeMotorStarted > 1000 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
       {
         //        Serial.println(millis() - timeMotorStarted);
         //        Serial.println(bitRead(diagMotor, diagMotorPbSynchro));
@@ -1057,7 +1058,7 @@ void Move(int orientation, int lenghtToDo)
   bitWrite(toDo, toDoMove, false);       // position bit toDo move
   if (orientation != 0)
   {
-    Rotate(orientation);
+    Rotate(orientation, true);
   }
 
   if (lenghtToDo != 0)
@@ -1065,10 +1066,16 @@ void Move(int orientation, int lenghtToDo)
     pendingStraight = lenghtToDo;
   }
 }
-void Rotate( int orientation) {
+void Rotate( int orientation, boolean check) {
   if ( bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false );
   {
-    if (CheckRotationAvaibility(orientation))    // check rotation
+    boolean availableRotation = true;
+    if (check)
+    {
+      availableRotation = CheckRotationAvaibility(orientation);
+    }
+
+    if (availableRotation)    // check rotation
     {
       //  GyroGetHeadingRegisters();
       // EchoServoAlign();
@@ -1399,7 +1406,7 @@ void startMotors()
 {
   GyroGetHeadingRegisters();
   digitalWrite(encoderPower, HIGH);
-  delay(50);
+  delay(100);
   prevCheckLeftHoles = 0;
   prevCheckRightHoles = 0;
   BNOprevSentLeftHoles = 0;
@@ -2748,12 +2755,20 @@ void initNorthAlign(unsigned int alignTarget)
 #define maxAlign 360-northAlignPrecision
 void northAlign()
 { // North rotation anti-clockwise positive    - robot rotation clockwise positive
-
+  iddleTimer = millis();
   compasUpToDate = 0x00;
   actStat = aligning; // align required
   saveNorthOrientation = northOrientation;
-  unsigned int  alignShift = (saveNorthOrientation + 360 - northAlignTarget) % 360;
-  if ((alignShift <= 180 && alignShift > minAlign) || (alignShift >= 180 && alignShift < maxAlign))
+  int  alignShift = (saveNorthOrientation - northAlignTarget) ;
+  if (retryAlign > 25) {
+    actStat = alignEnded; // align required
+    northAligned = false;
+    bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
+    SendEndAction(alignEnded, 0x01);
+    StopMagneto();
+    return;
+  }
+  if ((abs(alignShift) >= minAlign) && (abs(alignShift) <= maxAlign))
   {
 #if defined(northAlignOn)
     Serial.print(" rotate: ");
@@ -2762,22 +2777,45 @@ void northAlign()
     //      toDo = 0x00;
     //     bitWrite(toDo, toDoAlign, 1);       // position bit toDo
     appStat = appStat & 0x1f;
-    if (alignShift <= 180)
+    int rot = 0;
+    if (alignShift >= 0 && alignShift <= 180)
     {
       bLeftClockwise = true;
       bRightClockwise = bLeftClockwise;
+      rot = alignShift;
     }
-    else
+    if (alignShift < 0 && alignShift >= - 180)
     {
       bLeftClockwise = false;
       bRightClockwise = bLeftClockwise;
-      alignShift = alignShift - 360;
+      rot = alignShift;
     }
-    if (abs(alignShift) >= minRotEncoderAbility)
+    if (alignShift >= 180)
     {
-      if (CheckRotationAvaibility(alignShift))    // check rotation
+      bLeftClockwise = true;
+      bRightClockwise = bLeftClockwise;
+      rot = 180 - alignShift;
+    }
+    if ( alignShift <= - 180)
+    {
+      bLeftClockwise = false;
+      bRightClockwise = bLeftClockwise;
+      rot = 360 + alignShift;
+    }
+    rot = rot * .5;
+    if (abs(alignShift) >= 3 * minRotEncoderAbility)
+    {
+      if (CheckRotationAvaibility(rot))
       {
-        Rotate(alignShift);
+        Rotate(rot, false);
+      }
+      else {
+        actStat = alignEnded; // align required
+        northAligned = false;
+        bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
+        SendEndAction(alignEnded, moveKoDueToNotEnoughSpace);
+        StopMagneto();
+        return;
       }
     }
     else
@@ -2798,7 +2836,7 @@ void northAlign()
     //     compass.read();  // double check
     //     saveNorthOrientation = int(compass.heading());
     //   unsigned int  alignShift = (saveNorthOrientation + 360 - northAlignTarget) % 360;
-    if ((alignShift <= 180 && alignShift > minAlign) || (alignShift >= 180 && alignShift < maxAlign))
+    if ((abs(alignShift) >= minAlign) && (abs(alignShift) <= maxAlign))
     {
       retryAlign++;
       if (passMonitorStepID == 0x01) {
@@ -2807,25 +2845,15 @@ void northAlign()
     }
     else
     {
-      if (retryAlign > 50) {
-        actStat = alignEnded; // align required
-        northAligned = false;
-        bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
-        SendEndAction(alignEnded, 0x01);
-        StopMagneto();
+      actStat = alignEnded; // align required
+      northAligned = true;
+      if (targetAfterNORotation != 0)         // case rotation based on NO
+      {
+        alpha = targetAfterNORotation;        // set orientation to the expectation
       }
-      else {
-        actStat = alignEnded; // align required
-        northAligned = true;
-        if (targetAfterNORotation != 0)         // case rotation based on NO
-        {
-          alpha = targetAfterNORotation;        // set orientation to the expectation
-        }
-        bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
-        SendEndAction(alignEnded, 0x00);
-        StopMagneto();
-      }
-
+      bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
+      SendEndAction(alignEnded, 0x00);
+      StopMagneto();
     }
   }
 }
@@ -3044,7 +3072,7 @@ void OptimizeGyroRotation(int rotation)
     if (rotation >= 0)
     {
       int newRotation = rotation - maxInertialRotation;
-      Rotate(newRotation);
+      Rotate(newRotation, true);
 #if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.print( newRotation);
@@ -3055,7 +3083,7 @@ void OptimizeGyroRotation(int rotation)
     else
     {
       int newRotation = rotation + maxInertialRotation;
-      Rotate(newRotation);
+      Rotate(newRotation, true);
 #if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println( rotation + maxInertialRotation);
@@ -3067,7 +3095,7 @@ void OptimizeGyroRotation(int rotation)
     if (rotation >= 0)
     {
       int newRotation = max(round(rotation * 0.8), minRotEncoderAbility);
-      Rotate(newRotation);
+      Rotate(newRotation, true);
 #if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println( newRotation);
@@ -3076,7 +3104,7 @@ void OptimizeGyroRotation(int rotation)
     else
     {
       int newRotation = min(round(rotation * 0.8), -minRotEncoderAbility);
-      Rotate(newRotation);
+      Rotate(newRotation, true);
 #if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println(newRotation);
@@ -3278,7 +3306,7 @@ int * MinEchoFB(int fromPosition, int rotation)
          (abs(servoOrientation) <= min(maxiServoAngle, abs((fromPosition + echoShiftRotation * signRotation / 2 + servoRotation))));
          servoOrientation = servoOrientation + signRotation * echoShiftRotation )
     {
-      EchoServoAlign( servoOrientation, false);
+      EchoServoAlign(servoOrientation, false);
       int echoF = PingFront();
       delay(100);
       echoF = max(echoF, PingFront());

@@ -19,7 +19,15 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         appStat = appStat & 0xf1;
         Serial.println("Scan");
         pulseNumber = 0;
-        InitScan(nbPulse, 0);
+        int startOriention = 0;
+        /*
+        if (defaultServoOrientation == -1)
+        {
+          startOriention = nbPulse-1;
+          pulseNumber=nbPulse-1;
+        }
+        */
+        InitScan(nbPulse, startOriention);
         actStat = 0x66;
         SetBNOMode(MODE_COMPASS);
         bitWrite(toDo, toDoScan, 1);       // position bit toDo scan
