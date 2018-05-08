@@ -120,15 +120,15 @@ unsigned int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revoluti
 unsigned int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
 //float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
 unsigned int leftMotorPWM = 230;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
-float SlowPWMRatio = 0.60;              // PWM ratio for a low speed move
+float SlowPWMRatio = 0.70;              // PWM ratio for a low speed move
 #define iLeftSlowPWM leftMotorPWM * SlowPWMRatio        // PMW value to slowdown motor at the end of the run
-#define leftRotatePWMRatio 0.8    // 
+#define leftRotatePWMRatio 0.9    // 
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPWM); // define left Motor
 unsigned int rightMotorPWM = 210;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define iRightSlowPWM rightMotorPWM * SlowPWMRatio  // PMW value to slowdown motor at the end of the run
 //#define iRightRotatePWM 170   // PMW value
-#define rightRotatePWMRatio 0.8    // 
+#define rightRotatePWMRatio 0.9    // 
 #define pendingRightMotor 1    // define pendingAction bit used for right motor
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPWM); // define right Motor
 float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
@@ -417,6 +417,7 @@ unsigned long iddleTimer;               // used to detect robot iddle status
 unsigned long lastUpdateBNOMoveTime;    // used to update BNO with robot move
 unsigned long lowHighSpeedTimer;       // delat time between change speed of wheels
 unsigned long timePassMonitorStarted;
+unsigned long timeTraceDataSent;
 
 #if defined debugLoop
 unsigned long timeLoop;  // cycle demande heure
@@ -432,6 +433,7 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetweenlastUpdateBNOMoveTime 200
 #define delayGyro360Rotation 4000 // mawimum duration for 360° rotation
 #define delaylowHighSpeedTimer 20  // maximum delay between 1 wheel still running high speed and 1 starting to slowdown
+#define delayBetweenTraceSend 5000
 /*
    delayToStopEnocder delay to take into account mechanical inertia (adjust with video recording) -
    delay between wheels and encoders stop
@@ -457,8 +459,12 @@ uint8_t pendingAction = 0x00; // flag pending action to be started
 uint8_t sendInfoSwitch = 0x00;  // flag to switch between different data to send
 uint8_t saveCurrentMove = 0x00;   // flag last kind of current move
 boolean moveForward;           // flag to indicate if requested move is forward or backward
-uint8_t appStat = 0xff; // statut code application 00 active ff stopped 1er demi octet mouvement 2eme demi scan
+#define traceBitRequest 7
+#define traceBitEncoder 6
+#define traceBitPower 5
+uint8_t appStat = 0xff; // statut code application 00 active ff stopped 8. trace
 uint8_t actStat = 0xff; // statut action en cours
+uint8_t appTrace=0x00; // statut trace en cours
 
 //-- space localizarion --
 float alpha = 0; // current orientation
@@ -565,7 +571,7 @@ void setup() {
 }
 
 void loop() {
-  delay(5);
+  delay(1);
 #if defined(debugLoop)
   if (millis() - timeLoop > 1000)
   {
@@ -627,7 +633,7 @@ void loop() {
     bitWrite(diagConnection, diagConnectionIP, 1);       // conection broken
   }
 
-  if (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66 && pendingAckSerial == 0x00) // alternatively send status and power to the server
+  if (!bitRead(appTrace, traceBitRequest) && (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66 && pendingAckSerial == 0x00)) // alternatively send status and power to the server
   {
 
     if (sendInfoSwitch % 5 == 1)
@@ -1041,6 +1047,14 @@ void loop() {
   if (passMonitorStepID << 4  != passMonitorIddle << 4)
   {
     MoveAcrossPath();
+  }
+  if (bitRead(appTrace, traceBitRequest) && millis() - timeTraceDataSent > delayBetweenTraceSend)
+  {
+    digitalWrite(encoderPower, 1);
+    PowerCheck();
+    SendTraceData();
+    timeTraceDataSent = millis();
+    digitalWrite(encoderPower, 0);
   }
 }
 

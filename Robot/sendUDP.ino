@@ -488,3 +488,33 @@ void SendNarrowPathEchos ()
   GatewayLink.PendingDataLenSerial = uint8_t(min(30, 3 * passNumberTrack1 + 1));                 // data len
 
 }
+void SendTraceData()
+{
+  GatewayLink.PendingReqSerial = PendingReqRefSerial;
+  GatewayLink.PendingDataReqSerial[0] = respTrace; //
+  GatewayLink.PendingDataReqSerial[1] = uint8_t(power1Mesurt / 10); //
+  GatewayLink.PendingDataReqSerial[2] = uint8_t(power2Mesurt / 10);
+  GatewayLink.PendingDataReqSerial[3] = 0x00;
+  GatewayLink.PendingDataReqSerial[4] = uint8_t(power3Mesurt / 10); //
+  GatewayLink.PendingDataReqSerial[5] = uint8_t(power4Mesurt / 10);
+  GatewayLink.PendingDataReqSerial[6] = 0x00;
+  GatewayLink.PendingDataReqSerial[7] = uint8_t(power5Mesurt / 10); //
+  GatewayLink.PendingDataReqSerial[8] = uint8_t(power6Mesurt / 10);
+  GatewayLink.PendingDataReqSerial[9] = 0x00;
+  int encoderValue = analogRead(leftAnalogEncoderInput);
+#if(wheelEncoderDebugOn)
+  Serial.print("left encoder:");
+  Serial.print(encoderValue);
+#endif
+  GatewayLink.PendingDataReqSerial[10] = uint8_t(encoderValue / 256); //
+  GatewayLink.PendingDataReqSerial[11] = uint8_t(encoderValue);
+  GatewayLink.PendingDataReqSerial[12] = 0x00;
+  encoderValue = analogRead(rightAnalogEncoderInput);
+#if(wheelEncoderDebugOn)
+  Serial.print(" right:");
+  Serial.println(encoderValue);
+#endif
+  GatewayLink.PendingDataReqSerial[13] = uint8_t(encoderValue / 256); //
+  GatewayLink.PendingDataReqSerial[14] = uint8_t(encoderValue);
+  GatewayLink.PendingDataLenSerial = 0x0f; // 6 longueur mini max 25  pour la gateway
+}

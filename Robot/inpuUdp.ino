@@ -6,7 +6,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   sendInfoSwitch = 1;                   // next info to send will be status
   if (cmdInput != 0x61 && cmdInput != 0x65 && lastReceivedNumber == GatewayLink.DataInSerial[1])
   { // check duplicate for frame that are echo or ack frame
-    Serial.print("duplicate receive number:");
+    Serial.print("duplicate received frame number:");
     Serial.println(GatewayLink.DataInSerial[1]);
     SendStatus();
     return;
@@ -21,11 +21,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         pulseNumber = 0;
         int startOriention = 0;
         /*
-        if (defaultServoOrientation == -1)
-        {
+          if (defaultServoOrientation == -1)
+          {
           startOriention = nbPulse-1;
           pulseNumber=nbPulse-1;
-        }
+          }
         */
         InitScan(nbPulse, startOriention);
         actStat = 0x66;
@@ -90,7 +90,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         }
         break;
       }
-    case 0x40: // commande : query encoders values
+    case 0x40: // commande : query PWM values
       {
         Serial.println("commande : query PWM:");
         SendPWMValues();
@@ -552,8 +552,24 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       SendNarrowPathEchos ();
       Serial.println("requestNarrowPathEchos");
       break;
-    default:
+    case requestTrace: // send
+      if (GatewayLink.DataInSerial[3] == 0x00)
+      {
+        bitWrite(appTrace, traceBitPower, 0);
+        bitWrite(appTrace, traceBitEncoder, 0);
+        bitWrite(appTrace, traceBitRequest, 0);
+        Serial.println("stopTrace");
+      }
+      else {
+        bitWrite(appTrace, traceBitPower, 1);
+        bitWrite(appTrace, traceBitEncoder, 1);
+        bitWrite(appTrace, traceBitRequest, 1);
+        Serial.println("startTrace");
+      }
 
+      break;
+
+    default:
       Serial.print("commande recue: ");
       Serial.println(cmdInput, HEX);
   }
