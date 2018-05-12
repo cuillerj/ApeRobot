@@ -148,8 +148,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 
     case northAlignRequest: // E north align
       {
-        if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
-        {
+//        if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
+//        {
           bitWrite(toDoDetail, toDoAlignRotate, 1);
           bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
           //         northAlignTarget = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
@@ -173,7 +173,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           */
           //       northAlign(reqN);
           break;
-        }
+ //       }
       }
     case 0x49: // commande I init robot postion
       {
@@ -538,7 +538,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       Serial.println("getBNOLocation");
       break;
     case requestUpdateNO: // get north orientation
-      getNorthOrientation = 0x02;
+      getNorthOrientation = 0x00;
       compasUpToDate = 0x00;
       bitWrite(toDo,toDoAlign,1);
       bitWrite(toDoDetail, toDoAlignRotate, 0);

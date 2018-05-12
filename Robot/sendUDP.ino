@@ -28,8 +28,16 @@ void SendEndAction(int action, uint8_t retCode)
   GatewayLink.PendingDataReqSerial[4] = retCode;
 
   GatewayLink.PendingDataReqSerial[5] = 0x00;
-  GatewayLink.PendingDataReqSerial[6] = uint8_t(northOrientation / 256);
-  GatewayLink.PendingDataReqSerial[7] = uint8_t(northOrientation);
+  if (action == requestUpdateNO)
+  {
+    GatewayLink.PendingDataReqSerial[6] = uint8_t(saveNorthOrientation / 256);
+    GatewayLink.PendingDataReqSerial[7] = uint8_t(saveNorthOrientation);
+  }
+  else {
+    GatewayLink.PendingDataReqSerial[6] = uint8_t(northOrientation / 256);
+    GatewayLink.PendingDataReqSerial[7] = uint8_t(northOrientation);
+  }
+
 
   if (posX >= 0)
   {

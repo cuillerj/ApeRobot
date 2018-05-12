@@ -695,11 +695,11 @@ void loop() {
         SetBNOMode(MODE_COMPASS);
       }
     }
-    if (bitRead(toDo, toDoAlign) == 1 && northAligned == false && pendingPollingResp == 0x00)     // check if for scan is requested
+    if (bitRead(toDo, toDoAlign) == 1 && (northAligned == false || bitRead(toDoDetail, toDoAlignUpdateNO)) && pendingPollingResp == 0x00)   // check if for scan is requested
     {
       if (BNOMode == MODE_COMPASS)
       {
-        if (millis() -  timeCompasRotation > 5000 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor())
+        if (millis() -  timeCompasRotation > 7000 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor())
         {
           if (compasUpToDate == 0x00)
           {
@@ -1059,13 +1059,15 @@ void loop() {
     timeTraceDataSent = millis();
     digitalWrite(encoderPower, 0);
   }
-  if (!bitRead(toDo, toDoAlign) && bitRead(toDoDetail, toDoAlignUpdateNO) && millis() - timeSendInfo > delayBetweenInfo - 1000)
-  {
+  /*
+    if (!bitRead(toDo, toDoAlign) && bitRead(toDoDetail, toDoAlignUpdateNO) && millis() - timeSendInfo > delayBetweenInfo - 1000)
+    {
     SendEndAction(requestUpdateNO, 0x00);
     getNorthOrientation = 0x00;
     bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
     timeSendInfo = millis();
-  }
+    }
+  */
 }
 
 
@@ -2785,11 +2787,16 @@ void northAlign()
     if (bitRead(toDoDetail, toDoAlignUpdateNO))
     {
 #if defined(northAlignOn)
-      Serial.print("send updated NO:");
+      Serial.print("send end NO:");
       Serial.println(northOrientation);
 #endif
-      SendStatus();
+      //     SendStatus();
+      saveNorthOrientation=northOrientation;
+      SendEndAction(requestUpdateNO, 0x00);
+      getNorthOrientation = 0x00;
       bitWrite(toDo, toDoAlign, 0);
+      bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
+      StopMagneto();
       timeSendInfo = millis();
     }
     return;
@@ -2803,6 +2810,7 @@ void northAlign()
     actStat = alignEnded; // align required
     northAligned = false;
     bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
+    bitWrite(toDoDetail, toDoAlignRotate, 0);
     SendEndAction(alignEnded, 0x01);
     StopMagneto();
     return;
@@ -2852,6 +2860,7 @@ void northAlign()
         actStat = alignEnded; // align required
         northAligned = false;
         bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
+        bitWrite(toDoDetail, toDoAlignRotate, 0);
         SendEndAction(alignEnded, moveKoDueToNotEnoughSpace);
         StopMagneto();
         return;
@@ -2891,8 +2900,12 @@ void northAlign()
         alpha = targetAfterNORotation;        // set orientation to the expectation
       }
       bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
+      bitWrite(toDoDetail, toDoAlignRotate, 0);
       SendEndAction(alignEnded, 0x00);
-      StopMagneto();
+      if (!bitRead(toDoDetail, toDoAlignUpdateNO))
+      {
+        StopMagneto();
+      }
     }
   }
 }
