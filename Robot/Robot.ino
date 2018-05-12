@@ -8,9 +8,10 @@
         check wheels running during rotation
    v3.0 move acrass narrow path under development
    v3.1 reboot modified to enventualy move a little to calibrate compass on demand of the subsystem
+   v3.2 NOUpdate modification
 */
 
-String Version = "RobotV3.1";
+String Version = "RobotV3.2";
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -205,7 +206,8 @@ unsigned long iRightCentiRevolutions; // nmuber of done revolutions * 100
 */
 #define toDoGyroRotation 0      // rotation based on gyroscope to do
 #define toDoMoveAcrossPass 1      // move detail across path
-
+#define toDoAlignRotate 0 //
+#define toDoAlignUpdateNO 1 //
 /*
    waitFlag bit definitions
 */
@@ -464,7 +466,7 @@ boolean moveForward;           // flag to indicate if requested move is forward 
 #define traceBitPower 5
 uint8_t appStat = 0xff; // statut code application 00 active ff stopped 8. trace
 uint8_t actStat = 0xff; // statut action en cours
-uint8_t appTrace=0x00; // statut trace en cours
+uint8_t appTrace = 0x00; // statut trace en cours
 
 //-- space localizarion --
 float alpha = 0; // current orientation
@@ -901,7 +903,7 @@ void loop() {
     timeSubsystemPolling = millis();
     RequestForPolling();
   }
-  if (millis() - timeGyroRotation > delayGyroRotation && bitRead(toDoDetail, toDoGyroRotation) == 1 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor() && pendingPollingResp == 0x00) //
+  if (millis() - timeGyroRotation > delayGyroRotation && bitRead(toDo, toDoRotation) == 1 && bitRead(toDoDetail, toDoGyroRotation) == 1 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor() && pendingPollingResp == 0x00) //
   {
     if (BNOMode != MODE_IMUPLUS )
     {
@@ -1001,41 +1003,42 @@ void loop() {
     getBNOLocation = 0x00;
     SendBNOLocation ();
   }
-  if (getNorthOrientation == 0x01 || getNorthOrientation == 0x02)
-  {
+  /*
+    if (getNorthOrientation == 0x01 || getNorthOrientation == 0x02)
+    {
     if (BNOMode == MODE_COMPASS)
     {
       if (compasUpToDate == 0x00)
       {
-#if defined(debugGyroscopeOn)
+    #if defined(debugGyroscopeOn)
         Serial.println("request compas");
-#endif
+    #endif
         GyroGetHeadingRegisters();
         compasUpToDate = 0x01;
       }
       if (compasUpToDate == 0x02)
       {
-#if defined(debugGyroscopeOn)
+    #if defined(debugGyroscopeOn)
         Serial.println("got compass");
-#endif
+    #endif
         compasUpToDate = 0x00;
         getNorthOrientation = 0x00;
-        SendEndAction(requestUpdateNO, 0x00);
+        //SendEndAction(requestUpdateNO, 0x00);
       }
     }
     else {
 
       if (getNorthOrientation  == 0x02)
       {
-#if defined(debugGyroscopeOn)
+    #if defined(debugGyroscopeOn)
         Serial.println("set mode compas");
-#endif
+    #endif
         SetBNOMode(MODE_COMPASS);
         getNorthOrientation = 0x01;
       }
     }
-  }
-
+    }
+  */
   if (pendingPollingResp == 0x01)           // to be kept at the end of the loop in order to be sure every subsytem response will be taken into account
   {
     pendingPollingResp = 0x00;
@@ -1055,6 +1058,13 @@ void loop() {
     SendTraceData();
     timeTraceDataSent = millis();
     digitalWrite(encoderPower, 0);
+  }
+  if (!bitRead(toDo, toDoAlign) && bitRead(toDoDetail, toDoAlignUpdateNO) && millis() - timeSendInfo > delayBetweenInfo - 1000)
+  {
+    SendEndAction(requestUpdateNO, 0x00);
+    getNorthOrientation = 0x00;
+    bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
+    timeSendInfo = millis();
   }
 }
 
@@ -2757,6 +2767,7 @@ void initNorthAlign(unsigned int alignTarget)
   StartMagneto();
   bitWrite(toDo, toDoAlign, 1);       // position bit toDo
   iddleTimer = millis();
+  retryAlign = 0;
 #if defined(northAlignOn)
   Serial.print("north align:");
   Serial.println(northAlignTarget);
@@ -2769,6 +2780,20 @@ void initNorthAlign(unsigned int alignTarget)
 #define maxAlign 360-northAlignPrecision
 void northAlign()
 { // North rotation anti-clockwise positive    - robot rotation clockwise positive
+  if (!bitRead(toDoDetail, toDoAlignRotate))
+  {
+    if (bitRead(toDoDetail, toDoAlignUpdateNO))
+    {
+#if defined(northAlignOn)
+      Serial.print("send updated NO:");
+      Serial.println(northOrientation);
+#endif
+      SendStatus();
+      bitWrite(toDo, toDoAlign, 0);
+      timeSendInfo = millis();
+    }
+    return;
+  }
   iddleTimer = millis();
   compasUpToDate = 0x00;
   actStat = aligning; // align required

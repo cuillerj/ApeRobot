@@ -146,10 +146,12 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         break;
       }
 
-    case 0x45: // E north align
+    case northAlignRequest: // E north align
       {
         if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
         {
+          bitWrite(toDoDetail, toDoAlignRotate, 1);
+          bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
           //         northAlignTarget = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
           initNorthAlign((unsigned int)(GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4]));
 #if defined(debugConnection)
@@ -538,6 +540,9 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case requestUpdateNO: // get north orientation
       getNorthOrientation = 0x02;
       compasUpToDate = 0x00;
+      bitWrite(toDo,toDoAlign,1);
+      bitWrite(toDoDetail, toDoAlignRotate, 0);
+      bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
       Serial.println("getNorthOrientation");
       break;
     case requestBNOData: // send
