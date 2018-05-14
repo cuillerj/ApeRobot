@@ -1,4 +1,4 @@
-void SendEndAction(int action, uint8_t retCode)
+void SendEndAction(uint8_t action, uint8_t retCode)
 {
 #if defined(debugGyroscopeOn)
   Serial.print("gyroscope data:");

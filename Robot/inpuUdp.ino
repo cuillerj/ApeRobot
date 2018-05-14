@@ -148,32 +148,33 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 
     case northAlignRequest: // E north align
       {
-//        if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
-//        {
-          bitWrite(toDoDetail, toDoAlignRotate, 1);
-          bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
-          //         northAlignTarget = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
-          initNorthAlign((unsigned int)(GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4]));
+        //        if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
+        //        {
+        actStat = northAlignRequest;
+        bitWrite(toDoDetail, toDoAlignRotate, 1);
+        bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
+        //         northAlignTarget = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
+        initNorthAlign((unsigned int)(GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4]));
 #if defined(debugConnection)
-          Serial.print("north align:");
-          Serial.println(northAlignTarget);
+        Serial.print("north align:");
+        Serial.println(northAlignTarget);
 #endif
-          /*
-            northAligned = false;
-            ResetGyroscopeHeadings();
-            GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
-            bitWrite(toDo, toDoAlign, 1);       // position bit toDo
-            iddleTimer = millis();
-            #if defined(debugConnection)
-            Serial.print("north align:");
-            Serial.println(northAlignShift);
-            #endif
-            //       targetAfterNORotation= ((int) alpha + reqN) % 360;
-            targetAfterNORotation = 0;
-          */
-          //       northAlign(reqN);
-          break;
- //       }
+        /*
+          northAligned = false;
+          ResetGyroscopeHeadings();
+          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+          bitWrite(toDo, toDoAlign, 1);       // position bit toDo
+          iddleTimer = millis();
+          #if defined(debugConnection)
+          Serial.print("north align:");
+          Serial.println(northAlignShift);
+          #endif
+          //       targetAfterNORotation= ((int) alpha + reqN) % 360;
+          targetAfterNORotation = 0;
+        */
+        //       northAlign(reqN);
+        break;
+        //       }
       }
     case 0x49: // commande I init robot postion
       {
@@ -213,6 +214,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       Serial.print("commande O obstacle detection:");
       obstacleDetectionOn = (GatewayLink.DataInSerial[3]); // 1 on 0 off
       Serial.println(obstacleDetectionOn);
+      break;
+    case 0x50: //
+      Serial.print("set pulseLenght:");
+      pulseLenght = (GatewayLink.DataInSerial[4]); //
+      Serial.println(pulseLenght);
       break;
     case 0x53: // commande S align servo
       Serial.println("align servo");
@@ -360,6 +366,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case moveAcrossPass: //
       {
+        actStat = moveAcrossPass;
         if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0)
         {
           bitWrite(diagMotor, diagMotorPbSynchro, 0);       // position bit diagMotor
@@ -441,7 +448,13 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
     case rotateTypeGyro: // r rotate VS gyroscope
       {
+        actStat = rotateTypeGyro;
         int reqN = ((GatewayLink.DataInSerial[3] & 0b01111111) * 256 + GatewayLink.DataInSerial[4]) % 360;
+        if (reqN == 0 )
+        {
+          SendEndAction(moveEnded, 0x00);
+          break;
+        }
         if (bitRead(toDoDetail, toDoGyroRotation) == 0)   // no pending rotation
         {
           if (abs(reqN) < minRotGyroAbility )
@@ -474,6 +487,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           timeGyroRotation = millis();
           gyroTargetRotation = reqN;
           bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
+          bitWrite(toDo, toDoRotation, 1);       // position bit toDo
           gyroRotationRetry = 0;
           iddleTimer = millis();
           rotationType = cmdInput;
@@ -538,9 +552,10 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       Serial.println("getBNOLocation");
       break;
     case requestUpdateNO: // get north orientation
+      actStat = requestUpdateNO;
       getNorthOrientation = 0x00;
       compasUpToDate = 0x00;
-      bitWrite(toDo,toDoAlign,1);
+      bitWrite(toDo, toDoAlign, 1);
       bitWrite(toDoDetail, toDoAlignRotate, 0);
       bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
       Serial.println("getNorthOrientation");
