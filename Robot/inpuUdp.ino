@@ -1,4 +1,3 @@
-
 void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   //  Serial.println("serialInput");
   bitWrite(diagConnection, diagConnectionIP, 0);      // connection is active

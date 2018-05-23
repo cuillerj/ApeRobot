@@ -9,9 +9,11 @@
    v3.0 move acrass narrow path under development
    v3.1 reboot modified to enventualy move a little to calibrate compass on demand of the subsystem
    v3.2 NOUpdate modification
+   v3.3 suppress check wheel speed during rotation
+   v3.4 LED added that lights when action is pending
 */
 
-String Version = "RobotV3.2";
+String Version = "RobotV3.4";
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -485,10 +487,12 @@ uint8_t currentLocProb = 0;
 
 
 //-- LED --
+#define toDoLed 39
 #define blueLed 50    // blue LED PIN
 #define yellowLed 51    // yellow LED PIN
 #define greenLed 52  // green LED PIN
 #define redLed 53    // red LED PN
+
 boolean blueLedOn =  true;  //  status of the LED on/off
 boolean yellowLedOn = true; //  status of the LED on/off
 boolean greenLedOn =  false; //  status of the LED on/off
@@ -515,6 +519,7 @@ void setup() {
   pinMode(echoFront, INPUT);
   pinMode(echoBack, INPUT);
   pinMode(servoPin, OUTPUT);
+  pinMode(toDoLed, OUTPUT);
   pinMode(blueLed, OUTPUT);
   pinMode(yellowLed, OUTPUT);
   pinMode(greenLed, OUTPUT);
@@ -540,6 +545,7 @@ void setup() {
   Serial.println("starting I2C slave mode");
   pinMode(RobotOutputRobotRequestPin, OUTPUT);
   digitalWrite(RobotOutputRobotRequestPin, LOW);
+  digitalWrite(toDoLed, LOW);
   //#else
   Wire.begin();
   // compass.init();
@@ -582,6 +588,14 @@ void loop() {
   }
 #endif
   CheckEndOfReboot();                      // check for reboot completion
+  if (toDo == 0x00 && toDoDetail == 0x00 && pendingAction == 0x00)
+  {
+    digitalWrite(toDoLed, LOW);
+  }
+  else
+  {
+    digitalWrite(toDoLed, HIGH);
+  }
   if (rebootPhase == 0x00 && millis() - iddleTimer > 60000 && toDo == 0x00 && pendingPollingResp == 0x00)
   {
     if (BNOMode != MODE_NDOF)
@@ -1571,6 +1585,10 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int l
 
 void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at the same pace
 {
+  if (bitRead(toDo, toDoRotation) || bitRead(toDo, toDoAlign))
+  {
+    return;
+  }
   unsigned int currentLeftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
   unsigned int currentRightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
 
