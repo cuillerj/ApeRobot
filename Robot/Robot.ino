@@ -10,14 +10,20 @@
    v3.1 reboot modified to enventualy move a little to calibrate compass on demand of the subsystem
    v3.2 NOUpdate modification
    v3.3 suppress check wheel speed during rotation
-   v3.4 LED added that lights when action is pending
+   v3.4 one LED added that lights when action is pending
+   v3.5 extend scan control before north align
+   v3.6 wheel moving control modified for rotation
+   v3.7 ajout trace north orientation for tunning
+   v3.8 add sleep mode
+   v3.9 modified updateNo and sendend to delay status report
+   v3.10 debug obstacle move back detection
 */
 
-String Version = "RobotV3.4";
+String Version = "RobotV3.10";
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
-//#define debugObstacleOn true
+#define debugObstacleOn true
 //#define debugLocalizationOn true
 //#define debugAcrossPathOn true
 //#define debugMagnetoOn true
@@ -31,6 +37,13 @@ String Version = "RobotV3.4";
 //#define servoMotorDebugOn true
 //#define debugGyroscopeOn true
 //#define debugGyroscopeL2On true
+#include <avr/sleep.h>
+#include <avr/power.h>
+#define wakePin 17                 // pin used for waking up RX serial2
+boolean sleepRequest = false;       // variable to store a request for sleep
+#if !defined(PRR) && defined(PRR0)
+#define PRR PRR0
+#endif
 
 #define I2CSlaveMode true
 #include <Servo.h>  // the servo library use timer 5 with atmega
@@ -276,6 +289,7 @@ int targetAfterNORotation = 0;
 int absoluteHeading = 0;
 unsigned int northAlignTarget = 0;
 boolean northAligned = false;
+boolean northAlignedPossibilityChecked  = false;
 uint8_t retryAlign = 0x00;
 uint8_t stepBNOInitLocation = 0x00;
 uint8_t getNorthOrientation = 0xff;
@@ -422,6 +436,9 @@ unsigned long lastUpdateBNOMoveTime;    // used to update BNO with robot move
 unsigned long lowHighSpeedTimer;       // delat time between change speed of wheels
 unsigned long timePassMonitorStarted;
 unsigned long timeTraceDataSent;
+#define wheelCheckMoveDelay 1500
+#define wheelCheckRotateDelay 3000
+int wheelCheckDelay = wheelCheckMoveDelay;
 
 #if defined debugLoop
 unsigned long timeLoop;  // cycle demande heure
@@ -445,7 +462,7 @@ unsigned long timeLoop;  // cycle demande heure
 */
 #define delayToStopEnocder 60    // 60 adjusted by tunning
 unsigned int delayGyroRotation = 100;  //
-#define maxPauseDuration 15000
+#define maxPauseDuration 10000
 #define maxPassMonitorDuration 45000
 #define echoPrecision 5
 #define echoTolerance 0.1
@@ -466,6 +483,7 @@ boolean moveForward;           // flag to indicate if requested move is forward 
 #define traceBitRequest 7
 #define traceBitEncoder 6
 #define traceBitPower 5
+#define traceBitNO 4
 uint8_t appStat = 0xff; // statut code application 00 active ff stopped 8. trace
 uint8_t actStat = 0xff; // statut action en cours
 uint8_t appTrace = 0x00; // statut trace en cours
@@ -529,7 +547,7 @@ void setup() {
   pinMode(hornPin, OUTPUT);
   pinMode(power1Value, INPUT);
   pinMode(power2Value, INPUT);
-
+  pinMode(wakePin, INPUT);
   //digitalWrite(RobotOutputRobotRequestPin, LOW);
 
   digitalWrite(hornPin, LOW);
@@ -588,6 +606,7 @@ void loop() {
   }
 #endif
   CheckEndOfReboot();                      // check for reboot completion
+
   if (toDo == 0x00 && toDoDetail == 0x00 && pendingAction == 0x00)
   {
     digitalWrite(toDoLed, LOW);
@@ -596,7 +615,7 @@ void loop() {
   {
     digitalWrite(toDoLed, HIGH);
   }
-  if (rebootPhase == 0x00 && millis() - iddleTimer > 60000 && toDo == 0x00 && pendingPollingResp == 0x00)
+  if (rebootPhase == 0x00 && millis() - iddleTimer > 60000 && toDo == 0x00 && toDoDetail == 0x00 && pendingPollingResp == 0x00 && !bitRead(appTrace, traceBitNO))
   {
     if (BNOMode != MODE_NDOF)
     {
@@ -644,6 +663,18 @@ void loop() {
     retryCount = 0;
     pendingAckSerial = 0x00;
   }
+  if (sleepRequest && toDo == 0x00 && toDoDetail == 0x00 && pendingAction == 0x00 && pendingPollingResp == 0x00)
+  {
+    while (Serial2.available()) {
+      int val = Serial2.read();
+      Serial.print(val);
+      delay(100);
+    }
+    Serial.print("sleep:");
+    Serial.println(digitalRead(wakePin));
+    delay(100);
+    sleepNow();
+  }
   if (millis() - timeReceiveSerial >= 30000)     // 30 seconds without receiving data from the server
   {
     bitWrite(diagConnection, diagConnectionIP, 1);       // conection broken
@@ -651,7 +682,6 @@ void loop() {
 
   if (!bitRead(appTrace, traceBitRequest) && (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66 && pendingAckSerial == 0x00)) // alternatively send status and power to the server
   {
-
     if (sendInfoSwitch % 5 == 1)
     {
       SendStatus();                 // send robot status to the server
@@ -673,6 +703,7 @@ void loop() {
     {
       SendBNOSubsytemStatus();
     }
+
     sendInfoSwitch ++;
     timeSendInfo = millis();
   }
@@ -800,7 +831,7 @@ void loop() {
          check wheels are correctly running and update robot dynamic location
       */
       delayCheckPosition = millis();  // reset timer
-      if (timeMotorStarted != 0 && millis() - timeMotorStarted > 750 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
+      if (timeMotorStarted != 0 && millis() - timeMotorStarted > wheelCheckDelay && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
       {
         CheckMoveSynchronisation();
       }
@@ -812,7 +843,7 @@ void loop() {
           check wheels are correctly running
       */
       delayCheckPosition = millis();  // reset timer
-      if (timeMotorStarted != 0 && millis() - timeMotorStarted > 1000 && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
+      if (timeMotorStarted != 0 && millis() - timeMotorStarted > wheelCheckDelay && bitRead(diagMotor, diagMotorPbSynchro) == false) // wait for motors to run enough
       {
         //        Serial.println(millis() - timeMotorStarted);
         //        Serial.println(bitRead(diagMotor, diagMotorPbSynchro));
@@ -856,23 +887,6 @@ void loop() {
       Serial.println((millis() - pauseSince));
 #endif
       InterruptMove(moveKoDueToObstacle);
-      /*
-            bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
-            bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo straight
-            bitWrite(waitFlag, toPause, 0);       // clear wait & pause flag
-            bitWrite(waitFlag, toEndPause, 0);
-            bitWrite(waitFlag, toWait, 0);
-            leftMotor.StopMotor();
-            rightMotor.StopMotor();
-            timeMotorStarted = 0;
-            GyroGetHeadingRegisters();
-            StopEchoInterrupt(true, true);                    // stop obstacles detection
-            Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
-            resumeCount = 0;                      // clear count
-            toDo = 0x00;                                         // clear flag todo
-            actStat = moveEnded;                                      // status move completed
-            SendEndAction(moveEnded, moveKoDueToObstacle);                       // move not completed due to obstacle
-      */
     }
     // *** end of loop checking obstacles
 
@@ -1095,11 +1109,23 @@ void loop() {
   }
   if (bitRead(appTrace, traceBitRequest) && millis() - timeTraceDataSent > delayBetweenTraceSend)
   {
-    digitalWrite(encoderPower, 1);
-    PowerCheck();
-    SendTraceData();
+    if (bitRead(appTrace, traceBitNO))
+    {
+      SendTraceNO();
+
+      if (BNOMode != MODE_COMPASS)
+      {
+        SetBNOMode(MODE_COMPASS);
+      }
+
+    }
+    else {
+      digitalWrite(encoderPower, 1);
+      PowerCheck();
+      SendTraceData();
+      digitalWrite(encoderPower, 0);
+    }
     timeTraceDataSent = millis();
-    digitalWrite(encoderPower, 0);
   }
   /*
     if (!bitRead(toDo, toDoAlign) && bitRead(toDoDetail, toDoAlignUpdateNO) && millis() - timeSendInfo > delayBetweenInfo - 1000)
@@ -1134,7 +1160,9 @@ void Move(int orientation, int lenghtToDo)
     pendingStraight = lenghtToDo;
   }
 }
+
 void Rotate( int orientation, boolean check) {
+  wheelCheckDelay = wheelCheckRotateDelay;
   if ( bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false );
   {
     boolean availableRotation = true;
@@ -1145,15 +1173,9 @@ void Rotate( int orientation, boolean check) {
 
     if (availableRotation)    // check rotation
     {
-      //  GyroGetHeadingRegisters();
-      // EchoServoAlign();
-      // trigCurrent = trigFront;
-      // trigBoth = true;         // need to scan front and back during rotation for obstacle detection
-      //  echoCurrent = echoFront; // start echo front
-      // StartEchoInterrupt(1, 1);
+
       posRotationCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
       posRotationCenterY = posY + shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
-      //  NOBeforeRotation = NorthOrientation();
       currentMove = 0x00;
       saveCurrentMove = 0x00;
       bitWrite(currentMove, toDoRotation, true);
@@ -1199,7 +1221,7 @@ void Rotate( int orientation, boolean check) {
 void MoveForward(int lengthToDo ) {
   //  GyroGetHeadingRegisters();
   delay(10);
-
+  wheelCheckDelay = wheelCheckMoveDelay;
   //  NOBeforeMoving = NorthOrientation();
   bitWrite(toDo, toDoStraight, false);       // position bit toDo move
   //  currentMove = 0x00;
@@ -1258,7 +1280,7 @@ void MoveForward(int lengthToDo ) {
         doEchoBack = false;
         doEchoFront = true;
       }
-      trigBoth == false;
+      trigBoth = false;
       unsigned int distF = 0;
       unsigned int distB = 0 ;
       movePingMax = 0;
@@ -1498,6 +1520,7 @@ void startMotors()
     saveLeftWheelInterrupt = 0;
     saveRightWheelInterrupt = 0;
     pbSynchro = false;
+    diagMotor = 0x00;
     digitalWrite(wheelPinInterrupt, LOW);
     attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
     //  delay(15);
@@ -1585,10 +1608,7 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int l
 
 void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at the same pace
 {
-  if (bitRead(toDo, toDoRotation) || bitRead(toDo, toDoAlign))
-  {
-    return;
-  }
+
   unsigned int currentLeftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
   unsigned int currentRightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
 
@@ -1608,28 +1628,53 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
   Serial.print(" currentright: ");
   Serial.println(currentRightHoles);
 #endif
-  if (currentLeftHoles == 0 || currentLeftHoles == prevCheckLeftHoles)
+  if (bitRead(toDo, toDoRotation) || bitRead(toDo, toDoAlign))
   {
-    pbWheelStopped = true;
-    bitWrite(diagMotor, diagMotorPbLeft, 1);       // position bit diagMotor
+    if ((currentLeftHoles == 0 || currentLeftHoles == prevCheckLeftHoles) && (currentRightHoles == 0 || currentRightHoles == prevCheckRightHoles))
+    {
+#if defined(debugMotorsOn)
+      Serial.println("pb synchro rotation");
+#endif
+      pbSynchro = true;
+      //    bitWrite(diagMotor, diagMotorPbLeft, 1);       // position bit diagMotor
+    }
   }
-  if (currentRightHoles == 0 || currentRightHoles == prevCheckRightHoles)
-  {
-    pbWheelStopped = true;
-    bitWrite(diagMotor, diagMotorPbRight, 1);       // position bit diagMotor
+  else {
+    if (currentLeftHoles == 0 || currentLeftHoles == prevCheckLeftHoles)
+    {
+#if defined(debugMotorsOn)
+      Serial.println("pb left ");
+#endif
+      pbWheelStopped = true;
+      bitWrite(diagMotor, diagMotorPbLeft, 1);       // position bit diagMotor
+    }
+    if (currentRightHoles == 0 || currentRightHoles == prevCheckRightHoles)
+    {
+#if defined(debugMotorsOn)
+      Serial.println("pb right ");
+#endif
+      pbWheelStopped = true;
+      bitWrite(diagMotor, diagMotorPbRight, 1);       // position bit diagMotor
+    }
   }
-
   if ( (deltaMove > 3 && deltaMove / float(currentLeftHoles)   > 0.15)  )
   {
+#if defined(debugMotorsOn)
+    Serial.println("pb delta");
+#endif
     pbSynchro = true;
   }
-
-  if (pbWheelStopped == true)
+  if (pbWheelStopped == true || pbSynchro == true)
   {
+#if defined(debugMotorsOn)
+    Serial.println("stop wheels ");
+#endif
     leftMotor.StopMotor();
     rightMotor.StopMotor();
     timeMotorStarted = 0;
     delay(100);
+    Horn(true, 750);
+
     /*
       GyroGetHeadingRegisters();interruptmov
       StopEchoInterrupt(true, true);                    // stop obstacles detection
@@ -1665,10 +1710,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     Serial.print(" max: ");
     Serial.println(Wheels.GetMaxLevel(rightWheelId));
 #endif
-    Horn(true, 750);
   }
-
-
   prevCheckLeftHoles = currentLeftHoles;
   prevCheckRightHoles = currentRightHoles;
 }
@@ -1998,6 +2040,7 @@ void StopAll()
   saveCurrentMove = 0x00; // clear saveCurrent move
   pendingAckSerial = 0x00; // clear pending acknowledgement
   timerHorn = 0;          // reset horn timer
+  appTrace = 0x00;
   SendStatus();
 }
 
@@ -2816,6 +2859,7 @@ void initNorthAlign(unsigned int alignTarget)
 {
   northAlignTarget = alignTarget;
   northAligned = false;
+  northAlignedPossibilityChecked = false;
   // ResetGyroscopeHeadings();
   //  GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
   StartMagneto();
@@ -2834,6 +2878,25 @@ void initNorthAlign(unsigned int alignTarget)
 #define maxAlign 360-northAlignPrecision
 void northAlign()
 { // North rotation anti-clockwise positive    - robot rotation clockwise positive
+  if (!northAlignedPossibilityChecked)
+  {
+    northAlignedPossibilityChecked = true;
+    int toToCheck = northOrientation - northAlignTarget;
+    if (CheckRotationAvaibility(toToCheck))
+    {
+
+    }
+    else {
+      actStat = alignEnded; // align required
+      northAligned = false;
+      bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
+      bitWrite(toDoDetail, toDoAlignRotate, 0);
+      bitWrite(toDoDetail, toDoGyroRotation, 0);
+      SendEndAction(alignEnded, moveKoDueToNotEnoughSpace);
+      StopMagneto();
+      return;
+    }
+  }
   if (!bitRead(toDoDetail, toDoAlignRotate))
   {
     if (bitRead(toDoDetail, toDoAlignUpdateNO))

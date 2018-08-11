@@ -554,24 +554,27 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       actStat = requestUpdateNO;
       getNorthOrientation = 0x00;
       compasUpToDate = 0x00;
+      saveNorthOrientation = 999;
       bitWrite(toDo, toDoAlign, 1);
       bitWrite(toDoDetail, toDoAlignRotate, 0);
       bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
       Serial.println("getNorthOrientation");
+      sendInfoSwitch=1;          // for sending status priority
+      timeSendInfo=millis()+delayBetweenInfo;     // for delaying the next send 
       break;
     case requestBNOData: // send
       SendBNOLocation ();
       Serial.println("SendBNOLocation");
       break;
-    case requestNarrowPathMesurments: // send
+    case requestNarrowPathMesurments: //
       SendNarrowPathMesurments ();
       Serial.println("requestNarrowPathMesurments");
       break;
-    case requestNarrowPathEchos: // send
+    case requestNarrowPathEchos: //
       SendNarrowPathEchos ();
       Serial.println("requestNarrowPathEchos");
       break;
-    case requestTrace: // send
+    case requestTrace: //
       if (GatewayLink.DataInSerial[3] == 0x00)
       {
         bitWrite(appTrace, traceBitPower, 0);
@@ -585,9 +588,28 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         bitWrite(appTrace, traceBitRequest, 1);
         Serial.println("startTrace");
       }
-
       break;
-
+    case requestTraceNO: //
+      if (GatewayLink.DataInSerial[3] == 0x00)
+      {
+        bitWrite(appTrace, traceBitNO, 0);
+        bitWrite(appTrace, traceBitRequest, 0);
+        Serial.println("stopTraceNO");
+      }
+      else {
+        bitWrite(appTrace, traceBitNO, 1);
+        bitWrite(appTrace, traceBitRequest, 1);
+        Serial.println("startTraceNO");
+      }
+      break;
+    case requestSleep: //
+      if (GatewayLink.DataInSerial[3] == 0x01)
+      {
+        Serial.println("requestSleep");
+        delay(100);
+        sleepRequest = true;
+      }
+      break;
     default:
       Serial.print("commande recue: ");
       Serial.println(cmdInput, HEX);

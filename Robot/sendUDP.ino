@@ -14,7 +14,8 @@ void SendEndAction(uint8_t action, uint8_t retCode)
   {
     getBNOLocation = 0x07;                // to resquest BNO computed location
   }
-
+  sendInfoSwitch = 1;        // for sending status priority
+  timeSendInfo = millis(); // for delaying the next automatic send
   //  GetHeadingRegisters();
   //  int northOrientation = NorthOrientation();
   int deltaNORotation = NOBeforeRotation - NOAfterRotation;
@@ -525,4 +526,25 @@ void SendTraceData()
   GatewayLink.PendingDataReqSerial[13] = uint8_t(encoderValue / 256); //
   GatewayLink.PendingDataReqSerial[14] = uint8_t(encoderValue);
   GatewayLink.PendingDataLenSerial = 0x0f; // 6 longueur mini max 25  pour la gateway
+}
+void SendTraceNO()
+{
+  GatewayLink.PendingReqSerial = PendingReqRefSerial;
+  GatewayLink.PendingDataReqSerial[0] = respTraceNO; //
+  GatewayLink.PendingDataReqSerial[1] = uint8_t(northOrientation / 256); //
+  GatewayLink.PendingDataReqSerial[2] = uint8_t(northOrientation);
+  GatewayLink.PendingDataReqSerial[3] = 0x00;
+  GatewayLink.PendingDataReqSerial[4] = BNOMode; //
+  GatewayLink.PendingDataReqSerial[5] = BNOCalStat;
+  GatewayLink.PendingDataReqSerial[6] = 0x00;
+  GatewayLink.PendingDataReqSerial[7] = BNOSysStat;
+  GatewayLink.PendingDataReqSerial[8] = BNOSysError;
+  GatewayLink.PendingDataReqSerial[6] = 0x00;
+  GatewayLink.PendingDataReqSerial[10] = uint8_t(absoluteHeading / 256);
+  GatewayLink.PendingDataReqSerial[11] = uint8_t(absoluteHeading);
+#if(debugMagnetoOn)
+  Serial.print("NO:");
+  Serial.print(northOrientation);
+#endif
+  GatewayLink.PendingDataLenSerial = 0x0c; // 6 longueur mini max 25  pour la gateway
 }
