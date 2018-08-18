@@ -27,7 +27,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           }
         */
         InitScan(nbPulse, startOriention);
-        actStat = 0x66;
+        actStat = scan360;
         SetBNOMode(MODE_COMPASS);
         bitWrite(toDo, toDoScan, 1);       // position bit toDo scan
         iddleTimer = millis();
@@ -246,7 +246,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
       break;
     case 0x65: // commande e server request for robot status
-      if (actStat != 0x66)
+      if (actStat != scan360)
       {
         SendStatus();                                     // send robot status to server
       }
@@ -276,7 +276,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         toDo = 0x00;
         bitWrite(toDo, toDoMove, 1);       // position bit toDo move
         appStat = appStat & 0x1f;
-        actStat = 0x68; // moving
+        actStat = moving; // moving
         iddleTimer = millis();
         SendStatus();
         ResumeMove();
@@ -326,7 +326,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         ResetGyroscopeHeadings();
 
         appStat = appStat & 0x1f;
-        actStat = 0x68; // moving
+        actStat = moving; // moving
         bitWrite(toDo, toDoMove, 1);       // position bit toDo move
         bitWrite(toDoDetail, toDoMoveAcrossPass, 0);       // position bit toDodetail
         if (GatewayLink.DataInSerial[6] == 0x2d) {

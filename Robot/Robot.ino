@@ -17,13 +17,14 @@
    v3.8 add sleep mode
    v3.9 modified updateNo and sendend to delay status report
    v3.10 debug obstacle move back detection
+   v3.11 debug send scan360 info
 */
 
-String Version = "RobotV3.10";
+String Version = "RobotV3.11";
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
-#define debugObstacleOn true
+//#define debugObstacleOn true
 //#define debugLocalizationOn true
 //#define debugAcrossPathOn true
 //#define debugMagnetoOn true
@@ -680,7 +681,7 @@ void loop() {
     bitWrite(diagConnection, diagConnectionIP, 1);       // conection broken
   }
 
-  if (!bitRead(appTrace, traceBitRequest) && (millis() - timeSendInfo >= delayBetweenInfo && actStat != 0x66 && pendingAckSerial == 0x00)) // alternatively send status and power to the server
+  if (!bitRead(appTrace, traceBitRequest) && (millis() - timeSendInfo >= delayBetweenInfo) && actStat != scan360 && pendingAckSerial == 0x00) // alternatively send status and power to the server
   {
     if (sendInfoSwitch % 5 == 1)
     {
@@ -703,7 +704,6 @@ void loop() {
     {
       SendBNOSubsytemStatus();
     }
-
     sendInfoSwitch ++;
     timeSendInfo = millis();
   }
@@ -1109,15 +1109,13 @@ void loop() {
   }
   if (bitRead(appTrace, traceBitRequest) && millis() - timeTraceDataSent > delayBetweenTraceSend)
   {
-    if (bitRead(appTrace, traceBitNO))
+    if (bitRead(appTrace, traceBitNO) && actStat != scan360 && pendingAckSerial == 0x00)
     {
       SendTraceNO();
-
       if (BNOMode != MODE_COMPASS)
       {
         SetBNOMode(MODE_COMPASS);
       }
-
     }
     else {
       digitalWrite(encoderPower, 1);
