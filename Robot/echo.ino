@@ -22,16 +22,15 @@ int IncPulse(int sens) { // compute servo motor value depending on sens
 }
 int PingFront() {               // ping echo front
   float cm;
-  unsigned int uS = pingFront.ping_median(3); // Send ping, get ping time in microseconds (uS).
-  if (uS == 0)
+  cm = sonar[0].ping_cm();
+  if (cm == 0)
   {
 #if (debugScanOn)
     Serial.println("retry front");
 #endif
     delay(70);
-    uS = pingFront.ping();
+    cm = sonar[0].ping_cm();
   }
-  cm = pingFront.convert_cm(uS);
   if (cm != 0)                  // keep 0 value (no mesurment)
   {
     cm = cm + shiftEchoFrontBack / 2;   // add  to adjust center location
@@ -46,23 +45,18 @@ int PingFront() {               // ping echo front
 
 int PingBack() {
   float cm;
-
-  unsigned int uS = pingBack.ping(); // Send ping, get ping time in microseconds (uS).
-  // Serial.print("Ping: ");
-
-
-  if (uS == 0)
+  cm = sonar[1].ping_cm();
+  if (cm == 0)
   {
 #if (debugScanOn)
     Serial.println("retry back");
 #endif
     delay(70);
-    uS = pingFront.ping();
+    cm = sonar[1].ping_cm();
   }
-  cm = pingBack.convert_cm(uS) ;
-  if (cm != 0)
+  if (cm != 0)                  // keep 0 value (no mesurment)
   {
-    cm = cm + shiftEchoFrontBack / 2;
+    cm = cm + shiftEchoFrontBack / 2;   // add  to adjust center location
   }
 #if (debugScanOn)
   Serial.print("Ping back: ");
@@ -70,7 +64,6 @@ int PingBack() {
   Serial.println("cm");
 #endif
   return (cm);
-
   //  }
 }
 
@@ -110,18 +103,21 @@ void ScanPosition() {
   // if ((millis() - timeScanFront) > delayBetween2Scan && numStep <= abs(nbSteps) - 1 && switchFB == 0 )
   if ((millis() - timeScanBack) > delayBetween2Scan && numStep <= abs(nbSteps) - 1 && switchFB == 0 && pendingAckSerial == 0x00)
   {
-
-    timeScanFront = millis();
     switchFB = 1;
     distFSav = ScanOnceFront(numStep);
+    timeScanFront = millis();
   }
   if ((millis() - timeScanFront) > delayBetweenScanFB && numStep <= abs(nbSteps) - 1 && switchFB == 1 && pendingAckSerial == 0x00)
     //  if ((millis() - timeScanBack) > delayBetweenScanFB && numStep <= abs(nbSteps) - 1 && switchFB == 1 )
   {
-    timeScanBack = millis();
     switchFB = 0;
     distBSav = ScanOnceBack(numStep);
+    if (millis() - timeSendSecSerial > 0 && millis() - timeSendSecSerial < 1000)
+    {
+      delay(millis() - timeSendSecSerial ); // no more than one a record / second
+    }
     SendScanResultSerial(distFSav, distBSav);
+    timeScanBack = millis();
     if (numStep < abs(nbSteps) - 1)
     {
       IncServo(1, 200);
@@ -140,6 +136,7 @@ void ScanPosition() {
     //   delay(1000);
     //   myservo.detach();
     SetBNOMode(MODE_IMUPLUS);
+
     SendEndAction(scanEnded, 0x00);
   }
 }

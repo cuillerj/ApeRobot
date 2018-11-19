@@ -369,7 +369,7 @@ void SendScanResultSerial (int distF, int distB)   // send scan echo data to the
   GatewayLink.PendingDataReqSerial[8] = 0x41; //"A" angle du servo
   GatewayLink.PendingDataReqSerial[9] = uint8_t(AngleDegre / 256); //1er octet contient les facteurs de 256
   GatewayLink.PendingDataReqSerial[10] = uint8_t(AngleDegre); //2eme octets contient le complement - position = Datareq2*256+Datareq3
-  GatewayLink.PendingDataReqSerial[11] = uint8_t(trameNumber % 256);
+  GatewayLink.PendingDataReqSerial[11] = 0x00;
   GatewayLink.PendingDataReqSerial[12] = 0x4f;
   GatewayLink.PendingDataReqSerial[13] = uint8_t(northOrientation / 256);
   GatewayLink.PendingDataReqSerial[14] = uint8_t(northOrientation);
@@ -547,4 +547,17 @@ void SendTraceNO()
   Serial.print(northOrientation);
 #endif
   GatewayLink.PendingDataLenSerial = 0x0c; // 6 longueur mini max 25  pour la gateway
+}
+void SendVersion()
+{
+  GatewayLink.PendingReqSerial = PendingReqRefSerial;
+  GatewayLink.PendingDataReqSerial[0] = respVersion; //
+  GatewayLink.PendingDataReqSerial[1] = ver[0]; //
+  GatewayLink.PendingDataReqSerial[2] = ver[1];
+  GatewayLink.PendingDataReqSerial[3] = 0x00;
+  GatewayLink.PendingDataReqSerial[4] = 0x00; //
+  GatewayLink.PendingDataReqSerial[5] = 0x00;
+  GatewayLink.PendingDataReqSerial[6] = 0x00;
+
+  GatewayLink.PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gateway
 }

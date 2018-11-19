@@ -28,7 +28,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         */
         InitScan(nbPulse, startOriention);
         actStat = scan360;
-        SetBNOMode(MODE_COMPASS);
+        //       SetBNOMode(MODE_COMPASS);
         bitWrite(toDo, toDoScan, 1);       // position bit toDo scan
         iddleTimer = millis();
         SendStatus();
@@ -559,8 +559,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       bitWrite(toDoDetail, toDoAlignRotate, 0);
       bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
       Serial.println("getNorthOrientation");
-      sendInfoSwitch=1;          // for sending status priority
-      timeSendInfo=millis()+delayBetweenInfo;     // for delaying the next send 
+      sendInfoSwitch = 1;        // for sending status priority
+      timeSendInfo = millis() + delayBetweenInfo; // for delaying the next send
       break;
     case requestBNOData: // send
       SendBNOLocation ();
@@ -610,6 +610,10 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         sleepRequest = true;
       }
       break;
+    case requestVersion:
+      {
+        SendVersion();
+      }
     default:
       Serial.print("commande recue: ");
       Serial.println(cmdInput, HEX);

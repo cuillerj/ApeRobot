@@ -18,9 +18,13 @@
    v3.9 modified updateNo and sendend to delay status report
    v3.10 debug obstacle move back detection
    v3.11 debug send scan360 info
+   v3.12 modification gestion timer scan
+   v4.0 newping call rewritten
+   v4.1 version management evolution (version subversion) remotly accessible
 */
 
-String Version = "RobotV3.11";
+//  Version
+uint8_t ver[2] = {4, 1};
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -339,11 +343,11 @@ int BNOLocationHeading = 0;
 */
 
 #define servoPin 31    //  servo motor Pin 
-#define echoFront 19  // arduino pin for mesuring echo delay for front 
+//#define echoFront 19  // arduino pin for mesuring echo delay for front
 #define echFrontId 0 // identifier for front sonar
-#define trigFront  23     // arduino pin for trigerring front echo
-#define echoBack  18   // arduino pin for mesuring echo delay for back 
-#define trigBack  22    // arduino pin for trigerring back echo
+//#define trigFront  23     // arduino pin for trigerring front echo
+//#define echoBack  18   // arduino pin for mesuring echo delay for back
+//#define trigBack  22    // arduino pin for trigerring back echo
 #define echBacktId 1 // identifier for back sonar
 #define nbPulse 15    // nb of servo positions for a 360° scan
 #define echo3 false  // does not exit
@@ -395,10 +399,11 @@ uint8_t trigCurrent = 0; // used during move to determine which front or back is
 boolean trigOn = false;  // flag for asynchronous echo to know if trigger has been activated
 boolean trigBoth = false; // flag used to alternatively scan front or back
 unsigned int scanNumber = 0;   // count number of scan retry for asynchronous echo
-
-#define MAX_DISTANCE 400
-NewPing pingFront(trigFront, echoFront, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
-NewPing pingBack(trigBack, echoBack, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
+#define SONAR_NUM 2      // Number of sensors.
+NewPing sonar[SONAR_NUM] = {   // Sensor object array.
+  NewPing(trigFront, echoFront, MAX_DISTANCE), // Each sensor's trigger pin, echo pin, and max distance to ping.
+  NewPing(trigBack, echoBack, MAX_DISTANCE),
+};
 //-- timers --
 unsigned long timeAppli; // cycle applicatif
 unsigned long timeStatut;  // cycle envoi du statut au master
@@ -444,8 +449,8 @@ int wheelCheckDelay = wheelCheckMoveDelay;
 #if defined debugLoop
 unsigned long timeLoop;  // cycle demande heure
 #endif
-#define delayBetween2Scan 1500  // delay between to scan steps - must take into account the transmission duration
-#define delayBetweenScanFB 700  // delay between front and back scan of the same step
+#define delayBetween2Scan 1000  // delay between to scan steps - must take into account the transmission duration
+#define delayBetweenScanFB 50  // delay between front and back scan of the same step
 #define delayBetweenInfo 3000   // delay before sending new status to the server  
 #define delayPowerCheck 100    // delay before next checking of power
 #define delayBeforeRestartAfterAbstacle 3000 // delay before taking into account obstacle disappearance
@@ -522,7 +527,10 @@ void setup() {
   Serial.begin(38400);            // for debugging log
   GatewayLink.SerialBegin();
   // Serial2.begin(38400); // to communicate with the server through a serial Udp gateway
-  Serial.println(Version);
+  Serial.print("Version:");
+  Serial.print(ver[0]);
+  Serial.print(".");
+  Serial.println(ver[1]);
   int addrEeprom = 0;
   byte valueEeprom;
   valueEeprom = EEPROM.read(addrEeprom);  // id of the arduino stored in eeprom
@@ -627,6 +635,12 @@ void loop() {
   {
     digitalWrite(RobotOutputRobotRequestPin, LOW);      // reset the request to the subsystem
   }
+
+  if ( pendingPollingResp == !0x00 && millis() - OutputRobotRequestPinTimer >= 5000 )     // detect timeout
+  {
+    pendingPollingResp = 0x00;  // to detect timeout
+  }
+
   // ***  keep in touch with the server
   // int getSerial = Serial_have_message();  // check if we have received a message
   int getSerial = GatewayLink.Serial_have_message();  // check if we have received a message
@@ -730,7 +744,7 @@ void loop() {
   {
 
     // *** checking resqueted actions
-    if (bitRead(toDo, toDoScan) == 1 && pendingPollingResp == 0x00)      // check if for scan is requested
+    if (bitRead(toDo, toDoScan) == 1 && pendingPollingResp == 0x00)      // check if scan is requested
     {
       if (BNOMode == MODE_COMPASS)
       {
@@ -740,6 +754,7 @@ void loop() {
         SetBNOMode(MODE_COMPASS);
       }
     }
+
     if (bitRead(toDo, toDoAlign) == 1 && (northAligned == false || bitRead(toDoDetail, toDoAlignUpdateNO)) && pendingPollingResp == 0x00)   // check if for scan is requested
     {
       if (BNOMode == MODE_COMPASS)
