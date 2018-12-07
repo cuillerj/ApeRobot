@@ -21,10 +21,12 @@
    v3.12 modification gestion timer scan
    v4.0 newping call rewritten
    v4.1 version management evolution (version subversion) remotly accessible
+   v4.2 optimize rotation for north alignement and debug echoMinFB
+   v4.3 last action retcode replace locprob in status frame
 */
 
 //  Version
-uint8_t ver[2] = {4, 1};
+uint8_t ver[2] = {4, 3};
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -32,7 +34,7 @@ uint8_t ver[2] = {4, 1};
 //#define debugLocalizationOn true
 //#define debugAcrossPathOn true
 //#define debugMagnetoOn true
-//#define northAlignOn true
+//#define debugNorthAlign true
 //#define debugMotorsOn true
 //#define debugWheelControlOn true
 //#define wheelEncoderDebugOn true
@@ -755,7 +757,7 @@ void loop() {
       }
     }
 
-    if (bitRead(toDo, toDoAlign) == 1 && (northAligned == false || bitRead(toDoDetail, toDoAlignUpdateNO)) && pendingPollingResp == 0x00)   // check if for scan is requested
+    if (bitRead(toDo, toDoAlign) == 1 && (northAligned == false || bitRead(toDoDetail, toDoAlignUpdateNO)) && pendingPollingResp == 0x00)   // check if  scan is requested
     {
       if (BNOMode == MODE_COMPASS)
       {
@@ -1186,7 +1188,6 @@ void Rotate( int orientation, boolean check) {
 
     if (availableRotation)    // check rotation
     {
-
       posRotationCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
       posRotationCenterY = posY + shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
       currentMove = 0x00;
@@ -1227,7 +1228,8 @@ void Rotate( int orientation, boolean check) {
       Serial.println("rotate ");
     }
     else {
-
+      SendEndAction(moveEnded, moveKoDueToNotEnoughSpace);
+      toDo = 0x00;
     }
   }
 }
@@ -1273,8 +1275,14 @@ void MoveForward(int lengthToDo ) {
       //    int shift = echoShift;
       //   shift =  echoShift * lengthToDo / 100;
       int *minFB = MinEchoFB(90 - echoShift, 2 * echoShift);        // get minimal echo distance front and back
-      int minEchoF = minFB[0];
-      int minEchoB = minFB[1];
+      int minEchoF = *(minFB);
+      int minEchoB = *(minFB + 1);
+#if defined(debugObstacleOn)
+      Serial.print(" F:");
+      Serial.print(minEchoF);
+      Serial.print(" B:");
+      Serial.println(minEchoB);
+#endif
       if (lengthToDo < 0)
       {
         moveForward = false;
@@ -1711,8 +1719,14 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     else {
       ComputeNewLocalization(0xff);
     }
-    InterruptMove(moveKoDueToWheelStopped);
-    // SendEndAction(moveEnded, moveKoDueToSpeedInconsistancy);
+    if (pbSynchro)
+    {
+      InterruptMove(moveWheelSpeedInconsistancy);
+    }
+    else {
+      InterruptMove(moveKoDueToWheelStopped);
+    }
+
 #if defined(debugMotorsOn)
     Serial.print("min level left: ");
     Serial.print(Wheels.GetMinLevel(leftWheelId));
@@ -2670,9 +2684,9 @@ void StopEncoders()
     }
 
     uint8_t retCode = 0x00;
-    bitWrite(diagMotor, diagMotorPbEncoder, 0);
-    bitWrite(diagMotor, diagMotorPbLeft, 0);
-    bitWrite(diagMotor, diagMotorPbRight, 0);
+    // bitWrite(diagMotor, diagMotorPbEncoder, 0);
+    //  bitWrite(diagMotor, diagMotorPbLeft, 0);
+    //   bitWrite(diagMotor, diagMotorPbRight, 0);
     delay(100);
     //    NOAfterMoving = NorthOrientation();
     if (Wheels.GetMinLevel(leftWheelId) > leftIncoderLowValue * 1.3)
@@ -2879,7 +2893,7 @@ void initNorthAlign(unsigned int alignTarget)
   bitWrite(toDo, toDoAlign, 1);       // position bit toDo
   iddleTimer = millis();
   retryAlign = 0;
-#if defined(northAlignOn)
+#if defined(debugNorthAlign)
   Serial.print("north align:");
   Serial.println(northAlignTarget);
 #endif
@@ -2891,15 +2905,25 @@ void initNorthAlign(unsigned int alignTarget)
 #define maxAlign 360-northAlignPrecision
 void northAlign()
 { // North rotation anti-clockwise positive    - robot rotation clockwise positive
-  if (!northAlignedPossibilityChecked)
+  if (!northAlignedPossibilityChecked && bitRead(toDoDetail, toDoAlignRotate))
   {
     northAlignedPossibilityChecked = true;
-    int toToCheck = northOrientation - northAlignTarget;
+    int toToCheck = OptimizeNorthAlign(northOrientation, northAlignTarget);
+#if defined(debugNorthAlign)
+    Serial.print("toToCheck:");
+    Serial.println(toToCheck);
+#endif
+
     if (CheckRotationAvaibility(toToCheck))
     {
-
+#if defined(debugNorthAlign)
+      Serial.println("possible");
+#endif
     }
     else {
+#if defined(debugNorthAlign)
+      Serial.println("not possible:");
+#endif
       actStat = alignEnded; // align required
       northAligned = false;
       bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
@@ -2914,7 +2938,7 @@ void northAlign()
   {
     if (bitRead(toDoDetail, toDoAlignUpdateNO))
     {
-#if defined(northAlignOn)
+#if defined(debugNorthAlign)
       Serial.print("send end NO:");
       Serial.println(northOrientation);
 #endif
@@ -2933,7 +2957,19 @@ void northAlign()
   compasUpToDate = 0x00;
   actStat = aligning; // align required
   saveNorthOrientation = northOrientation;
-  int  alignShift = (saveNorthOrientation - northAlignTarget) ;
+#if defined(debugNorthAlign)
+  Serial.print("NO:");
+  Serial.println(northOrientation);
+#endif
+  int  alignShift =  OptimizeNorthAlign(saveNorthOrientation, northAlignTarget) ;
+#if defined(debugNorthAlign)
+  Serial.print("NO:");
+  Serial.print(northOrientation);
+  Serial.print(" retry:");
+  Serial.print(retryAlign);
+  Serial.print(" shift:");
+  Serial.println(alignShift);
+#endif
   if (retryAlign > 25) {
     actStat = alignEnded; // align required
     northAligned = false;
@@ -2946,7 +2982,7 @@ void northAlign()
   }
   if ((abs(alignShift) >= minAlign) && (abs(alignShift) <= maxAlign))
   {
-#if defined(northAlignOn)
+#if defined(debugNorthAlign)
     Serial.print(" rotate: ");
     Serial.println(alignShift);
 #endif
@@ -2978,8 +3014,8 @@ void northAlign()
       bRightClockwise = bLeftClockwise;
       rot = 360 + alignShift;
     }
-    rot = rot * .5;
-    if (abs(alignShift) >= 3 * minRotEncoderAbility)
+    rot = rot * .8;
+    if (abs(alignShift) >= 4 * minRotEncoderAbility)
     {
       if (CheckRotationAvaibility(rot))
       {
@@ -3359,12 +3395,19 @@ boolean CheckRotationAvaibility(int rotation)
   {
     int *minFB = MinEchoFB(90, signRotation * max(abs(rotation), minimalServoForRotation));         // get minimal echo distance front and back
     //        int *minFB = MinEchoFB(90, rotation);         // get minimal echo distance front and back
-    int minEchoF = minFB[0];
-    int minEchoB = minFB[1];
+    //   int minEchoF = minFB[0];
+    //   int minEchoB = minFB[1];
+    int minEchoF = *(minFB);
+    int minEchoB = *(minFB + 1);
     if (minEchoF + securityLenght < iRobotFrontDiag || minEchoB + securityLenght < iRobotBackDiag)
     {
 #if defined(debugObstacleOn)
-      Serial.println("rotation not possible");
+      Serial.print("rotation not possible:");
+      Serial.print(rotation);
+      Serial.print(" F:");
+      Serial.print(minEchoF);
+      Serial.print(" B:");
+      Serial.println(minEchoB);
 #endif
       return false; // not enough space to rotate
 
@@ -3380,12 +3423,19 @@ boolean CheckRotationAvaibility(int rotation)
   if (rotation > 90)
   {
     int *minFB = MinEchoFB(90, 90);              // get minimal echo distance front and back
-    int minEchoF = minFB[0];
-    int minEchoB = minFB[1];
+    //  int minEchoF = minFB[0];
+    // int minEchoB = minFB[1];
+    int minEchoF = *(minFB);
+    int minEchoB = *(minFB + 1);
     if (minEchoF + securityLenght < iRobotFrontDiag || minEchoB + securityLenght < iRobotBackDiag)
     {
 #if defined(debugObstacleOn)
-      Serial.println("rotation not possible");
+      Serial.print("rotation not possible:");
+      Serial.print(rotation);
+      Serial.print(" F:");
+      Serial.print(minEchoF);
+      Serial.print(" B:");
+      Serial.println(minEchoB);
 #endif
       return false; // not enough space to rotate
 
@@ -3393,12 +3443,19 @@ boolean CheckRotationAvaibility(int rotation)
     else
     {
       int *minFB = MinEchoFB(180 - rotation, 90 - rotation);          // get minimal echo distance front and back
-      minEchoF = minFB[0];
-      minEchoB = minFB[1];
+      //     minEchoF = minFB[0];
+      //     minEchoB = minFB[1];
+      minEchoF = *(minFB);
+      minEchoB = *(minFB + 1);
       if (minEchoF + securityLenght < iRobotBackDiag || minEchoB + securityLenght < iRobotFrontDiag)
       {
 #if defined(debugObstacleOn)
-        Serial.println("rotation not possible");
+        Serial.print("rotation not possible:");
+        Serial.print(rotation);
+        Serial.print(" F:");
+        Serial.print(minEchoF);
+        Serial.print(" B:");
+        Serial.println(minEchoB);
 #endif
         return false; // not enough space to rotate
 
@@ -3415,12 +3472,19 @@ boolean CheckRotationAvaibility(int rotation)
   if (rotation < -90)
   {
     int *minFB = MinEchoFB(90, -90);              // get minimal echo distance front and back
-    int minEchoF = minFB[0];
-    int minEchoB = minFB[1];
+    //   int minEchoF = minFB[0];
+    //  int minEchoB = minFB[1];
+    int minEchoF = *(minFB);
+    int minEchoB = *(minFB + 1);
     if (minEchoF + securityLenght < iRobotFrontDiag || minEchoB + securityLenght < iRobotBackDiag)
     {
 #if defined(debugObstacleOn)
-      Serial.println("rotation not possible");
+      Serial.print("rotation not possible:");
+      Serial.print(rotation);
+      Serial.print(" F:");
+      Serial.print(minEchoF);
+      Serial.print(" B:");
+      Serial.println(minEchoB);
 #endif
       return false; // not enough space to rotate
 
@@ -3428,12 +3492,19 @@ boolean CheckRotationAvaibility(int rotation)
     else
     {
       int *minFB = MinEchoFB( rotation + 180, 90 - rotation);       // get minimal echo distance front and back
-      minEchoF = minFB[0];
-      minEchoB = minFB[1];
+      //     minEchoF = minFB[0];
+      //     minEchoB = minFB[1];
+      minEchoF = *(minFB);
+      minEchoB = *(minFB + 1);
       if (minEchoF + securityLenght < iRobotBackDiag || minEchoB + securityLenght < iRobotFrontDiag)
       {
 #if defined(debugObstacleOn)
-        Serial.println("rotation not possible");
+        Serial.print("rotation not possible:");
+        Serial.print(rotation);
+        Serial.print(" F:");
+        Serial.print(minEchoF);
+        Serial.print(" B:");
+        Serial.println(minEchoB);
 #endif
         return false; // not enough space to rotate
 
@@ -3473,7 +3544,7 @@ int * MinEchoFB(int fromPosition, int rotation)
   /*
     This function return the minimum echo distance got by a scan from 'fromPostion' taken into account the rotation
   */
-  int MinFB[2];       // minimum echo distance checked before moves
+  static int MinFB[2];       // minimum echo distance checked before moves
   MinFB[0] = 9999;
   MinFB[1] = 9999;
   int rotationSens = rotation / abs(rotation);
@@ -3545,6 +3616,7 @@ int * MinEchoFB(int fromPosition, int rotation)
   Serial.print(" minEchoB: ");
   Serial.println(MinFB[1]);
 #endif
+
   return MinFB;
 }
 void InterruptMove(uint8_t retCode)
@@ -4164,5 +4236,31 @@ void InterruptMoveAcrossPath(uint8_t retCode)
     SendEndAction(moveAcrossPassEnded, timeoutRetCode);                       // move not completed due to obstacle
     obstacleDetectionOn = true;
   }
+}
+int AngleDiff(int alpha, int beta)
+{
+  int delta = ((360 - abs(alpha - beta + 360) % 360) % 360);
+  return delta;
+}
+int OptimizeNorthAlign(int currentNO, int targetNO)
+{
+  int delta = AngleDiff(currentNO, targetNO);
+  int rotation = 0;
+  if (delta > 180)
+  {
+    rotation = AngleDiff(targetNO, currentNO);
+  }
+  else
+  {
+    rotation = -delta;
+  }
+  if (rotation > 0)
+  {
+    rotation = rotation + northAlignPrecision / 2;
+  }
+  else {
+    rotation = rotation - northAlignPrecision / 2;
+  }
+  return rotation;
 }
 

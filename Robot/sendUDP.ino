@@ -1,3 +1,4 @@
+uint8_t lastActionRetcode = 0x00;
 void SendEndAction(uint8_t action, uint8_t retCode)
 {
 #if defined(debugGyroscopeOn)
@@ -10,6 +11,7 @@ void SendEndAction(uint8_t action, uint8_t retCode)
   Serial.println();
 
 #endif
+  lastActionRetcode = retCode;
   if (action == moveEnded)
   {
     getBNOLocation = 0x07;                // to resquest BNO computed location
@@ -227,7 +229,7 @@ void SendStatus()
     GatewayLink.PendingDataReqSerial[19] = uint8_t(absoluteHeading);
   }
   GatewayLink.PendingDataReqSerial[20] = 0x00;
-  GatewayLink.PendingDataReqSerial[21] = currentLocProb;
+  GatewayLink.PendingDataReqSerial[21] = lastActionRetcode;
   GatewayLink.PendingDataReqSerial[22] = 0x00;
   GatewayLink.PendingDataReqSerial[23] = toDo;   // for debuging
   GatewayLink.PendingDataReqSerial[24] = 0x00;
