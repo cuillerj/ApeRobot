@@ -447,7 +447,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
     case rotateTypeGyro: // r rotate VS gyroscope
       {
-        actStat = rotateTypeGyro;
+        actStat = gyroRotating;
         int reqN = ((GatewayLink.DataInSerial[3] & 0b01111111) * 256 + GatewayLink.DataInSerial[4]) % 360;
         if (reqN == 0 )
         {
@@ -463,11 +463,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           }
           iddleTimer = millis();
           rotationType = cmdInput;
-          posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
-          posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
-          ResetGyroscopeHeadings();
-          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
-          delay(100);
+          //       posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
+          //       posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
+          //       ResetGyroscopeHeadings();
+          //       GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+          //       delay(100);
 
 
           if (bitRead(GatewayLink.DataInSerial[3], 7) == 1)    // means negative rotation
@@ -502,6 +502,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           SendEndAction(moveEnded, requestRejected);
           break;
         }
+        SendStatus();
         break;
       }
     case requestPingFrontBack: // commande p ping front back

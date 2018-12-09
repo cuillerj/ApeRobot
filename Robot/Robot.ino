@@ -23,10 +23,11 @@
    v4.1 version management evolution (version subversion) remotly accessible
    v4.2 optimize rotation for north alignement and debug echoMinFB
    v4.3 last action retcode replace locprob in status frame
+   v4.4 modif input rotate gyro
 */
 
 //  Version
-uint8_t ver[2] = {4, 3};
+uint8_t ver[2] = {4, 4};
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -1230,6 +1231,7 @@ void Rotate( int orientation, boolean check) {
     else {
       SendEndAction(moveEnded, moveKoDueToNotEnoughSpace);
       toDo = 0x00;
+      toDoDetail = 0x00;
     }
   }
 }
