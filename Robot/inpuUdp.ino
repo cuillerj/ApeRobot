@@ -13,7 +13,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
   lastReceivedNumber = GatewayLink.DataInSerial[1];
   switch (cmdInput) {                   // first byte of input is the command type
     case 0x2b: // commande + means scan 360
-      if (appStat != 0xff)
+      if (appStat != 0xff && !bitRead(toDo, toDoScan))
       {
         appStat = appStat & 0xf1;
         Serial.println("Scan");
@@ -506,10 +506,13 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         break;
       }
     case requestPingFrontBack: // commande p ping front back
-      iddleTimer = millis();
-      Serial.println("ping FB");
-      bitWrite(toDo, toDoPingFB, 1);
-      PingFrontBack(); //
+      if (!bitRead(toDo, toDoScan))
+      {
+        iddleTimer = millis();
+        Serial.println("ping FB");
+        bitWrite(toDo, toDoPingFB, 1);
+        PingFrontBack(); //
+      }
       break;
     case 0x73: // commande s means stop
       Serial.println("cmd stop");
@@ -614,6 +617,57 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
     case requestVersion:
       {
         SendVersion();
+        break;
+      }
+    case requestPID:
+      {
+        SendPID();
+        break;
+      }
+    case setPID:
+      {
+        Serial.print("SetPID");
+#define setKx 0
+#define setInput 1
+#define setSetpoint 2
+        switch (GatewayLink.DataInSerial[3])
+        {
+          case setKx:
+            Serial.print(" Kx:");
+            Serial.println(GatewayLink.DataInSerial[4]);
+            if (GatewayLink.DataInSerial[4] >= 0 && GatewayLink.DataInSerial[4] < sizeOfKx)
+            {
+              Kx[GatewayLink.DataInSerial[4]] = (GatewayLink.DataInSerial[5] & 0b01111111) * 256 + GatewayLink.DataInSerial[6];
+              Kx[GatewayLink.DataInSerial[4]] = Kx[GatewayLink.DataInSerial[4]] / 100;
+              SetPIDKx();
+              break;
+            }
+          case setInput:
+            Serial.print(" input:");
+            Serial.println(GatewayLink.DataInSerial[4]);
+            if (GatewayLink.DataInSerial[4] >= 0 && GatewayLink.DataInSerial[4] < sizeOfOutlim)
+            {
+              outLimit[GatewayLink.DataInSerial[4]] = GatewayLink.DataInSerial[5];
+              leftPID.SetOutputLimits(outLimit[leftMinOut], outLimit[leftMaxOut]);
+              rightPID.SetOutputLimits(outLimit[rightMinOut], outLimit[rightMaxOut]);
+              break;
+            }
+          case setSetpoint:
+            Serial.print(" setLeftSetpoint:");
+            Serial.println(GatewayLink.DataInSerial[4]);
+            if (GatewayLink.DataInSerial[4] == 0)
+            {
+              leftSetpoint = (GatewayLink.DataInSerial[5] & 0b01111111) * 256 + GatewayLink.DataInSerial[6];
+            }
+            if (GatewayLink.DataInSerial[4] == 1)
+            {
+              rightSetpoint = (GatewayLink.DataInSerial[5] & 0b01111111) * 256 + GatewayLink.DataInSerial[6];
+            }
+            break;
+
+        }
+        SendPID();
+        break;
       }
     default:
       Serial.print("commande recue: ");

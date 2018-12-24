@@ -24,10 +24,13 @@
    v4.2 optimize rotation for north alignement and debug echoMinFB
    v4.3 last action retcode replace locprob in status frame
    v4.4 modif input rotate gyro
+   v4.5 new WheelControl with delayMaxBetweenHoles
+   v5.0 motors drived with PID
+   v5.1 start tunning PID
 */
 
 //  Version
-uint8_t ver[2] = {4, 4};
+uint8_t ver[2] = {5, 1};
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -37,6 +40,7 @@ uint8_t ver[2] = {4, 4};
 //#define debugMagnetoOn true
 //#define debugNorthAlign true
 //#define debugMotorsOn true
+//#define debugPID true
 //#define debugWheelControlOn true
 //#define wheelEncoderDebugOn true
 //#define debugConnection true
@@ -103,7 +107,7 @@ float coeffGlissementRotation = 1.;
 #define hornPin 49           // to activate horn
 
 //-- power control --
-int uRefMotorVoltage = 1200; // mVolt for maxRPM
+int uRefMotorVoltage = 1200; // mVolt for maxRPS
 //#define power1Pin 53  // power 1 servomoteur
 #define power1Value A13  // 9v power input arduino mega
 #define power2Value A14  // 5v power input esp8266
@@ -143,22 +147,26 @@ boolean newPowerCycle = true;  // new mesurment cycle each time data are sent to
 unsigned int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revolutions per minute for left motor)
 unsigned int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
 //float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
-unsigned int leftMotorPWM = 230;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
-float SlowPWMRatio = 0.70;              // PWM ratio for a low speed move
+unsigned int leftMotorPWM = 255;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
+float SlowPWMRatio = 0.80;              // PWM ratio for a low speed move
 #define iLeftSlowPWM leftMotorPWM * SlowPWMRatio        // PMW value to slowdown motor at the end of the run
-#define leftRotatePWMRatio 0.9    // 
+#define leftRotatePWMRatio 1.0    // 
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPWM); // define left Motor
-unsigned int rightMotorPWM = 210;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
+unsigned int rightMotorPWM = 230;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define iRightSlowPWM rightMotorPWM * SlowPWMRatio  // PMW value to slowdown motor at the end of the run
 //#define iRightRotatePWM 170   // PMW value
 #define rightRotatePWMRatio 0.9    // 
 #define pendingRightMotor 1    // define pendingAction bit used for right motor
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPWM); // define right Motor
 float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
-int pulseLenght = 5; // pulse duration
+int pulseLenght = 15; // pulse duration
 #define slowMoveHolesDuration 12     // target distance expressed in term of numbers of holes under that slow move is required
 //-- wheel control --
+#define maxRPS 1.75 // loaded
+#define minRPS 0.8
+#define optimalHighStraightSpeed 170
+#define optimalLowStraightSpeed 130
 #define wheelPinInterrupt 3    // used by sotfware interrupt when rotation reach threshold
 #define leftAnalogEncoderInput A8   // analog input left encoder
 #define rightAnalogEncoderInput A7  // analog input right encoder
@@ -193,19 +201,21 @@ boolean pbSynchro = false;
   unsigned int rightIncoderHighValue = 610; // define value above that signal is high
   unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
 */
-unsigned int leftIncoderHighValue = 800;  // define value mV above that signal is high
-unsigned int leftIncoderLowValue = 200;  // define value mV below that signal is low
+unsigned int leftIncoderHighValue = 750;  // define value mV above that signal is high
+unsigned int leftIncoderLowValue = 300;  // define value mV below that signal is low
 // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
 unsigned int rightIncoderHighValue = 800; // define value mV above that signal is high
-unsigned int rightIncoderLowValue = 200;  // define value mV below that signal is low
+unsigned int rightIncoderLowValue = 280;  // define value mV below that signal is low
 //#define delayBetweenEncoderAnalogRead  750 //  micro second between analog read of wheel encoder level
-#define delayMiniBetweenHoles  20  //  delay millis second between 2 encoder holes at the maximum speed  (35)
+//#define delayMiniBetweenHoles  20  //  delay millis second between 2 encoder holes at the maximum speed  (35)
+#define delayMiniBetweenHoles  (1000/(maxRPS*leftWheelEncoderHoles))*0.9  //  delay millis second between 2 encoder holes at the maximum speed  
+#define delayMaxBetweenHoles  (1000/(minRPS*leftWheelEncoderHoles))*1.05  //  delay millis second between 2 encoder holes at the minimum speed  
 // create wheel control object
 WheelControl Wheels(leftWheelEncoderHoles, leftIncoderHighValue, leftIncoderLowValue, leftAnalogEncoderInput,
                     rightWheelEncoderHoles, rightIncoderHighValue , rightIncoderLowValue, rightAnalogEncoderInput,
                     0, 0, 0, 0,
                     0, 0, 0, 0,
-                    wheelPinInterrupt, delayMiniBetweenHoles);
+                    wheelPinInterrupt, delayMiniBetweenHoles, delayMaxBetweenHoles);
 boolean encodersToStop = false;   // flag used to delay stopping encoders after stopping motors
 //-- move control --
 # define bForward  true; //Used to drive traction chain forward
@@ -213,6 +223,32 @@ boolean bLeftClockwise = !bForward; //Need to turn counter-clockwise on left mot
 boolean bRightClockwise = bForward; //Need to turn clockwise on left motor to get forward
 unsigned long iLeftCentiRevolutions;  // nmuber of done revolutions * 100
 unsigned long iRightCentiRevolutions; // nmuber of done revolutions * 100
+/*
+   PID
+*/
+#include <PID_v1.h>
+#define KpRegister 0
+#define KiRegister 1
+#define KdRegister 2
+#define sizeOfKx 3
+double Kx[sizeOfKx] = {0.45, 0.70, 0.01};  // {Ki,Kp,Kd}
+#define leftMinOut 0
+#define rightMinOut 1
+#define leftMaxOut 2
+#define rightMaxOut 3
+#define leftStartOut 4
+#define rightStartOut 5
+boolean PIDMode = false;
+#define sizeOfOutlim 6
+int outLimit[sizeOfOutlim] = {35, 30, 255, 245, 105, 100}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut}
+double leftSetpoint = optimalHighStraightSpeed; // default speed average min max expressed in RPM/100
+//double leftSetpoint = minRPS*100; // default speed average min max expressed in RPM/100
+double leftInput, leftOutput;
+double rightSetpoint = leftSetpoint;
+//double rightSetpoint = maxRPS*100;
+double rightInput, rightOutput;
+PID leftPID(&leftInput, &leftOutput, &leftSetpoint, Kx[KpRegister], Kx[KiRegister], Kx[KdRegister], DIRECT);
+PID rightPID(&rightInput, &rightOutput, &rightSetpoint, Kx[KpRegister], Kx[KiRegister], Kx[KdRegister], DIRECT);
 /*
    toDo bit definitions
 */
@@ -445,6 +481,7 @@ unsigned long lastUpdateBNOMoveTime;    // used to update BNO with robot move
 unsigned long lowHighSpeedTimer;       // delat time between change speed of wheels
 unsigned long timePassMonitorStarted;
 unsigned long timeTraceDataSent;
+unsigned long timePID;
 #define wheelCheckMoveDelay 1500
 #define wheelCheckRotateDelay 3000
 int wheelCheckDelay = wheelCheckMoveDelay;
@@ -582,7 +619,8 @@ void setup() {
   //compass.enableDefault();
   //#endif
   Serial.println("I2C ready");
-
+  // turn PID on
+  TurnPIDOn();
   /*
     compass.m_min = (LSM303::vector<int16_t>) {   // compass calibration
     -3076, -3378, -2796
@@ -618,7 +656,10 @@ void loop() {
   }
 #endif
   CheckEndOfReboot();                      // check for reboot completion
-
+  if (PIDMode && millis() >= timePID + (delayMiniBetweenHoles / 3))
+  {
+    ComputePID();
+  }
   if (toDo == 0x00 && toDoDetail == 0x00 && pendingAction == 0x00)
   {
     digitalWrite(toDoLed, LOW);
@@ -1548,9 +1589,32 @@ void startMotors()
     attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
     //  delay(15);
     Wheels.StartWheelControl(true, true, iLeftCentiRevolutions , true, true, iRightCentiRevolutions , false, false, 0, false, false, 0);
-    rightMotor.RunMotor(bRightClockwise,  iRightRevSpeed);
-    leftMotor.RunMotor(bLeftClockwise,  iLeftRevSpeed);
+    //  int iLeftRevPWM = outLimit[leftStartOut];
+    //  int iRightRevPWM = outLimit[rightStartOut];
+    float LeftRightRatio = (leftSetpoint / rightSetpoint);
+    double startLeftPWM = outLimit[leftStartOut] * LeftRightRatio;
+    if (startLeftPWM <= outLimit[leftMinOut])
+    {
+      startLeftPWM = outLimit[leftMinOut];
+    }
+    else if (startLeftPWM >= outLimit[leftMaxOut])
+    {
+      startLeftPWM = outLimit[leftMaxOut];
+    }
+    double startRightPWM = outLimit[rightStartOut] * LeftRightRatio;
+    if (startRightPWM < outLimit[rightMinOut])
+    {
+      startRightPWM = outLimit[rightMinOut];
+    }
+    else if (startRightPWM > outLimit[rightMaxOut])
+    {
+      startRightPWM = outLimit[rightMaxOut];
+    }
+    rightMotor.RunMotor(bRightClockwise,  startRightPWM);
+    leftMotor.RunMotor(bLeftClockwise,  startLeftPWM);
     timeMotorStarted = millis();
+    PIDMode = true;
+    ComputePID();
   }
 }
 
@@ -1631,9 +1695,11 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int l
 
 void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at the same pace
 {
-
+  boolean equalSpeed = (leftSetpoint == rightSetpoint);
   unsigned int currentLeftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
   unsigned int currentRightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
+
+
 
   float deltaMove = abs(currentLeftHoles - currentRightHoles);
   bitWrite(diagMotor, diagMotorPbSynchro, 0);       // position bit diagMotor
@@ -1649,7 +1715,9 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
   Serial.print(" prevright: ");
   Serial.print(prevCheckRightHoles);
   Serial.print(" currentright: ");
-  Serial.println(currentRightHoles);
+  Serial.print(currentRightHoles);
+  Serial.print( " equalSpeed:");
+  Serial.println(equalSpeed);
 #endif
   if (bitRead(toDo, toDoRotation) || bitRead(toDo, toDoAlign))
   {
@@ -1680,7 +1748,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
       bitWrite(diagMotor, diagMotorPbRight, 1);       // position bit diagMotor
     }
   }
-  if ( (deltaMove > 3 && deltaMove / float(currentLeftHoles)   > 0.15)  )
+  if ( equalSpeed && (deltaMove > 3 && deltaMove / float(currentLeftHoles)   > 0.15)  )
   {
 #if defined(debugMotorsOn)
     Serial.println("pb delta");
@@ -1692,10 +1760,7 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
 #if defined(debugMotorsOn)
     Serial.println("stop wheels ");
 #endif
-    leftMotor.StopMotor();
-    rightMotor.StopMotor();
-    timeMotorStarted = 0;
-    delay(100);
+    StopMotors();
     Horn(true, 750);
 
     /*
@@ -2051,9 +2116,7 @@ void AffLed()
 
 void StopAll()
 {
-  leftMotor.StopMotor();
-  rightMotor.StopMotor();
-  timeMotorStarted = 0;
+  StopMotors();
   myservo.detach();
   StopEchoInterrupt();
   Wheels.StopWheelControl(true, true, 0, 0);
@@ -2181,9 +2244,7 @@ void CheckNoMoreObstacle()              // check if obstacle still close to the 
 
 void PauseMove()                  //
 {
-  leftMotor.StopMotor();
-  rightMotor.StopMotor();
-  timeMotorStarted = 0;
+  StopMotors();
   pauseDirectionBackward = bitRead(toDo, toDoBackward);
   //  unsigned int currentLeftWheelThreshold = Wheels.GetWheelThreshold(leftWheelId);
   //  unsigned int currentRightWheelThreshold = Wheels.GetWheelThreshold(rightWheelId);
@@ -2497,6 +2558,7 @@ void WheelInterrupt()   // wheel controler set a software interruption due to th
 
 void WheelThresholdReached( uint8_t wheelId)
 {
+  boolean equalSpeed = (leftSetpoint == rightSetpoint);
   if (wheelId != 5)
   {
     if (wheelId == leftWheelId && bSpeedHigh[wheelId])
@@ -2504,7 +2566,10 @@ void WheelThresholdReached( uint8_t wheelId)
       digitalWrite(wheelPinInterrupt, LOW);
       attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
       bSpeedHigh[wheelId] = false;
-      leftMotor.AdjustMotorPWM(leftMotorPWM * SlowPWMRatio);
+      if (equalSpeed)
+      {
+        leftMotor.AdjustMotorPWM(optimalLowStraightSpeed);
+      }
       Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
       lowHighSpeedTimer = millis();
       return;
@@ -2514,7 +2579,10 @@ void WheelThresholdReached( uint8_t wheelId)
       digitalWrite(wheelPinInterrupt, LOW);
       attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
       bSpeedHigh[wheelId] = false;
-      rightMotor.AdjustMotorPWM(rightMotorPWM * SlowPWMRatio);
+      if (equalSpeed)
+      {
+        rightMotor.AdjustMotorPWM(optimalLowStraightSpeed);
+      }
       Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
       lowHighSpeedTimer = millis();
       return;
@@ -2522,12 +2590,12 @@ void WheelThresholdReached( uint8_t wheelId)
     if (wheelId == leftWheelId)
     {
       leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
-      rightMotor.StopMotor();                            // stop the other motor to avoid to turn round
+      StopMotors();
     }
     else
     {
       rightMotor.StopMotor();                         // stop firstly the motor that reached the threshold
-      leftMotor.StopMotor();                          // stop the other motor to avoid to turn round
+      StopMotors();
     }
 
     timeMotorStarted = 0;
@@ -2584,9 +2652,7 @@ void WheelThresholdReached( uint8_t wheelId)
   }
   else                      // wheel mode pulse
   {
-    leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
-    rightMotor.StopMotor();                            // stop the other motor to avoid to turn round
-    timeMotorStarted = 0;
+    StopMotors();
     //  GyroGetHeadingRegisters();
   }
 
@@ -2750,16 +2816,6 @@ void StopEncoders()
   }
 
 }
-/*
-  if ( bitRead(waitFlag, toWait) == 0 && actStat == moving)           // no more move to do
-  {
-  actStat = moveEnded;                                      // status move completed
-  toDo = 0x00;                                         // clear flag todo
-  SendEndAction(moveEnded);
-  }
-*/
-
-
 
 
 void CalibrateWheels()           // calibrate encoder levels and leftToRightDynamicAdjustRatio according to mesurments
@@ -4264,5 +4320,13 @@ int OptimizeNorthAlign(int currentNO, int targetNO)
     rotation = rotation - northAlignPrecision / 2;
   }
   return rotation;
+}
+void StopMotors()
+{
+  leftMotor.StopMotor();
+  rightMotor.StopMotor();
+  timeMotorStarted = 0;
+  PIDMode = false;
+  delay(100);
 }
 

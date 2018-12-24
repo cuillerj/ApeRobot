@@ -563,3 +563,37 @@ void SendVersion()
 
   GatewayLink.PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gateway
 }
+void SendPID()
+{
+  GatewayLink.PendingReqSerial = PendingReqRefSerial;
+  GatewayLink.PendingDataReqSerial[0] = respPID; //
+  int work = leftPID.GetKp() * 100;
+  GatewayLink.PendingDataReqSerial[1] = uint8_t(work  / 256); //
+  GatewayLink.PendingDataReqSerial[2] = uint8_t(work);
+  GatewayLink.PendingDataReqSerial[3] = 0x00;
+  work = leftPID.GetKi() * 100;
+  GatewayLink.PendingDataReqSerial[4] = uint8_t(work  / 256); //
+  GatewayLink.PendingDataReqSerial[5] = uint8_t(work);
+  GatewayLink.PendingDataReqSerial[6] = 0x00;
+  work = leftPID.GetKd() * 100;
+  GatewayLink.PendingDataReqSerial[7] = uint8_t(work  / 256); //
+  GatewayLink.PendingDataReqSerial[8] = uint8_t(work );
+  GatewayLink.PendingDataReqSerial[9] = 0x00;
+  GatewayLink.PendingDataReqSerial[10] = uint8_t(outLimit[leftMinOut]);
+  GatewayLink.PendingDataReqSerial[11] = uint8_t(outLimit[rightMinOut]);
+  GatewayLink.PendingDataReqSerial[12] = 0x00;
+  GatewayLink.PendingDataReqSerial[13] = uint8_t(outLimit[leftMaxOut]);
+  GatewayLink.PendingDataReqSerial[14] = uint8_t(outLimit[rightMaxOut]);
+  GatewayLink.PendingDataReqSerial[15] = 0x00;
+  GatewayLink.PendingDataReqSerial[16] = uint8_t(outLimit[leftStartOut]);
+  GatewayLink.PendingDataReqSerial[17] = uint8_t(outLimit[rightStartOut]);
+  GatewayLink.PendingDataReqSerial[18] = 0x00;
+  int setPoint = (int) leftSetpoint;
+  GatewayLink.PendingDataReqSerial[19] = uint8_t(setPoint / 256);
+  GatewayLink.PendingDataReqSerial[20] = uint8_t(setPoint);
+  GatewayLink.PendingDataReqSerial[21] = 0x00;
+  setPoint = (int) rightSetpoint;
+  GatewayLink.PendingDataReqSerial[22] = uint8_t(setPoint / 256);
+  GatewayLink.PendingDataReqSerial[23] = uint8_t(setPoint);
+  GatewayLink.PendingDataLenSerial = 0x18; // 6 longueur mini max 25  pour la gateway
+}
