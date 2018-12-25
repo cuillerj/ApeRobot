@@ -165,13 +165,14 @@ int pulseLenght = 15; // pulse duration
 //-- wheel control --
 #define maxRPS 1.75 // loaded
 #define minRPS 0.8
-#define optimalHighStraightSpeed 170
+#define optimalHighStraightSpeed 165
 #define optimalLowStraightSpeed 130
 #define wheelPinInterrupt 3    // used by sotfware interrupt when rotation reach threshold
 #define leftAnalogEncoderInput A8   // analog input left encoder
 #define rightAnalogEncoderInput A7  // analog input right encoder
 #define leftWheelId 0          // to identify left wheel Id 
 #define rightWheelId 1         // to identify right wheel Id
+boolean endMoveSlowdown = false;
 unsigned int iLeftRevSpeed;              // instant left wheel speed
 unsigned int iRightRevSpeed;             // instant right wheel speed
 #define sizeOfLeftRev 8 // size of the array containing latest revolution wheel speed
@@ -201,8 +202,8 @@ boolean pbSynchro = false;
   unsigned int rightIncoderHighValue = 610; // define value above that signal is high
   unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
 */
-unsigned int leftIncoderHighValue = 750;  // define value mV above that signal is high
-unsigned int leftIncoderLowValue = 300;  // define value mV below that signal is low
+unsigned int leftIncoderHighValue = 800;  // define value mV above that signal is high
+unsigned int leftIncoderLowValue = 265;  // define value mV below that signal is low
 // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
 unsigned int rightIncoderHighValue = 800; // define value mV above that signal is high
 unsigned int rightIncoderLowValue = 280;  // define value mV below that signal is low
@@ -231,7 +232,7 @@ unsigned long iRightCentiRevolutions; // nmuber of done revolutions * 100
 #define KiRegister 1
 #define KdRegister 2
 #define sizeOfKx 3
-double Kx[sizeOfKx] = {0.45, 0.70, 0.01};  // {Ki,Kp,Kd}
+double Kx[sizeOfKx] = {0.45, 0.80, 0.12};  // {Ki,Kp,Kd}
 #define leftMinOut 0
 #define rightMinOut 1
 #define leftMaxOut 2
@@ -240,7 +241,7 @@ double Kx[sizeOfKx] = {0.45, 0.70, 0.01};  // {Ki,Kp,Kd}
 #define rightStartOut 5
 boolean PIDMode = false;
 #define sizeOfOutlim 6
-int outLimit[sizeOfOutlim] = {35, 30, 255, 245, 105, 100}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut}
+int outLimit[sizeOfOutlim] = {50, 35, 255, 245, 105, 100}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut}
 double leftSetpoint = optimalHighStraightSpeed; // default speed average min max expressed in RPM/100
 //double leftSetpoint = minRPS*100; // default speed average min max expressed in RPM/100
 double leftInput, leftOutput;
@@ -1615,6 +1616,7 @@ void startMotors()
     timeMotorStarted = millis();
     PIDMode = true;
     ComputePID();
+    Horn(true, 100);
   }
 }
 
@@ -1687,8 +1689,11 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int l
     iRightRevSpeed = rightMotorPWM * leftToRightDynamicAdjustRatio ; // revolutions per minute
     bSpeedHigh[leftWheelId] = true;
     bSpeedHigh[rightWheelId] = true;
-    iLeftCentiRevolutions = iLeftCentiRevolutions - slowMoveHolesDuration;
-    iRightCentiRevolutions = iRightCentiRevolutions - slowMoveHolesDuration;
+    if (endMoveSlowdown) {
+      iLeftCentiRevolutions = iLeftCentiRevolutions - slowMoveHolesDuration;
+      iRightCentiRevolutions = iRightCentiRevolutions - slowMoveHolesDuration;
+    }
+
   }
 
 }
@@ -2561,32 +2566,35 @@ void WheelThresholdReached( uint8_t wheelId)
   boolean equalSpeed = (leftSetpoint == rightSetpoint);
   if (wheelId != 5)
   {
-    if (wheelId == leftWheelId && bSpeedHigh[wheelId])
-    {
-      digitalWrite(wheelPinInterrupt, LOW);
-      attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
-      bSpeedHigh[wheelId] = false;
-      if (equalSpeed)
+    if (endMoveSlowdown) {
+      if (wheelId == leftWheelId && bSpeedHigh[wheelId])
       {
-        leftMotor.AdjustMotorPWM(optimalLowStraightSpeed);
+        digitalWrite(wheelPinInterrupt, LOW);
+        attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+        bSpeedHigh[wheelId] = false;
+        if (equalSpeed)
+        {
+          leftMotor.AdjustMotorPWM(optimalLowStraightSpeed);
+        }
+        Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
+        lowHighSpeedTimer = millis();
+        return;
       }
-      Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
-      lowHighSpeedTimer = millis();
-      return;
-    }
-    if (wheelId == rightWheelId && bSpeedHigh[wheelId])
-    {
-      digitalWrite(wheelPinInterrupt, LOW);
-      attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
-      bSpeedHigh[wheelId] = false;
-      if (equalSpeed)
+      if (wheelId == rightWheelId && bSpeedHigh[wheelId])
       {
-        rightMotor.AdjustMotorPWM(optimalLowStraightSpeed);
+        digitalWrite(wheelPinInterrupt, LOW);
+        attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+        bSpeedHigh[wheelId] = false;
+        if (equalSpeed)
+        {
+          rightMotor.AdjustMotorPWM(optimalLowStraightSpeed);
+        }
+        Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
+        lowHighSpeedTimer = millis();
+        return;
       }
-      Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
-      lowHighSpeedTimer = millis();
-      return;
     }
+
     if (wheelId == leftWheelId)
     {
       leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
@@ -2655,7 +2663,7 @@ void WheelThresholdReached( uint8_t wheelId)
     StopMotors();
     //  GyroGetHeadingRegisters();
   }
-
+  Horn(true, 100);
 }
 void StopEncoders()
 {
