@@ -160,12 +160,12 @@ unsigned int rightMotorPWM = 230;      // default expected robot PMW  must be < 
 #define pendingRightMotor 1    // define pendingAction bit used for right motor
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPWM); // define right Motor
 float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
-int pulseLenght = 15; // pulse duration
+int pulseLenght = 8; // pulse duration
 #define slowMoveHolesDuration 12     // target distance expressed in term of numbers of holes under that slow move is required
 //-- wheel control --
-#define maxRPS 1.75 // loaded
-#define minRPS 0.8
-#define optimalHighStraightSpeed 165
+#define maxRPS 1.65 // loaded
+#define minRPS 1.10
+#define optimalHighStraightSpeed 160
 #define optimalLowStraightSpeed 130
 #define wheelPinInterrupt 3    // used by sotfware interrupt when rotation reach threshold
 #define leftAnalogEncoderInput A8   // analog input left encoder
@@ -202,11 +202,11 @@ boolean pbSynchro = false;
   unsigned int rightIncoderHighValue = 610; // define value above that signal is high
   unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
 */
-unsigned int leftIncoderHighValue = 800;  // define value mV above that signal is high
-unsigned int leftIncoderLowValue = 265;  // define value mV below that signal is low
+unsigned int leftIncoderHighValue = 850;  // define value mV above that signal is high
+unsigned int leftIncoderLowValue = 150;  // define value mV below that signal is low
 // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
-unsigned int rightIncoderHighValue = 800; // define value mV above that signal is high
-unsigned int rightIncoderLowValue = 280;  // define value mV below that signal is low
+unsigned int rightIncoderHighValue = 850; // define value mV above that signal is high
+unsigned int rightIncoderLowValue = 150;  // define value mV below that signal is low
 //#define delayBetweenEncoderAnalogRead  750 //  micro second between analog read of wheel encoder level
 //#define delayMiniBetweenHoles  20  //  delay millis second between 2 encoder holes at the maximum speed  (35)
 #define delayMiniBetweenHoles  (1000/(maxRPS*leftWheelEncoderHoles))*0.9  //  delay millis second between 2 encoder holes at the maximum speed  
@@ -241,7 +241,7 @@ double Kx[sizeOfKx] = {0.45, 0.80, 0.12};  // {Ki,Kp,Kd}
 #define rightStartOut 5
 boolean PIDMode = false;
 #define sizeOfOutlim 6
-int outLimit[sizeOfOutlim] = {50, 35, 255, 245, 105, 100}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut}
+int outLimit[sizeOfOutlim] = {35, 35, 255, 245, 105, 100}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut}
 double leftSetpoint = optimalHighStraightSpeed; // default speed average min max expressed in RPM/100
 //double leftSetpoint = minRPS*100; // default speed average min max expressed in RPM/100
 double leftInput, leftOutput;
@@ -1221,6 +1221,8 @@ void Move(int orientation, int lenghtToDo)
 
 void Rotate( int orientation, boolean check) {
   wheelCheckDelay = wheelCheckRotateDelay;
+  leftSetpoint = optimalLowStraightSpeed;
+  rightSetpoint = leftSetpoint;
   if ( bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false );
   {
     boolean availableRotation = true;
@@ -1280,6 +1282,8 @@ void Rotate( int orientation, boolean check) {
 void MoveForward(int lengthToDo ) {
   //  GyroGetHeadingRegisters();
   delay(10);
+  leftSetpoint = optimalHighStraightSpeed;
+  rightSetpoint = leftSetpoint;
   wheelCheckDelay = wheelCheckMoveDelay;
   //  NOBeforeMoving = NorthOrientation();
   bitWrite(toDo, toDoStraight, false);       // position bit toDo move
