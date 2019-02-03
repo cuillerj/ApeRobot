@@ -946,7 +946,7 @@ void loop() {
       Serial.print("end of pause due to timer:");
       Serial.println((millis() - pauseSince));
 #endif
-      InterruptMove(moveKoDueToObstacle);
+      InterruptMove(moveEnded, moveKoDueToObstacle);
     }
     // *** end of loop checking obstacles
 
@@ -1797,10 +1797,10 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
     }
     if (pbSynchro)
     {
-      InterruptMove(moveWheelSpeedInconsistancy);
+      InterruptMove(moveEnded, moveWheelSpeedInconsistancy);
     }
     else {
-      InterruptMove(moveKoDueToWheelStopped);
+      InterruptMove(moveEnded, moveKoDueToWheelStopped);
     }
 
 #if defined(debugMotorsOn)
@@ -2379,7 +2379,7 @@ void ResumeMove()  // no more obstacle resume moving
   {
     actStat = moveEnded;                                      // status move completed
     toDo = 0x00;                                         // clear flag todo
-    InterruptMove(moveUnderLimitation);
+    InterruptMove(moveEnded, moveUnderLimitation);
     //  SendEndAction(moveEnded, moveUnderLimitation);                       //
   }
   SendStatus();
@@ -2994,12 +2994,13 @@ void northAlign()
 #if defined(debugNorthAlign)
       Serial.println("not possible:");
 #endif
+      InterruptMove(alignEnded, moveKoDueToNotEnoughSpace);
       actStat = alignEnded; // align required
       northAligned = false;
       bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
       bitWrite(toDoDetail, toDoAlignRotate, 0);
       bitWrite(toDoDetail, toDoGyroRotation, 0);
-      SendEndAction(alignEnded, moveKoDueToNotEnoughSpace);
+      //   SendEndAction(alignEnded, moveKoDueToNotEnoughSpace);
       StopMagneto();
       return;
     }
@@ -3689,7 +3690,7 @@ int * MinEchoFB(int fromPosition, int rotation)
 
   return MinFB;
 }
-void InterruptMove(uint8_t retCode)
+void InterruptMove(uint8_t action, uint8_t retCode)
 {
   bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
   bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo straight
@@ -3704,7 +3705,8 @@ void InterruptMove(uint8_t retCode)
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
   resumeCount = 0;                      // clear count
   toDo = 0x00;                                         // clear flag todo
-  actStat = moveEnded;                                      // status move completed
+  //actStat = moveEnded;                                      // status move completed
+  actStat = action;                                      // status move completed
   if (passMonitorStepID != passMonitorIddle)
   {
     //    passInterruptBy = 0x02;
@@ -3712,7 +3714,7 @@ void InterruptMove(uint8_t retCode)
     passRetCode = retCode;
   }
   else {
-    SendEndAction(moveEnded, retCode);                       // move not completed due to obstacle
+    SendEndAction(actStat, retCode);                       // move not completed due to obstacle
   }
 }
 /*

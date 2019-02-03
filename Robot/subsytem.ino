@@ -267,6 +267,12 @@ void InitBNOLocation()
 #if defined(debugGyroscopeOn)
   Serial.print("InitBNOLocation:");
   Serial.println(stepBNOInitLocation, HEX);
+  Serial.print("X:");
+  Serial.print(uInitX);
+  Serial.print(" Y:");
+  Serial.print(uInitY);
+  Serial.print(" H:");
+  Serial.println(uAlpha);
 #endif
   switch (stepBNOInitLocation)
   {
