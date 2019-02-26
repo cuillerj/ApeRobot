@@ -318,7 +318,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         reqMove = GatewayLink.DataInSerial[7] * 256 + GatewayLink.DataInSerial[8];
         if ((abs(reqMove) > 0 && abs(reqMove) < minDistToBeDone) || (abs(reqAng) < 0 && abs(reqAng) < minRotToBeDone))
         {
-          SendEndAction(moveEnded, moveUnderLimitation);
+          EndMoveUpdate(moveEnded, moveUnderLimitation);
           break;
         }
         getBNOLocation = 0xff;
@@ -359,7 +359,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
       else
       {
-        SendEndAction(moveEnded, requestRejected);
+        EndMoveUpdate(moveEnded, requestRejected);
         break;
       }
       break;
@@ -395,12 +395,12 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           }
           if (reqMove / passDistance < 0)      // must have  the same sign
           {
-            SendEndAction(moveAcrossPassEnded, requestRejected);
+            EndMoveUpdate(moveAcrossPassEnded, requestRejected);
             break;
           }
           if (max(abs(passDistance), abs(reqMove)) < minDistToBeDone )
           {
-            SendEndAction(moveAcrossPassEnded, moveUnderLimitation);
+            EndMoveUpdate(moveAcrossPassEnded, moveUnderLimitation);
             break;
           }
           echoToGet = (GatewayLink.DataInSerial[13] & 0b01111111) * 256 + GatewayLink.DataInSerial[14];
@@ -436,11 +436,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
             bitWrite(toDo, toDoStraight, true);
             bitWrite(toDo, toDoBackward, true);  // to go backward
           }
-
+          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
         }
         else
         {
-          SendEndAction(moveAcrossPassEnded, requestRejected);
+          EndMoveUpdate(moveAcrossPassEnded, requestRejected);
           break;
         }
         break;
@@ -451,14 +451,14 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         int reqN = ((GatewayLink.DataInSerial[3] & 0b01111111) * 256 + GatewayLink.DataInSerial[4]) % 360;
         if (reqN == 0 )
         {
-          SendEndAction(moveEnded, 0x00);
+          EndMoveUpdate(moveEnded, 0x00);
           break;
         }
         if (bitRead(toDoDetail, toDoGyroRotation) == 0)   // no pending rotation
         {
           if (abs(reqN) < minRotGyroAbility )
           {
-            SendEndAction(moveEnded, moveUnderLimitation);
+            EndMoveUpdate(moveEnded, moveUnderLimitation);
             break;
           }
           iddleTimer = millis();
@@ -499,7 +499,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         }
         else
         {
-          SendEndAction(moveEnded, requestRejected);
+          EndMoveUpdate(moveEnded, requestRejected);
           break;
         }
         SendStatus();

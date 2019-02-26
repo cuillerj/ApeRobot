@@ -9,8 +9,15 @@ void setup() {
 void loop() {
   Serial.print("left:");
   Serial.print(float(map(analogRead(leftAnalogEncoderInput), 0, 1023, 0, 500)) / 100);
-  Serial.print(" right:"); 
+  Serial.print(" right:");
   Serial.print(float(map(analogRead(rightAnalogEncoderInput), 0, 1023, 0, 500)) / 100);
   Serial.println(" volt");
+  digitalWrite(powerSwitchPIN, 0);
   delay(1000);
+  digitalWrite(powerSwitchPIN, 1);
+  Serial.print("left2:");
+  Serial.print(float(map(analogRead(leftAnalogEncoderInput), 0, 1023, 0, 500)) / 100);
+  Serial.print(" right2:");
+  Serial.print(float(map(analogRead(rightAnalogEncoderInput), 0, 1023, 0, 500)) / 100);
+  Serial.println(" volt");
 }

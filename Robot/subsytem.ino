@@ -523,6 +523,7 @@ void receiveEvent(int howMany) {
                     {
                       getBNOLocation--;
                     }
+                    
 #if defined(debugGyroscopeOn)
                     Serial.print("BNO Left position X:");
                     Serial.print(BNOLeftPosX );

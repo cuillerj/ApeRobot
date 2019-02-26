@@ -12,9 +12,10 @@ void SendEndAction(uint8_t action, uint8_t retCode)
 
 #endif
   lastActionRetcode = retCode;
-  if (action == moveEnded)
+  if (action == moveEnded || action == moveAcrossPassEnded)
   {
-    getBNOLocation = 0x07;                // to resquest BNO computed location
+    GyroStopInitMonitor();
+    digitalWrite(encoderPower, LOW);
   }
   sendInfoSwitch = 1;        // for sending status priority
   timeSendInfo = millis(); // for delaying the next automatic send
@@ -469,19 +470,31 @@ void SendNarrowPathMesurments ()
   //  GatewayLink.PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = respNarrowPathMesurments;
-  unsigned int passDist = round(((passTrackLeftHoles[2] - passTrackLeftHoles[0]) + (passTrackRightHoles[2] - passTrackRightHoles[0])) / 2);
-  GatewayLink.PendingDataReqSerial[1] = uint8_t(passDist / 256);
-  GatewayLink.PendingDataReqSerial[2] = uint8_t(passDist);
+  unsigned int passHoles = round((passTrackLeftHoles[0] * leftHoleDistance  +  passTrackRightHoles[0] * rightHoleDistance ) / 2);
+  GatewayLink.PendingDataReqSerial[1] = uint8_t(passHoles / 256);
+  GatewayLink.PendingDataReqSerial[2] = uint8_t(passHoles);
   GatewayLink.PendingDataReqSerial[3] = 0x00;
-  unsigned int passLen = round(((passTrackLeftHoles[3] - passTrackLeftHoles[2] ) + (passTrackRightHoles[3] - passTrackRightHoles[2] )) / 2);
-  GatewayLink.PendingDataReqSerial[4] = uint8_t(passLen / 256);
-  GatewayLink.PendingDataReqSerial[5] = uint8_t(passLen);
+  passHoles = round((passTrackLeftHoles[1] * leftHoleDistance  +  passTrackRightHoles[1] * rightHoleDistance) / 2);
+  GatewayLink.PendingDataReqSerial[4] = uint8_t(passHoles / 256);
+  GatewayLink.PendingDataReqSerial[5] = uint8_t(passHoles);
   GatewayLink.PendingDataReqSerial[6] = 0x00;
-  GatewayLink.PendingDataReqSerial[7] = lastPassMonitorStepID;
-  GatewayLink.PendingDataReqSerial[8] = 0x00;
-  GatewayLink.PendingDataReqSerial[9] = tracePassMonitorStepID;
-  GatewayLink.PendingDataReqSerial[10] = traceInterruptByStepID;
-  GatewayLink.PendingDataLenSerial = 0x0b;                      // data len
+  passHoles = round((passTrackLeftHoles[2] * leftHoleDistance  +  passTrackRightHoles[2] * rightHoleDistance) / 2);
+  GatewayLink.PendingDataReqSerial[7] = uint8_t(passHoles / 256);
+  GatewayLink.PendingDataReqSerial[8] = uint8_t(passHoles);
+  GatewayLink.PendingDataReqSerial[9] = 0x00;
+  passHoles = round((passTrackLeftHoles[3] * leftHoleDistance  +  passTrackRightHoles[3] * rightHoleDistance) / 2);
+  GatewayLink.PendingDataReqSerial[10] = uint8_t(passHoles / 256);
+  GatewayLink.PendingDataReqSerial[11] = uint8_t(passHoles);
+  GatewayLink.PendingDataReqSerial[12] = 0x00;
+  passHoles = round((passTrackLeftHoles[4] * leftHoleDistance  +  passTrackRightHoles[4] * rightHoleDistance) / 2);
+  GatewayLink.PendingDataReqSerial[13] = uint8_t(passHoles / 256);
+  GatewayLink.PendingDataReqSerial[14] = uint8_t(passHoles);
+  GatewayLink.PendingDataReqSerial[15] = 0x00;
+  GatewayLink.PendingDataReqSerial[16] = lastPassMonitorStepID;
+  GatewayLink.PendingDataReqSerial[17] = 0x00;
+  GatewayLink.PendingDataReqSerial[18] = tracePassMonitorStepID;
+  GatewayLink.PendingDataReqSerial[19] = traceInterruptByStepID;
+  GatewayLink.PendingDataLenSerial = 0x14;                      // data len
 }
 void SendNarrowPathEchos ()
 {

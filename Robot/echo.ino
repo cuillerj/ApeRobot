@@ -70,7 +70,7 @@ int PingBack() {
 void PingFrontBack()
 {
   int distFront = PingFront();                          // added 28/09/2016
-  delay(100);                                            // added 24/10/2016
+  delay(delayBetween2Ping);                                            // added 24/10/2016
   int distBack = PingBack();
   SendScanResultSerial (distFront, distBack);
   timePingFB = millis();
@@ -137,7 +137,7 @@ void ScanPosition() {
     //   myservo.detach();
     SetBNOMode(MODE_IMUPLUS);
 
-    SendEndAction(scanEnded, 0x00);
+    EndMoveUpdate(scanEnded, 0x00);
   }
 }
 
@@ -205,24 +205,27 @@ void EchoServoAlign(uint8_t angle, boolean report)   // to align echo servo moto
 }
 void StartEchoPassMonitor(uint8_t stepID, uint8_t echoByte, unsigned int distance, uint8_t action, uint8_t margin)
 {
-  digitalWrite(echoPinInterrupt, HIGH);
-  attachInterrupt(digitalPinToInterrupt(echoPinInterrupt), monitorInterrupt, RISING);
+  //  digitalWrite(echoPinInterruptOut, HIGH);
+
   bitWrite(passMonitorStepID, passMonitorInterruptBit, 0); // clear interrupt flag
   bitWrite(passMonitorStepID, passMonitorRequestBit, 1);
   timePassMonitorStarted = millis();
-  echo.StartDetection(bitRead(echoByte, 0), bitRead(echoByte, 1), false, false, echoMonitorCycleDuration);
+
 #if defined(debugAcrossPathOn)
   Serial.print("start monitor interrupt step:");
   Serial.println(stepID, HEX);
 #endif
-  if (stepID == 0x01)
+  if (stepID == 0x01 || stepID == 0x02)
   {
     echo.SetMonitorOn(bitRead(echoByte, 0), distance, action, bitRead(echoByte, 1), distance, action, false, 0, 0x00, false, 0, 0x00, 0x00, 0, margin );
   }
-  if (stepID == 0x02 || stepID == 0x03 || stepID == 0x04)
+  if (stepID == 0x03 || stepID == 0x04)
   {
     echo.SetMonitorOn(bitRead(echoByte, 0), 0, 0x00, bitRead(echoByte, 1), 0, 0x00, false, 0, 0x00, false, 0, 0x00, action, distance, margin );
   }
+  echo.StartDetection(bitRead(echoByte, 0), bitRead(echoByte, 1), false, false, echoMonitorCycleDuration);
+  attachInterrupt(digitalPinToInterrupt(echoPinInterruptIn), monitorInterrupt, FALLING);
+  delay(10);
 }
 
 /*
