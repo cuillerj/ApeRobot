@@ -150,8 +150,9 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         //        if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
         //        {
         actStat = northAlignRequest;
+        toDoDetail = 0x00;
         bitWrite(toDoDetail, toDoAlignRotate, 1);
-        bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
+        //      bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
         //         northAlignTarget = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
         initNorthAlign((unsigned int)(GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4]));
 #if defined(debugConnection)
@@ -295,12 +296,12 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         break;
       }
     case 0x6d: // commande m means move
-      bitWrite(diagMotor, diagMotorPbSynchro, 0);       // position bit diagMotor
-      bitWrite(diagMotor, diagMotorPbLeft, 0);       // position bit diagMotor
-      bitWrite(diagMotor, diagMotorPbRight, 0);       // position bit diagMotor
-      gyroTargetRotation = 0;                        // clear previous rotation
-      if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0 && !encodersToStop)
+      if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0 && !encodersToStop && !bitRead(pendingAction, pendingRightMotor) && !bitRead(pendingAction, pendingLeftMotor))
       {
+        bitWrite(diagMotor, diagMotorPbSynchro, 0);       // position bit diagMotor
+        bitWrite(diagMotor, diagMotorPbLeft, 0);       // position bit diagMotor
+        bitWrite(diagMotor, diagMotorPbRight, 0);       // position bit diagMotor
+        gyroTargetRotation = 0;                        // clear previous rotation
         toDo = 0x00;
         reqAng = GatewayLink.DataInSerial[4] * 256 + GatewayLink.DataInSerial[5];
 
@@ -328,7 +329,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         appStat = appStat & 0x1f;
         actStat = moving; // moving
         bitWrite(toDo, toDoMove, 1);       // position bit toDo move
-        bitWrite(toDoDetail, toDoMoveAcrossPass, 0);       // position bit toDodetail
+        toDoDetail = 0x00;
+        //     bitWrite(toDoDetail, toDoMoveAcrossPass, 0);       // position bit toDodetail
         if (GatewayLink.DataInSerial[6] == 0x2d) {
           reqMove = -reqMove;
         }
@@ -365,9 +367,9 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case moveAcrossPass: //
       {
-        actStat = moveAcrossPass;
-        if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0)
+        if (appStat != 0xff && bitRead(toDo, toDoMove) == 0 && bitRead(toDo, toDoRotation) == 0 && !bitRead(pendingAction, pendingRightMotor) && !bitRead(pendingAction, pendingLeftMotor))
         {
+          actStat = moveAcrossPass;
           bitWrite(diagMotor, diagMotorPbSynchro, 0);       // position bit diagMotor
           bitWrite(diagMotor, diagMotorPbLeft, 0);       // position bit diagMotor
           bitWrite(diagMotor, diagMotorPbRight, 0);       // position bit diagMotor
@@ -424,6 +426,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           Serial.print(" startToEntryDistance:");
           Serial.println( passStartEntryDistance);
 #endif
+          toDoDetail = 0x00;
           bitWrite(toDoDetail, toDoMoveAcrossPass, true);       // position bit toDo
           bitWrite(toDo, toDoMove, true);
           if (reqMove > 0)
@@ -485,6 +488,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 #endif
           timeGyroRotation = millis();
           gyroTargetRotation = reqN;
+          toDoDetail = 0x00;
           bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
           bitWrite(toDo, toDoRotation, 1);       // position bit toDo
           gyroRotationRetry = 0;
@@ -560,7 +564,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       compasUpToDate = 0x00;
       saveNorthOrientation = 999;
       bitWrite(toDo, toDoAlign, 1);
-      bitWrite(toDoDetail, toDoAlignRotate, 0);
+      toDoDetail = 0x00;
+      //  bitWrite(toDoDetail, toDoAlignRotate, 0);
       bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
       Serial.println("getNorthOrientation");
       sendInfoSwitch = 1;        // for sending status priority

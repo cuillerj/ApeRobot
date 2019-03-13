@@ -151,10 +151,10 @@ void MoveAcrossPath()
         }
         else {
           if (!encodersToStop) {
-            MoveForward(passDistance);
             action = 0x00;
             bitWrite(action, actionUpper, 1);
             StartEchoPassMonitor(passMonitorStepID, echoID, echoToGet , action, 0);
+            MoveForward(passDistance);
           }
         }
         passMonitorStepID++;
@@ -167,11 +167,12 @@ void MoveAcrossPath()
       }
     case 0x12:                                 // looking for path start has been skipped
       {
+        bitWrite(passMonitorStepID, passMonitorInterruptBit, 1); // force interrupt flag
         break;
       }
     case 0x42:                                 // looking for pass entry
       {
-        if (!bitRead(currentMove, toDoStraight))       // is move ended without getting path entry ?
+        if (!bitRead(pendingAction, pendingLeftMotor) || !bitRead(pendingAction, pendingRightMotor))     // is move ended without getting path entry ?
         {
 #if defined(debugAcrossPathOn)
           Serial.println("path entry not found");
@@ -182,7 +183,6 @@ void MoveAcrossPath()
           passInterruptBy = 0x00;                                   // clear move flag
           passRetCode = moveAcrossPathKoDueToNotFindingStart;       // store move across path return code
           InterruptMoveAcrossPath(moveAcrossPathKoDueToNotFindingStart);
-          passMonitorStepID = 0x2e;
           //       timePassMonitorStarted = millis();                        // to wait a little bit to complete location calculation
           //      getBNOLocation = 0x07;                // to resquest BNO computed location
         }
@@ -255,7 +255,7 @@ void MoveAcrossPath()
       }
     case 0x43:             // checking path width
       {
-        if (!bitRead(currentMove, toDoStraight))       // is move ended without getting end of path ?
+        if (!bitRead(pendingAction, pendingLeftMotor) || !bitRead(pendingAction, pendingRightMotor))       // is move ended without getting end of path ?
         {
 #if defined(debugAcrossPathOn)
           Serial.println("path entry not found");
@@ -266,7 +266,6 @@ void MoveAcrossPath()
           passInterruptBy = 0x00;                                   // clear move flag
           passRetCode = moveAcrossPathKoDueToNotFindingEntry;
           InterruptMoveAcrossPath(moveAcrossPathKoDueToNotFindingEntry);
-          passMonitorStepID = 0x2e;
           //        timePassMonitorStarted = millis();
           //      getBNOLocation = 0x07;                // to resquest BNO computed location
         }
@@ -290,17 +289,18 @@ void MoveAcrossPath()
         Serial.println( Wheels.GetCurrentHolesCount(rightWheelId));
 #endif
         passInterruptBy = 0x00;
-        uint8_t distF = echo.GetPrevDistance(eFront);
-        uint8_t distB = echo.GetPrevDistance(eBack);
+        uint8_t distR = echo.GetPrevDistance(eFront);
+        uint8_t distL = echo.GetPrevDistance(eBack);
         StopMonitorInterrupt();
+
         passTrackNumber = 0;
-        passTrack1[passTrackNumber] = distF;
-        passTrack1[passTrackNumber + 1] = distB;
+        passTrack1[passTrackNumber] = distR;
+        passTrack1[passTrackNumber + 1] = distL;
         passTrackNumber = passTrackNumber + 2;
 #if defined(debugAcrossPathOn)
-        Serial.print("keep track1 F: ");
+        Serial.print("keep track1 R: ");
         Serial.print(distF);
-        Serial.print(" B: ");
+        Serial.print(" L: ");
         Serial.print(distB);
         Serial.print(" - ");
         Serial.println(passTrackNumber);
@@ -308,10 +308,23 @@ void MoveAcrossPath()
 
         passMonitorStepID = passMonitorStepID & 0x0f;
         passMonitorStepID++;
-
         passTrackLeftHoles[2] = Wheels.GetCurrentHolesCount(leftWheelId);
         passTrackRightHoles[2] = Wheels.GetCurrentHolesCount(rightWheelId);
         InterruptMoveAcrossPath(0x00);
+        if (distR < (iRobotBackWidth / 2) + 5)
+        {
+          bLeftClockwise = true;
+          bRightClockwise = true;
+          pulseMotors(pulseLenght);
+          delay(500);
+        }
+        if (distL < (iRobotBackWidth / 2) + 5)
+        {
+          bLeftClockwise = false;
+          bRightClockwise = false;
+          pulseMotors(pulseLenght);
+          delay(500);
+        }
         break;
       }
     case 0x04:   // check witdh for end of path
@@ -326,7 +339,7 @@ void MoveAcrossPath()
       }
     case 0x44:   // check witdh for end of path
       {
-        if (!bitRead(currentMove, toDoStraight))       // is move ended without getting end of path ?
+        if (!bitRead(pendingAction, pendingLeftMotor) || !bitRead(pendingAction, pendingRightMotor))       // is move ended without getting end of path ?
         {
 #if defined(debugAcrossPathOn)
           Serial.println("path exit not found");
@@ -337,7 +350,6 @@ void MoveAcrossPath()
           passInterruptBy = 0x00;                                   // clear move flag
           passRetCode = moveAcrossPathKoDueToNotFindingExit;
           InterruptMoveAcrossPath(moveAcrossPathKoDueToNotFindingExit);
-          passMonitorStepID = 0x2e;
         }
         else {
           /*
@@ -355,7 +367,7 @@ void MoveAcrossPath()
           Serial.print(" Whr: ");
           Serial.println( Wheels.GetCurrentHolesCount(rightWheelId));
 #endif
-          if (passTrackNumber < 2 * passNumberTrack1 && (millis() - lastEchoTime > echoMonitorCycleDuration * 2000))
+          if (passTrackNumber < 2 * passNumberTrack1 && (millis() - lastEchoTime > echoMonitorCycleDuration * 1500))
           {
             uint8_t distF = echo.GetPrevDistance(eFront);
             uint8_t distB = echo.GetPrevDistance(eBack);
@@ -448,8 +460,14 @@ void MoveAcrossPath()
 #endif
         if (!encodersToStop) {
           StopMonitorInterrupt();
-          passMonitorStepID ++;
-          MoveForward(reqMove);
+          if (reqMove >= minDistToBeDone)
+          {
+            passMonitorStepID ++;
+            MoveForward(reqMove);
+          }
+          else {
+            passMonitorStepID = 0x2e;
+          }
         }
         break;
       }
@@ -464,11 +482,18 @@ void MoveAcrossPath()
         }
         break;
       }
-    case 0x2e:
+    case 0x2e: //
       {
         passTrackLeftHoles[4] = Wheels.GetCurrentHolesCount(leftWheelId);
         passTrackRightHoles[4] = Wheels.GetCurrentHolesCount(rightWheelId);
         EndMoveUpdate(moveAcrossPassEnded, 0x00);
+        passMonitorStepID = passMonitorIddle;
+        passInterruptBy = 0x00;
+        obstacleDetectionOn = true;           // enable standard obstacle detection during move
+        break;
+      }
+    case 0x2f: //
+      {
         passMonitorStepID = passMonitorIddle;
         passInterruptBy = 0x00;
         obstacleDetectionOn = true;           // enable standard obstacle detection during move
@@ -499,11 +524,12 @@ void InterruptMoveAcrossPath(uint8_t retCode)
   if (retCode != 0x00)
   {
     actStat = moveAcrossPassEnded;                                      // status move completed
-    EndMoveUpdate(moveAcrossPassEnded, timeoutRetCode);                       // move not completed due to obstacle
-    obstacleDetectionOn = true;
+    EndMoveUpdate(moveAcrossPassEnded, retCode);                       // move not completed due to obstacle
+    passMonitorStepID = 0x02f;
+    passInterruptBy = 0x00;
   }
   StopMotors();
   Wheels.StopWheelControl(true, true, 0, 0);
- // digitalWrite(encoderPower, LOW);
-  
+  // digitalWrite(encoderPower, LOW);
+
 }

@@ -168,14 +168,15 @@ int pulseLenght = 8; // pulse duration
 //-- wheel control --
 #define maxRPS 1.65 // loaded
 #define minRPS 1.10
-#define optimalHighStraightSpeed 160
+#define optimalHighStraightSpeed 152
 #define optimalLowStraightSpeed 130
-#define wheelPinInterrupt 3    // used by sotfware interrupt when rotation reach threshold
+#define wheelPinInterruptIn 3    // used by sotfware interrupt when rotation reach threshold
+#define wheelPinInterruptOut 7    // used by sotfware interrupt when rotation reach threshold
 #define leftAnalogEncoderInput A8   // analog input left encoder
 #define rightAnalogEncoderInput A7  // analog input right encoder
 #define leftWheelId 0          // to identify left wheel Id 
 #define rightWheelId 1         // to identify right wheel Id
-boolean endMoveSlowdown = false;
+//boolean endMoveSlowdown = false;
 unsigned int iLeftRevSpeed;              // instant left wheel speed
 unsigned int iRightRevSpeed;             // instant right wheel speed
 #define sizeOfLeftRev 8 // size of the array containing latest revolution wheel speed
@@ -205,21 +206,21 @@ boolean pbSynchro = false;
   unsigned int rightIncoderHighValue = 610; // define value above that signal is high
   unsigned int rightIncoderLowValue = 487;  // define value below that signal is low
 */
-unsigned int leftIncoderHighValue = 750;  // define value mV above that signal is high
-unsigned int leftIncoderLowValue = 200;  // define value mV below that signal is low
+unsigned int leftIncoderHighValue = 800;  // define value mV above that signal is high
+unsigned int leftIncoderLowValue = 100;  // define value mV below that signal is low
 // to adjust low and high value set rightWheelControlOn true, rotate right wheel manualy and read on serial the value with and wihtout hole
 unsigned int rightIncoderHighValue = 750; // define value mV above that signal is high
-unsigned int rightIncoderLowValue = 250;  // define value mV below that signal is low
+unsigned int rightIncoderLowValue = 200;  // define value mV below that signal is low
 //#define delayBetweenEncoderAnalogRead  750 //  micro second between analog read of wheel encoder level
 //#define delayMiniBetweenHoles  20  //  delay millis second between 2 encoder holes at the maximum speed  (35)
-#define delayMiniBetweenHoles  (1000/(maxRPS*leftWheelEncoderHoles))*0.8  //  delay millis second between 2 encoder holes at the maximum speed  
+#define delayMiniBetweenHoles  (1000/(maxRPS*leftWheelEncoderHoles))*0.9  //  delay millis second between 2 encoder holes at the maximum speed  
 #define delayMaxBetweenHoles  (1000/(minRPS*leftWheelEncoderHoles))*1.1  //  delay millis second between 2 encoder holes at the minimum speed  
 // create wheel control object
 WheelControl Wheels(leftWheelEncoderHoles, leftIncoderHighValue, leftIncoderLowValue, leftAnalogEncoderInput,
                     rightWheelEncoderHoles, rightIncoderHighValue , rightIncoderLowValue, rightAnalogEncoderInput,
                     0, 0, 0, 0,
                     0, 0, 0, 0,
-                    wheelPinInterrupt, delayMiniBetweenHoles, delayMaxBetweenHoles);
+                    wheelPinInterruptOut, delayMiniBetweenHoles, delayMaxBetweenHoles);
 boolean encodersToStop = false;   // flag used to delay stopping encoders after stopping motors
 //-- move control --
 # define bForward  true; //Used to drive traction chain forward
@@ -229,6 +230,7 @@ unsigned long iLeftCentiRevolutions;  // nmuber of done revolutions * 100
 unsigned long iRightCentiRevolutions; // nmuber of done revolutions * 100
 #define leftHoleDistance fLeftWheelDiameter*PI/leftWheelEncoderHoles
 #define rightHoleDistance fRightWheelDiameter*PI/rightWheelEncoderHoles
+volatile uint8_t wheelIdInterruption = 0xff; // if not 0xff a wheelinterruption has to be analysed
 /*
    PID
 */
@@ -246,7 +248,7 @@ double Kx[sizeOfKx] = {0.45, 0.80, 0.12};  // {Ki,Kp,Kd}
 #define rightStartOut 5
 boolean PIDMode = false;
 #define sizeOfOutlim 6
-int outLimit[sizeOfOutlim] = {35, 35, 255, 245, 105, 100}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut}
+int outLimit[sizeOfOutlim] = {40, 30, 255, 243, 120, 100}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut}
 double leftSetpoint = optimalHighStraightSpeed; // default speed average min max expressed in RPM/100
 //double leftSetpoint = minRPS*100; // default speed average min max expressed in RPM/100
 double leftInput, leftOutput;
@@ -495,7 +497,7 @@ unsigned long lowHighSpeedTimer;       // delat time between change speed of whe
 unsigned long timePassMonitorStarted;
 unsigned long timeTraceDataSent;
 unsigned long timePID;
-unsigned long lastEchoTime;           // 
+unsigned long lastEchoTime;           //
 #define wheelCheckMoveDelay 1500
 #define wheelCheckRotateDelay 3000
 int wheelCheckDelay = wheelCheckMoveDelay;
@@ -605,7 +607,8 @@ void setup() {
   pinMode(yellowLed, OUTPUT);
   pinMode(greenLed, OUTPUT);
   pinMode(redLed, OUTPUT);
-  pinMode(wheelPinInterrupt, INPUT);
+  pinMode(wheelPinInterruptIn, INPUT_PULLUP);
+  pinMode(wheelPinInterruptOut, OUTPUT);
   pinMode(echoPinInterruptIn, INPUT_PULLUP);
   pinMode(echoPinInterruptOut, OUTPUT);
   pinMode(hornPin, OUTPUT);
@@ -663,6 +666,15 @@ void setup() {
 
 void loop() {
   delay(1);
+  if (wheelIdInterruption != 0xff)                   // we got wheel encoder interruption
+  {
+#if defined(debugWheelControlOn)
+    Serial.print("wheels interrupt:");
+    Serial.println(wheelIdInterruption);
+#endif
+    //   WheelThresholdReached(wheelIdInterruption);      // interruption treatment
+    wheelIdInterruption = 0xff;                      // clear the flag
+  }
 #if defined(debugLoop)
   if (millis() - timeLoop > 1000)
   {
@@ -1614,8 +1626,8 @@ void startMotors()
     saveRightWheelInterrupt = 0;
     pbSynchro = false;
     diagMotor = 0x00;
-    digitalWrite(wheelPinInterrupt, LOW);
-    attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+    //    digitalWrite(wheelPinInterrupt, LOW);
+    attachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn), WheelInterrupt, FALLING);
     //  delay(15);
     Wheels.StartWheelControl(true, true, iLeftCentiRevolutions , true, true, iRightCentiRevolutions , false, false, 0, false, false, 0);
     //  int iLeftRevPWM = outLimit[leftStartOut];
@@ -1641,6 +1653,7 @@ void startMotors()
     }
     rightMotor.RunMotor(bRightClockwise,  startRightPWM);
     leftMotor.RunMotor(bLeftClockwise,  startLeftPWM);
+
     timeMotorStarted = millis();
     PIDMode = true;
     ComputePID();
@@ -1661,7 +1674,7 @@ void pulseMotors(unsigned int pulseNumber)
 #endif
   diagMotor = 0x00;
   //  digitalWrite(wheelPinInterrupt, LOW);
-  attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+  attachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn), WheelInterrupt, FALLING);
   Wheels.StartWheelPulse(pulseNumber);
   leftMotor.RunMotor(bLeftClockwise,  leftMotorPWM);
   rightMotor.RunMotor(bRightClockwise,  rightMotorPWM);
@@ -1717,11 +1730,12 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int l
     iRightRevSpeed = rightMotorPWM * leftToRightDynamicAdjustRatio ; // revolutions per minute
     bSpeedHigh[leftWheelId] = true;
     bSpeedHigh[rightWheelId] = true;
-    if (endMoveSlowdown) {
+    /*
+      if (endMoveSlowdown) {
       iLeftCentiRevolutions = iLeftCentiRevolutions - slowMoveHolesDuration;
       iRightCentiRevolutions = iRightCentiRevolutions - slowMoveHolesDuration;
-    }
-
+      }
+    */
   }
 
 }
@@ -2130,8 +2144,8 @@ void StopAll()
   Wheels.StopWheelControl(true, true, 0, 0);
   GyroStopMonitor();
   digitalWrite(encoderPower, LOW);
-  detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
-  pinMode(wheelPinInterrupt, INPUT);
+  detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
+  //pinMode(wheelPinInterrupt, INPUT);
   appStat = 0xff;       // update robot status
   actStat = 0x00;       // clear action status
   toDo = 0x00;           // cleat toDo byte
@@ -2286,9 +2300,9 @@ void PauseMove()                  //
     Serial.println(" due to obstacle");
   }
 #endif
-  detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
+  detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
   digitalWrite(encoderPower, LOW);
-  pinMode(wheelPinInterrupt, INPUT);
+  //  pinMode(wheelPinInterrupt, INPUT);
   //  delayToStopWheel = millis();
   if (bitRead(pendingAction, pendingLeftMotor) == true || bitRead(pendingAction, pendingRightMotor) == true)
   {
@@ -2552,16 +2566,15 @@ void CheckEndOfReboot()  //
   }
 }
 
-
-
 void WheelInterrupt()   // wheel controler set a software interruption due to threshold reaching
 {
-  uint8_t wheelId = Wheels.GetLastWheelInterruptId();  // get which wheel Id reached the threshold
-  if (wheelId != 5 && bSpeedHigh[wheelId] == false)    //
+  detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
+  wheelIdInterruption = Wheels.GetLastWheelInterruptId();  // get which wheel Id reached the threshold to be analysed in the next loop
+  if (wheelIdInterruption != 5 && bSpeedHigh[wheelIdInterruption] == false)    //
   {
-    Wheels.ClearThreshold(wheelId);                      // clear the threshold flag to avoid any more interruption
+    Wheels.ClearThreshold(wheelIdInterruption);                      // clear the threshold flag to avoid any more interruption
   }
-  WheelThresholdReached(wheelId);                      // call the threshold analyse
+  WheelThresholdReached(wheelIdInterruption);                      // call the threshold analyse
 }
 
 void WheelThresholdReached( uint8_t wheelId)
@@ -2569,7 +2582,8 @@ void WheelThresholdReached( uint8_t wheelId)
   boolean equalSpeed = (leftSetpoint == rightSetpoint);
   if (wheelId != 5)
   {
-    if (endMoveSlowdown) {
+    /*
+      if (endMoveSlowdown) {
       if (wheelId == leftWheelId && bSpeedHigh[wheelId])
       {
         digitalWrite(wheelPinInterrupt, LOW);
@@ -2596,8 +2610,8 @@ void WheelThresholdReached( uint8_t wheelId)
         lowHighSpeedTimer = millis();
         return;
       }
-    }
-
+      }
+    */
     if (wheelId == leftWheelId)
     {
       leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
@@ -2629,8 +2643,8 @@ void WheelThresholdReached( uint8_t wheelId)
     {
       delay(500);                                      // wait a little for robot intertia
       Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
-      detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
-      pinMode(wheelPinInterrupt, INPUT);
+      detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
+      //      pinMode(wheelPinInterrupt, INPUT);
       digitalWrite(encoderPower, LOW);
       gyroUpToDate = 0x00;
       GyroGetHeadingRegisters();
@@ -2677,8 +2691,8 @@ void StopEncoders()
   encodersToStop = false;
   //passInterruptBy = 0x02;
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
-  detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
-  pinMode(wheelPinInterrupt, INPUT);
+  detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
+  // pinMode(wheelPinInterrupt, INPUT);
   digitalWrite(encoderPower, LOW);
   delay(160);                                      // wait a little bit more for robot intertia before requesting heading
   gyroUpToDate = 0x00;
@@ -2835,7 +2849,7 @@ void CalibrateWheels()           // calibrate encoder levels and leftToRightDyna
   saveRightWheelInterrupt = 0;
   digitalWrite(encoderPower, HIGH);
   //  digitalWrite(wheelPinInterrupt, LOW);
-  attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
+  attachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn), WheelInterrupt, RISING);
   Wheels.StartWheelControl(true, false, 0 , true, false, 0 , false, false, 0, false, false, 0);
   leftMotor.RunMotor(0,  leftMotorPWM );
   rightMotor.RunMotor(1, rightMotorPWM * leftToRightDynamicAdjustRatio);
@@ -2847,8 +2861,8 @@ void CalibrateWheels()           // calibrate encoder levels and leftToRightDyna
   GyroGetHeadingRegisters();
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
   digitalWrite(encoderPower, LOW);
-  detachInterrupt(digitalPinToInterrupt(wheelPinInterrupt));
-  pinMode(wheelPinInterrupt, INPUT);
+  detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
+  //  pinMode(wheelPinInterrupt, INPUT);
   leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
   rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
   unsigned int minLeftLevel = Wheels.GetMinLevel(leftWheelId);

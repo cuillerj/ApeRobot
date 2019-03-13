@@ -260,12 +260,12 @@ void obstacleInterrupt()        // Obstacles detection system set a softare inte
 }
 void monitorInterrupt()
 {
-  volatile uint8_t echoID = echo.GetAlertEchoNumber();
-  volatile unsigned int obstacleDistance = echo.GetDistance(echoID);
   bitWrite(passMonitorStepID, passMonitorInterruptBit, 1);
   bitWrite(passMonitorStepID, passMonitorRequestBit, 0);
   // passInterruptBy=0x01;
 #if defined(debugAcrossPathOn)
+  volatile uint8_t echoID = echo.GetAlertEchoNumber();
+  volatile unsigned int obstacleDistance = echo.GetDistance(echoID);
   Serial.print("monitor int: ");
   Serial.print(obstacleDistance);
   Serial.print(" cm echoId: ");
