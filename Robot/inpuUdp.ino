@@ -35,10 +35,13 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       }
       //      SendRFNoSecured();
       break;
-    case 0x3a: // commande : power on/off encoder
+    case 0x3a: // commande : power on/off encoder & IR for hard tunning
       Serial.print("commande : power on/off encoder:");
       Serial.println(GatewayLink.DataInSerial[3]);
       digitalWrite(encoderPower, GatewayLink.DataInSerial[3]);
+      digitalWrite(IRPower1PIN, GatewayLink.DataInSerial[3]);
+      digitalWrite(IRPower2PIN, GatewayLink.DataInSerial[3]);
+      IrDetectionActive=!GatewayLink.DataInSerial[3];
       break;
     case 0x3c: // commande : set encoder threshold
       Serial.print("commande : set threshold encoder ");
@@ -144,7 +147,6 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         SubsystemSetRegisters(max(GatewayLink.DataInSerial[3], 3), registers, registersValues);
         break;
       }
-
     case northAlignRequest: // E north align
       {
         //        if (bitRead(toDo, toDoAlign) == 0)   // no pending rotation
@@ -155,6 +157,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         //      bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
         //         northAlignTarget = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
         initNorthAlign((unsigned int)(GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4]));
+        PowerOnIRSensors();
 #if defined(debugConnection)
         Serial.print("north align:");
         Serial.println(northAlignTarget);
@@ -438,8 +441,12 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           {
             bitWrite(toDo, toDoStraight, true);
             bitWrite(toDo, toDoBackward, true);  // to go backward
+            digitalWrite(IRPower2PIN, HIGH);
+            robotIR.StartSensor(3);
           }
           GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+
+          IrDetectionActive = true;
         }
         else
         {
@@ -466,12 +473,6 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           }
           iddleTimer = millis();
           rotationType = cmdInput;
-          //       posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
-          //       posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
-          //       ResetGyroscopeHeadings();
-          //       GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
-          //       delay(100);
-
 
           if (bitRead(GatewayLink.DataInSerial[3], 7) == 1)    // means negative rotation
           {
@@ -498,8 +499,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
           ResetGyroscopeHeadings();
           GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+          PowerOnIRSensors();
           delay(100);
-
         }
         else
         {
@@ -672,6 +673,33 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 
         }
         SendPID();
+        break;
+      }
+    case requestIRsensors:
+      {
+        Serial.println("IR");
+        digitalWrite(IRPower1PIN, HIGH);
+        digitalWrite(IRPower2PIN, HIGH);
+        delay(200);
+        robotIR.StartSensor(0);
+        robotIR.StartSensor(1);
+        robotIR.StartSensor(2);
+        robotIR.StartSensor(3);
+        robotIR.StartSensor(4);
+        robotIR.StartSensor(5);
+        stateObstacle state = robotIR.CheckObstacle();
+        IRSensorsOnMap = state.sensorsOnMap;
+        IRObstacleHeading = round(robotIR.ObstacleHeading(IRSensorsOnMap) * 180 / PI);
+        IRObstacleHeading = (IRObstacleHeading + 360) % 360;
+#if defined(debugObstacleOn)
+        Serial.print("map:");
+        Serial.print(IRSensorsOnMap, BIN);
+        Serial.print(" ");
+        Serial.println(IRObstacleHeading);
+#endif
+        SendIRSensors();
+        digitalWrite(IRPower1PIN, LOW);
+        digitalWrite(IRPower2PIN, LOW);
         break;
       }
     default:

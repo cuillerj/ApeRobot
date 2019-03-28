@@ -30,10 +30,13 @@
    v5.2 location computation modified to rely on BNOlocation instead of Atmage computation
    v5.3 debug move accorss path
    v5.4 move accross path rewritten
+   v5.5 new wheelcontrol version
+   v5.6 BNO mode NDOF non longer used
+   v6.0 IR obstacle detections sensors added
 */
 
 //  Version
-uint8_t ver[2] = {5, 4};
+uint8_t ver[2] = {6, 0};
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -83,6 +86,30 @@ Servo myservo;  // create servo object to control a servo
 #include <SerialLink.h>
 #define gatewayLinkSpeed 38400
 SerialLink GatewayLink(gatewayLinkSpeed);   // define the object link to the gateway
+
+// IR obstacle detection
+#include <IRObstacleDetection.h>
+#include <math.h>
+// define IR sensors
+#define IRsensor0PIN 32
+#define IRsensor1PIN 37
+#define IRsensor2PIN 33
+#define IRsensor3PIN 35
+#define IRsensor4PIN 36
+#define IRsensor5PIN 34
+#define IRPower1PIN 29 // back
+#define IRPower2PIN 28 // front
+IRObstacleDetection robotIR;
+boolean IrDetectionActive = false;
+uint8_t IRSensorsOnMap = 0x00;
+uint8_t obstacleSensor = 0x00;
+int IRObstacleHeading = 0;
+#define IrThreshold 10
+#define IrObstacleOn false
+#define IrActive true
+#define IrInactive false
+#define IRSensor 0x01
+#define echoSensor 0x02
 
 uint8_t PendingReqRef = 0xbf; // pending request (if 0x00 none)
 uint8_t PendingSecReqRef = 0xbf; // pending request (if 0x00 none)- copy fo retry
@@ -151,7 +178,7 @@ unsigned int iLeftMotorMaxrpm = 120; // (Value unknown so far - Maximum revoluti
 unsigned int iRightMotorMaxrpm = iLeftMotorMaxrpm ; // (Value unknown so far - Maximum revolutions per minute for left motor)
 //float fMaxrpmAdjustment;  // will be used to compensate speed difference betweeen motors
 unsigned int leftMotorPWM = 255;       // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
-float SlowPWMRatio = 0.80;              // PWM ratio for a low speed move
+float SlowPWMRatio = 1.0;              // PWM ratio for a low speed move
 #define iLeftSlowPWM leftMotorPWM * SlowPWMRatio        // PMW value to slowdown motor at the end of the run
 #define leftRotatePWMRatio 1.0    // 
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
@@ -252,7 +279,7 @@ int outLimit[sizeOfOutlim] = {40, 30, 255, 243, 120, 100}; // {leftMinOut,rightM
 double leftSetpoint = optimalHighStraightSpeed; // default speed average min max expressed in RPM/100
 //double leftSetpoint = minRPS*100; // default speed average min max expressed in RPM/100
 double leftInput, leftOutput;
-double rightSetpoint = leftSetpoint;
+double rightSetpoint = leftSetpoint * (fLeftWheelDiameter / fRightWheelDiameter);
 //double rightSetpoint = maxRPS*100;
 double rightInput, rightOutput;
 PID leftPID(&leftInput, &leftOutput, &leftSetpoint, Kx[KpRegister], Kx[KiRegister], Kx[KdRegister], DIRECT);
@@ -394,11 +421,7 @@ int BNOLocationHeading = 0;
 */
 
 #define servoPin 31    //  servo motor Pin 
-//#define echoFront 19  // arduino pin for mesuring echo delay for front
 #define echFrontId 0 // identifier for front sonar
-//#define trigFront  23     // arduino pin for trigerring front echo
-//#define echoBack  18   // arduino pin for mesuring echo delay for back
-//#define trigBack  22    // arduino pin for trigerring back echo
 #define echBacktId 1 // identifier for back sonar
 #define nbPulse 15    // nb of servo positions for a 360° scan
 #define echo3 false  // does not exit
@@ -498,6 +521,7 @@ unsigned long timePassMonitorStarted;
 unsigned long timeTraceDataSent;
 unsigned long timePID;
 unsigned long lastEchoTime;           //
+unsigned long timerIRDetection;
 #define wheelCheckMoveDelay 1500
 #define wheelCheckRotateDelay 3000
 int wheelCheckDelay = wheelCheckMoveDelay;
@@ -507,7 +531,7 @@ unsigned long timeLoop;  // cycle demande heure
 #endif
 #define delayBetween2Scan 1000  // delay between to scan steps - must take into account the transmission duration
 #define delayBetweenScanFB 50  // delay between front and back scan of the same step
-#define delayBetweenInfo 3000   // delay before sending new status to the server  
+#define delayBetweenInfo 5000   // delay before sending new status to the server  
 #define delayPowerCheck 100    // delay before next checking of power
 #define delayBeforeRestartAfterAbstacle 3000 // delay before taking into account obstacle disappearance
 #define delayBetweenCheckPosition 200       // delay between 2 check position
@@ -517,6 +541,7 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayGyro360Rotation 4000 // mawimum duration for 360° rotation
 #define delaylowHighSpeedTimer 20  // maximum delay between 1 wheel still running high speed and 1 starting to slowdown
 #define delayBetweenTraceSend 5000
+#define delayBetweenIR 80
 /*
    delayToStopEnocder delay to take into account mechanical inertia (adjust with video recording) -
    delay between wheels and encoders stop
@@ -615,15 +640,12 @@ void setup() {
   pinMode(power1Value, INPUT);
   pinMode(power2Value, INPUT);
   pinMode(wakePin, INPUT);
-  //digitalWrite(RobotOutputRobotRequestPin, LOW);
-
   digitalWrite(hornPin, LOW);
   digitalWrite(blueLed, HIGH);
   digitalWrite(yellowLed, HIGH);
   digitalWrite(greenLed, LOW);
   digitalWrite(redLed, HIGH);
   Serial.println("Start I2C");
-  //#if defined(I2CSlaveMode)
   Wire.begin(slaveAddress);                // join i2c bus with address #8
   Wire.onReceive(receiveEvent); // register event
   Wire.onRequest(requestEvent); // register event
@@ -631,37 +653,20 @@ void setup() {
   pinMode(RobotOutputRobotRequestPin, OUTPUT);
   digitalWrite(RobotOutputRobotRequestPin, LOW);
   digitalWrite(toDoLed, LOW);
-  //#else
   Wire.begin();
-  // compass.init();
-  //compass.enableDefault();
-  //#endif
   Serial.println("I2C ready");
-  // turn PID on
-  TurnPIDOn();
-  /*
-    compass.m_min = (LSM303::vector<int16_t>) {   // compass calibration
-    -3076, -3378, -2796
-    };
-    compass.m_max = (LSM303::vector<int16_t>) {
-    +2654, +2189, +2991
-    };
-  */
-  /*
-    #if defined(I2CSlaveMode)
-    #else
-    compass.m_min = (LSM303::vector<int16_t>) {   // compass calibration
-    compassMin1, compassMin2, compassMin3
-    };
-    compass.m_max = (LSM303::vector<int16_t>) {
-    compassMax1, compassMax2, compassMax3
-    };
-    #endif
-  */
-  //     compass.read();
-  //    refAccX=abs(compass.a.x)*1.1;
-  // northOrientation = NorthOrientation();            // added 24/10/2016
+  TurnPIDOn();   // turn PID on
   PrintRobotParameters();
+  pinMode(IRPower1PIN, OUTPUT);
+  pinMode(IRPower2PIN, OUTPUT);
+  digitalWrite(IRPower1PIN, LOW);
+  digitalWrite(IRPower2PIN, LOW);
+  robotIR.AddSensor(0, IRsensor0PIN, 40, 0, 0, IrThreshold, IrObstacleOn, IrInactive); // front center
+  robotIR.AddSensor(1, IRsensor1PIN, 40, 15, 0, IrThreshold, IrObstacleOn, IrInactive); // front left
+  robotIR.AddSensor(2, IRsensor2PIN, 40, 15, 2, IrThreshold, IrObstacleOn, IrInactive); // left front
+  robotIR.AddSensor(3, IRsensor3PIN, -10, 0, 4, IrThreshold, IrObstacleOn, IrInactive); // back
+  robotIR.AddSensor(4, IRsensor4PIN, 40, -15, 6, IrThreshold, IrObstacleOn, IrInactive); // right front
+  robotIR.AddSensor(5, IRsensor5PIN, 40, -15, 0, IrThreshold, IrObstacleOn, IrInactive); // front right
 }
 
 void loop() {
@@ -675,6 +680,41 @@ void loop() {
     //   WheelThresholdReached(wheelIdInterruption);      // interruption treatment
     wheelIdInterruption = 0xff;                      // clear the flag
   }
+
+  if (IrDetectionActive && millis() > timerIRDetection + delayBetweenIR)
+  {
+    stateObstacle state = robotIR.CheckObstacle();
+    timerIRDetection = millis();
+    if (state.change)
+    {
+#if defined(debugObstacleOn)
+      Serial.print("IR Change:");
+      Serial.print(state.obstacle);
+      Serial.print(" map:");
+      Serial.println(IRSensorsOnMap, BIN);
+#endif
+    }
+    if (state.change && state.obstacle)
+    {
+      IRSensorsOnMap = state.sensorsOnMap;
+      IRObstacleHeading = round(robotIR.ObstacleHeading(IRSensorsOnMap) * 180 / PI);
+      IRObstacleHeading = (IRObstacleHeading + 360) % 360;
+      obstacleSensor = IRSensor;
+#if defined(debugObstacleOn)
+      Serial.print("stop:");
+      Serial.println(IRObstacleHeading);
+#endif
+      InterruptMove(moveEnded, moveKoDueToObstacle);
+    }
+    if (state.change && !state.obstacle)
+    {
+#if defined(debugObstacleOn)
+      Serial.println("IR RAS");
+#endif
+    }
+  }
+
+
 #if defined(debugLoop)
   if (millis() - timeLoop > 1000)
   {
@@ -697,9 +737,9 @@ void loop() {
   }
   if (rebootPhase == 0x00 && millis() - iddleTimer > 60000 && toDo == 0x00 && toDoDetail == 0x00 && pendingPollingResp == 0x00 && !bitRead(appTrace, traceBitNO))
   {
-    if (BNOMode != MODE_NDOF)
+    if (BNOMode != MODE_IMUPLUS)
     {
-      SetBNOMode(MODE_NDOF);
+      SetBNOMode(MODE_IMUPLUS);
     }
   }
   if (rebootPhase == 0x00 && millis() - OutputRobotRequestPinTimer >= minimumDurationBeetwenPolling / 2)
@@ -766,7 +806,7 @@ void loop() {
     bitWrite(diagConnection, diagConnectionIP, 1);       // conection broken
   }
 
-  if (!bitRead(appTrace, traceBitRequest) && (millis() - timeSendInfo >= delayBetweenInfo) && actStat != scan360 && pendingAckSerial == 0x00) // alternatively send status and power to the server
+  if (endMoveToSend == 0x00 && !bitRead(appTrace, traceBitRequest) && (millis() - timeSendInfo >= delayBetweenInfo) && actStat != scan360 && pendingAckSerial == 0x00) // alternatively send status and power to the server
   {
     if (sendInfoSwitch % 5 == 1)
     {
@@ -972,6 +1012,9 @@ void loop() {
       Serial.print("end of pause due to timer:");
       Serial.println((millis() - pauseSince));
 #endif
+      IRSensorsOnMap = 0x00;
+      IRObstacleHeading = 0;
+      obstacleSensor = echoSensor;
       InterruptMove(moveEnded, moveKoDueToObstacle);
     }
     // *** end of loop checking obstacles
@@ -1134,10 +1177,9 @@ void loop() {
   }
   if (getBNOLocation == 0x03)
   {
-
     GetBNOLeftLocation();
   }
-  if (getBNOLocation == 0x01 && GatewayLink.PendingReqSerial == 0x00 && millis() - timeSendSecSerial > 250)
+  if (getBNOLocation == 0x01 && GatewayLink.PendingReqSerial == 0x00 && millis() - timeSendSecSerial > 250 )
   {
 #if defined(debugGyroscopeOn)
     Serial.println("send bno loc");
@@ -1145,42 +1187,7 @@ void loop() {
     getBNOLocation = 0x00;
     SendBNOLocation ();
   }
-  /*
-    if (getNorthOrientation == 0x01 || getNorthOrientation == 0x02)
-    {
-    if (BNOMode == MODE_COMPASS)
-    {
-      if (compasUpToDate == 0x00)
-      {
-    #if defined(debugGyroscopeOn)
-        Serial.println("request compas");
-    #endif
-        GyroGetHeadingRegisters();
-        compasUpToDate = 0x01;
-      }
-      if (compasUpToDate == 0x02)
-      {
-    #if defined(debugGyroscopeOn)
-        Serial.println("got compass");
-    #endif
-        compasUpToDate = 0x00;
-        getNorthOrientation = 0x00;
-        //SendEndAction(requestUpdateNO, 0x00);
-      }
-    }
-    else {
 
-      if (getNorthOrientation  == 0x02)
-      {
-    #if defined(debugGyroscopeOn)
-        Serial.println("set mode compas");
-    #endif
-        SetBNOMode(MODE_COMPASS);
-        getNorthOrientation = 0x01;
-      }
-    }
-    }
-  */
   if (pendingPollingResp == 0x01)           // to be kept at the end of the loop in order to be sure every subsytem response will be taken into account
   {
     pendingPollingResp = 0x00;
@@ -1211,24 +1218,13 @@ void loop() {
     }
     timeTraceDataSent = millis();
   }
-  /*
-    if (!bitRead(toDo, toDoAlign) && bitRead(toDoDetail, toDoAlignUpdateNO) && millis() - timeSendInfo > delayBetweenInfo - 1000)
-    {
-    SendEndAction(requestUpdateNO, 0x00);
-    getNorthOrientation = 0x00;
-    bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
-    timeSendInfo = millis();
-    }
-  */
-  if (endMoveToSend != 0x00 && (getBNOLocation == 0x00 || getBNOLocation == 0x01)) // BNO location has been updated
+
+  if (endMoveToSend != 0x00 && getBNOLocation == 0x00 && millis() - timeSendSecSerial > 250) // BNO location has been updated
   {
-    getBNOLocation = 0x00;
     posX = (BNOLeftPosX + BNORightPosX) / 2;
     posY = (BNOLeftPosY + BNORightPosY) / 2;
     alpha = BNOLocationHeading;
     SendEndAction(endMoveToSend, endMoveRetCodeToSend);
-    endMoveToSend = 0x00;
-    endMoveRetCodeToSend = 0x00;
   }
 }
 
@@ -1604,6 +1600,7 @@ void startMotors()
 {
   GyroGetHeadingRegisters();
   digitalWrite(encoderPower, HIGH);
+  PowerOnIRSensors();
   delay(100);
   prevCheckLeftHoles = 0;
   prevCheckRightHoles = 0;
@@ -2144,6 +2141,8 @@ void StopAll()
   Wheels.StopWheelControl(true, true, 0, 0);
   GyroStopMonitor();
   digitalWrite(encoderPower, LOW);
+  digitalWrite(IRPower1PIN, LOW);
+  digitalWrite(IRPower2PIN, LOW);
   detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
   //pinMode(wheelPinInterrupt, INPUT);
   appStat = 0xff;       // update robot status
@@ -2684,7 +2683,6 @@ void WheelThresholdReached( uint8_t wheelId)
 }
 void StopEncoders()
 {
-
 #if debugWheelControlOn
   Serial.println("stopping encoders");
 #endif
@@ -2702,20 +2700,6 @@ void StopEncoders()
   unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
   unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
 
-  //  Serial.println(leftWheeelCumulative - rightWheeelCumulative);
-  /*
-    if (leftHoles != rightHoles)
-    {
-    if ((leftWheeelCumulative - rightWheeelCumulative > 0) && (leftHoles > rightHoles) )
-    {
-    leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio + 0.1;
-    }
-    if ((leftWheeelCumulative - rightWheeelCumulative < 0) && (leftHoles < rightHoles) )
-    {
-    leftToRightDynamicAdjustRatio = leftToRightDynamicAdjustRatio - 0.1;
-    }
-    }
-  */
 
 #if defined(debugMoveOn)
   Serial.print("RPM left: ");
@@ -2729,13 +2713,7 @@ void StopEncoders()
   Serial.print(" right: ");
   Serial.println(rightHoles);
 #endif
-  /*
-    if ( bitRead(currentMove, toDoStraight) == true)      // robot was moving straight
-    {
-    ComputeNewLocalization(0xff);                       // compute new  robot position
-    bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
-    }
-  */
+
   bitWrite(pendingAction, pendingLeftMotor, false);     // clear the flag pending action motor
   bitWrite(pendingAction, pendingRightMotor, false);    // clear the flag pending action motor
   if ( bitRead(currentMove, toDoRotation) == true)      // robot was turning around
@@ -2835,7 +2813,11 @@ void StopEncoders()
         MoveAcrossPath();
       }
       else {
-        EndMoveUpdate(moveEnded, 0x00);
+        if (endMoveToSend == 0x00)
+        {
+          EndMoveUpdate(moveEnded, 0x00);
+        }
+
       }
     }
   }
@@ -3705,39 +3687,41 @@ int * MinEchoFB(int fromPosition, int rotation)
 }
 void InterruptMove(uint8_t action, uint8_t retCode)
 {
-  bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
-  bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo straight
-  bitWrite(waitFlag, toPause, 0);       // clear wait & pause flag
-  bitWrite(waitFlag, toEndPause, 0);
-  bitWrite(waitFlag, toWait, 0);
-  leftMotor.StopMotor();
-  rightMotor.StopMotor();
-  timeMotorStarted = 0;
-  GyroGetHeadingRegisters();
-  StopEchoInterrupt();                    // stop obstacles detection
-  Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
-  resumeCount = 0;                      // clear count
-  toDo = 0x00;                                         // clear flag todo
-  //actStat = moveEnded;                                      // status move completed
-  actStat = action;                                      // status move completed
   if (passMonitorStepID != passMonitorIddle)
   {
-    //    passInterruptBy = 0x02;
-    //    MoveAcrossPath();
     passRetCode = retCode;
   }
   else {
+    StopMotors();
+    timeAfterStopMotors = millis();
+    bitWrite(pendingAction, pendingLeftMotor, false);     // clear the flag pending action motor
+    bitWrite(pendingAction, pendingRightMotor, false);    // clear the flag pending action motor
+    if (bitRead(currentMove, toDoStraight) == true)      // robot was moving straight
+    {
+      encodersToStop = true;                               // to keep wheel ecoders running a little bit
+    }
+    if ( bitRead(currentMove, toDoRotation) == true)      // robot was turning around
+    {
+      delay(500);                                      // wait a little for robot intertia
+      Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
+      detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
+      digitalWrite(encoderPower, LOW);
+      gyroUpToDate = 0x00;
+      GyroGetHeadingRegisters();
+      timeAfterStopMotors = millis();
+      bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation
+      delay(100);
+    }
+    bitWrite(waitFlag, toPause, 0);       // clear wait & pause flag
+    bitWrite(waitFlag, toEndPause, 0);
+    bitWrite(waitFlag, toWait, 0);
+    StopEchoInterrupt();                    // stop obstacles detection
+    resumeCount = 0;                      // clear count
+    toDo = 0x00;                                         // clear flag todo
+    actStat = action;                                      // status move completed
     EndMoveUpdate(actStat, retCode);                       // move not completed due to obstacle
   }
 }
-/*
-  void readParameters(uint8_t number, uint8_t list[maxReadParamtersList])
-  {
-  number = min(number, maxReadParamtersList);
-  //     Wire.beginTransmission(4);
-  Wire.write("2", 1);             // sends one byte
-  }
-*/
 
 int AngleDiff(int alpha, int beta)
 {
@@ -3769,6 +3753,8 @@ void StopMotors()
 {
   leftMotor.StopMotor();
   rightMotor.StopMotor();
+  bitWrite(pendingAction, pendingLeftMotor, LOW) ;
+  bitWrite(pendingAction, pendingRightMotor, LOW) ;
   timeMotorStarted = 0;
   PIDMode = false;
   delay(100);
@@ -3780,5 +3766,38 @@ void EndMoveUpdate(uint8_t action, uint8_t retCode)
   getBNOLocation = 0x07;                // to resquest BNO computed location
   toDo = 0x00;
   toDoDetail = 0x00;                                         // clear flag todo
+  digitalWrite(IRPower1PIN, LOW);
+  digitalWrite(IRPower2PIN, LOW);
+  digitalWrite(encoderPower, LOW);
+}
+void PowerOnIRSensors()
+{
+  if (bitRead(currentMove, toDoRotation) || bitRead(toDo, toDoRotation) || bitRead(toDoDetail, toDoAlignRotate))
+  {
+    digitalWrite(IRPower1PIN, HIGH);
+    robotIR.StartSensor(0);
+    robotIR.StartSensor(1);
+    robotIR.StartSensor(2);
+    robotIR.StartSensor(4);
+    robotIR.StartSensor(5);
+  }
+  if (bitRead(currentMove, toDoStraight) || bitRead(toDo, toDoStraight)  || bitRead(currentMove, toDoMoveAcrossPass) || bitRead(toDo, toDoMoveAcrossPass))
+  {
+    digitalWrite(IRPower1PIN, HIGH);
+    robotIR.StartSensor(0);
+    robotIR.StartSensor(1);
+    robotIR.StartSensor(2);
+    robotIR.StartSensor(4);
+    robotIR.StartSensor(5);
+  }
+  if (bitRead(currentMove, toDoBackward) || bitRead(toDo, toDoBackward))
+  {
+    digitalWrite(IRPower2PIN, HIGH);
+    robotIR.StartSensor(3);
+  }
+
+  delay(100);
+  IrDetectionActive = true;
+  stateObstacle state = robotIR.CheckObstacle();
 }
 

@@ -262,7 +262,7 @@ void SetBNOMode(uint8_t value)
 void InitBNOLocation()
 {
   uint16_t uInitX = (int)round(posRotationGyroCenterX * leftWheelEncoderHoles / (fLeftWheelDiameter * PI));        // center position expressed in term of holes
-  uint16_t uInitY = (int)round(posRotationGyroCenterY * rightWheelEncoderHoles / (fLeftWheelDiameter * PI));
+  uint16_t uInitY = (int)round(posRotationGyroCenterY * rightWheelEncoderHoles / (fRightWheelDiameter * PI));
   uint16_t uAlpha = (int)(round(alpha)) % 360;
 #if defined(debugGyroscopeOn)
   Serial.print("InitBNOLocation:");
@@ -515,15 +515,16 @@ void receiveEvent(int howMany) {
                   break;
                 case (deltaLeftPosX_reg1):
                   {
-                    BNOLeftPosX = (int)((uint16_t)inputData[4] << 8 | (uint16_t) inputData[6]);
-                    BNOLeftPosX = (float)(BNOLeftPosX * PI * fLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180);
-                    BNOLeftPosY = (int)((uint16_t)inputData[8] << 8 | (uint16_t) inputData[10]);
-                    BNOLeftPosY = (float)(BNOLeftPosY * PI * fLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180);
                     if (getBNOLocation != 0x00)
                     {
                       getBNOLocation--;
                     }
-                    
+                    BNOLeftPosX = (int)((uint16_t)inputData[4] << 8 | (uint16_t) inputData[6]);
+                    BNOLeftPosX = (float)(BNOLeftPosX * PI * fLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180);
+                    BNOLeftPosY = (int)((uint16_t)inputData[8] << 8 | (uint16_t) inputData[10]);
+                    BNOLeftPosY = (float)(BNOLeftPosY * PI * fLeftWheelDiameter / leftWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180);
+
+
 #if defined(debugGyroscopeOn)
                     Serial.print("BNO Left position X:");
                     Serial.print(BNOLeftPosX );
@@ -534,14 +535,15 @@ void receiveEvent(int howMany) {
                   }
                 case (deltaRightPosX_reg1):
                   {
-                    BNORightPosX = (int)((uint16_t)inputData[4] << 8 | (uint16_t) inputData[6]);
-                    BNORightPosX = (float)(BNORightPosX  * PI * fRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180);
-                    BNORightPosY  = (int)((uint16_t)inputData[8] << 8 | (uint16_t) inputData[10]);
-                    BNORightPosY  = (float)(BNORightPosY  * PI * fRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180);
                     if (getBNOLocation != 0x00)
                     {
                       getBNOLocation--;
                     }
+                    BNORightPosX = (int)((uint16_t)inputData[4] << 8 | (uint16_t) inputData[6]);
+                    BNORightPosX = (float)(BNORightPosX  * PI * fRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * cos(BNOLocationHeading * PI / 180);
+                    BNORightPosY  = (int)((uint16_t)inputData[8] << 8 | (uint16_t) inputData[10]);
+                    BNORightPosY  = (float)(BNORightPosY  * PI * fRightWheelDiameter / rightWheelEncoderHoles) + shiftEchoVsRotationCenter * sin(BNOLocationHeading * PI / 180);
+
 #if defined(debugGyroscopeOn)
                     Serial.print("BNO Right position X:");
                     Serial.print(BNORightPosX);
