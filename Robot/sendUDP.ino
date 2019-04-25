@@ -183,8 +183,12 @@ void SendEndAction(uint8_t action, uint8_t retCode)
 }
 void SendStatus()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
-  GatewayLink.PendingDataReqSerial[0] = 0x65; //
+  GatewayLink.PendingDataReqSerial[0] = responseStatus; //
   GatewayLink.PendingDataReqSerial[1] = appStat; //
   GatewayLink.PendingDataReqSerial[2] = actStat;
   GatewayLink.PendingDataReqSerial[3] = diagPower;
@@ -257,11 +261,14 @@ void SendStatus()
   GatewayLink.PendingDataReqSerial[27] =  waitFlag; // for debuging
   GatewayLink.PendingDataReqSerial[28] =  lastReceivedNumber; // for debuging
   GatewayLink.PendingDataLenSerial = 0x1d; // 6 longueur mini max 30 pour la gateway
-  timeSendSecSerial = millis();
 }
 
 void SendPowerValue()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = 0x70; //
   GatewayLink.PendingDataReqSerial[1] = uint8_t(power1Mesurt / 10); //
@@ -273,10 +280,13 @@ void SendPowerValue()
   GatewayLink.PendingDataReqSerial[7] = uint8_t(power5Mesurt / 10); //
   GatewayLink.PendingDataReqSerial[8] = uint8_t(power6Mesurt / 10);
   GatewayLink.PendingDataLenSerial = 0x09; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 void SendEncoderMotorValue()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = 0x71; //
   GatewayLink.PendingDataReqSerial[1] = 0x07;
@@ -301,10 +311,13 @@ void SendEncoderMotorValue()
   GatewayLink.PendingDataReqSerial[20] = uint8_t(leftToRightDynamicAdjustRatio * 100 / 256);
   GatewayLink.PendingDataReqSerial[21] = uint8_t(leftToRightDynamicAdjustRatio * 100 );
   GatewayLink.PendingDataLenSerial = 0x16; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 void SendEncoderValues()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   unsigned int minLeftLevel = Wheels.GetMinLevel(leftWheelId);
   unsigned int maxLeftLevel = Wheels.GetMaxLevel(leftWheelId);
@@ -336,10 +349,13 @@ void SendEncoderValues()
   GatewayLink.PendingDataReqSerial[23] = uint8_t(minRightLevel / 256);
   GatewayLink.PendingDataReqSerial[24] = uint8_t(minRightLevel );
   GatewayLink.PendingDataLenSerial = 0x19; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 void SendPWMValues()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = 0x73; //
   GatewayLink.PendingDataReqSerial[1] = 0x03;   // paramters number
@@ -356,6 +372,10 @@ void SendPWMValues()
 }
 void SendEncodersHolesValues()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = 0x74; //
   GatewayLink.PendingDataReqSerial[1] = 0x02;   // paramters number
@@ -365,11 +385,14 @@ void SendEncodersHolesValues()
   GatewayLink.PendingDataReqSerial[5] = uint8_t(rightWheeelCumulative / 256);
   GatewayLink.PendingDataReqSerial[6] = uint8_t(rightWheeelCumulative);
   GatewayLink.PendingDataLenSerial = 0x07; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 
 void  SendUDPSubsystemRegister(uint8_t receivedRegister[5], uint8_t receivedValue[5])
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = 0x80; //
   GatewayLink.PendingDataReqSerial[1] = 0x05;   // paramters number
@@ -380,12 +403,10 @@ void  SendUDPSubsystemRegister(uint8_t receivedRegister[5], uint8_t receivedValu
     GatewayLink.PendingDataReqSerial[4 + 3 * i] = 0x00;
   }
   GatewayLink.PendingDataLenSerial = 0x12; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 
 void SendScanResultSerial (int distF, int distB)   // send scan echo data to the server
 {
-
   GatewayLink.PendingDataReqSerial[0] = 0x01;
   GatewayLink.PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
   GatewayLink.PendingDataReqSerial[2] = 0x46; //"F" front
@@ -411,6 +432,10 @@ void SendScanResultSerial (int distF, int distB)   // send scan echo data to the
 }
 void SendBNOSubsytemStatus()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = respBNOSubsytemStatus; //
   GatewayLink.PendingDataReqSerial[1] = BNOMode; //
@@ -418,8 +443,7 @@ void SendBNOSubsytemStatus()
   GatewayLink.PendingDataReqSerial[3] = 0x00;
   GatewayLink.PendingDataReqSerial[4] = BNOSysStat;
   GatewayLink.PendingDataReqSerial[5] = BNOSysError;
-  GatewayLink.PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
+  GatewayLink.PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gatewa
 }
 void SendBNOLocation ()
 {
@@ -491,6 +515,10 @@ void SendBNOLocation ()
 }
 void SendNarrowPathMesurments ()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   //trameNumber = trameNumber + 1;
   // GatewayLink.PendingDataReqSerial[0] = 0x01;
   //  GatewayLink.PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
@@ -521,7 +549,6 @@ void SendNarrowPathMesurments ()
   GatewayLink.PendingDataReqSerial[18] = tracePassMonitorStepID;
   GatewayLink.PendingDataReqSerial[19] = traceInterruptByStepID;
   GatewayLink.PendingDataLenSerial = 0x14;                      // data len
-  timeSendSecSerial = millis();
 }
 void SendNarrowPathEchos ()
 {
@@ -537,11 +564,14 @@ void SendNarrowPathEchos ()
     GatewayLink.PendingDataReqSerial[3 * i + 3] = 0x00;
   }
   GatewayLink.PendingDataLenSerial = uint8_t(min(30, 3 * passNumberTrack1 + 1));                 // data len
-  timeSendSecSerial = millis();
 
 }
 void SendTraceData()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = respTrace; //
   GatewayLink.PendingDataReqSerial[1] = uint8_t(power1Mesurt / 10); //
@@ -569,10 +599,13 @@ void SendTraceData()
   GatewayLink.PendingDataReqSerial[13] = uint8_t(encoderValue / 256); //
   GatewayLink.PendingDataReqSerial[14] = uint8_t(encoderValue);
   GatewayLink.PendingDataLenSerial = 0x0f; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 void SendTraceNO()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = respTraceNO; //
   GatewayLink.PendingDataReqSerial[1] = uint8_t(northOrientation / 256); //
@@ -591,10 +624,13 @@ void SendTraceNO()
   Serial.print(northOrientation);
 #endif
   GatewayLink.PendingDataLenSerial = 0x0c; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 void SendVersion()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = respVersion; //
   GatewayLink.PendingDataReqSerial[1] = ver[0]; //
@@ -605,10 +641,13 @@ void SendVersion()
   GatewayLink.PendingDataReqSerial[6] = 0x00;
 
   GatewayLink.PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 void SendPID()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = respPID; //
   int work = leftPID.GetKp() * 100;
@@ -640,10 +679,13 @@ void SendPID()
   GatewayLink.PendingDataReqSerial[22] = uint8_t(setPoint / 256);
   GatewayLink.PendingDataReqSerial[23] = uint8_t(setPoint);
   GatewayLink.PendingDataLenSerial = 0x18; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
 void SendIRSensors()
 {
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
   GatewayLink.PendingReqSerial = PendingReqRefSerial;
   GatewayLink.PendingDataReqSerial[0] = respIRsensors; //
   GatewayLink.PendingDataReqSerial[1] = 0x00;
@@ -652,6 +694,4 @@ void SendIRSensors()
   GatewayLink.PendingDataReqSerial[4] = 0x00;
   GatewayLink.PendingDataReqSerial[5] = IRSensorsOnMap;
   GatewayLink.PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gateway
-  timeSendSecSerial = millis();
 }
-

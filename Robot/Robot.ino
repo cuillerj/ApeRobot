@@ -33,10 +33,15 @@
    v5.5 new wheelcontrol version
    v5.6 BNO mode NDOF non longer used
    v6.0 IR obstacle detections sensors added
+   v6.1 IR obstacle detections tunned
+   v6.2 IR clear action flags added
+   v6.3 hexa action code suppressed  un inpuUDP
+   v6.4 modif PID speed and end northalign + check bno iddle at the end of boot
+   v6.5 tunning PID after battery modification
 */
 
 //  Version
-uint8_t ver[2] = {6, 0};
+uint8_t ver[2] = {6, 5};
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -124,16 +129,16 @@ int retryCount = 0;            // number of retry for sending
 
 //-- General Robot parameters --
 #include <ApeRobotCommonDefine.h>
-uint8_t rebootPhase = 0x05;
+uint8_t rebootPhase = 0x06;
 uint8_t rebootDiag = 0x00;
 
 float fLeftTractionDistPerRev =  (PI * fLeftWheelDiameter) ;
 float fRightTractionDistPerRev = (PI * fRightWheelDiameter);
 float coeffGlissementRotation = 1.;
 #define rebootDuration 20000 // delay to completly start arduino
-#define rebootBNODuration 2000 // reboot subsytem first step duration
+#define rebootBNODuration 4000 // reboot subsytem first step duration
 #define rebootESPDuration 40000 // ESP reboot and WIFI maximum duration
-#define rebootBNOTimeout 90000 // ESPreboot timeout
+#define rebootBNOTimeout 45000 // ESPreboot timeout
 #define hornPin 49           // to activate horn
 
 //-- power control --
@@ -183,19 +188,19 @@ float SlowPWMRatio = 1.0;              // PWM ratio for a low speed move
 #define leftRotatePWMRatio 1.0    // 
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
 Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPWM); // define left Motor
-unsigned int rightMotorPWM = 230;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
+unsigned int rightMotorPWM = 235;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define iRightSlowPWM rightMotorPWM * SlowPWMRatio  // PMW value to slowdown motor at the end of the run
 //#define iRightRotatePWM 170   // PMW value
 #define rightRotatePWMRatio 0.9    // 
 #define pendingRightMotor 1    // define pendingAction bit used for right motor
 Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPWM); // define right Motor
 float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
-int pulseLenght = 8; // pulse duration
+int pulseLenght = 5; // pulse duration
 #define slowMoveHolesDuration 12     // target distance expressed in term of numbers of holes under that slow move is required
 //-- wheel control --
 #define maxRPS 1.65 // loaded
 #define minRPS 1.10
-#define optimalHighStraightSpeed 152
+#define optimalHighStraightSpeed 142   // modif le 23042019 148 vs 152
 #define optimalLowStraightSpeed 130
 #define wheelPinInterruptIn 3    // used by sotfware interrupt when rotation reach threshold
 #define wheelPinInterruptOut 7    // used by sotfware interrupt when rotation reach threshold
@@ -275,7 +280,7 @@ double Kx[sizeOfKx] = {0.45, 0.80, 0.12};  // {Ki,Kp,Kd}
 #define rightStartOut 5
 boolean PIDMode = false;
 #define sizeOfOutlim 6
-int outLimit[sizeOfOutlim] = {40, 30, 255, 243, 120, 100}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut}
+int outLimit[sizeOfOutlim] = {55, 25, 255, 240, 255, 200}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut} % 40 25 243 130 100
 double leftSetpoint = optimalHighStraightSpeed; // default speed average min max expressed in RPM/100
 //double leftSetpoint = minRPS*100; // default speed average min max expressed in RPM/100
 double leftInput, leftOutput;
@@ -548,7 +553,7 @@ unsigned long timeLoop;  // cycle demande heure
    to keep not too high to avoid false encoders threshold in case wheel stop in border of a hole
 */
 #define delayToStopEnocder 60    // 60 adjusted by tunning
-unsigned int delayGyroRotation = 100;  //
+#define delayGyroRotation 150  //
 #define maxPauseDuration 10000
 #define maxPassMonitorDuration 45000
 #define echoPrecision 5
@@ -2147,10 +2152,7 @@ void StopAll()
   //pinMode(wheelPinInterrupt, INPUT);
   appStat = 0xff;       // update robot status
   actStat = 0x00;       // clear action status
-  toDo = 0x00;           // cleat toDo byte
-  toDoDetail = 0x00;           // cleat toDo byte
-  currentMove = 0x00;    // clear current move
-  saveCurrentMove = 0x00; // clear saveCurrent move
+  ClearActionFlags();
   pendingAckSerial = 0x00; // clear pending acknowledgement
   timerHorn = 0;          // reset horn timer
   appTrace = 0x00;
@@ -2481,7 +2483,43 @@ void CheckBeforeStart()
 
 void CheckEndOfReboot()  //
 {
-  if (rebootPhase == 5 && millis() > rebootDuration) // end of arduino reboot
+  if (rebootPhase == 6 && millis() > rebootDuration) // end of arduino reboot
+  {
+    rebootPhase--;
+    Serial.print("reboot phase:");
+    Serial.println(rebootPhase);
+    bitWrite(currentMove, toDoRotation, HIGH);
+    bitWrite(currentMove, toDoBackward, HIGH);
+    boolean IRsensorsOk = false;
+    PowerOnIRSensors();
+    while (!IRsensorsOk)
+    {
+      stateObstacle state = robotIR.CheckObstacle();
+      if (state.obstacle)
+      {
+        Serial.println(state.sensorsOnMap, HEX);
+        delay(10000);
+        digitalWrite(IRPower1PIN, LOW);
+        digitalWrite(IRPower2PIN, LOW);
+        delay(1000);
+        PowerOnIRSensors();
+      }
+      else
+      {
+        digitalWrite(IRPower1PIN, LOW);
+        digitalWrite(IRPower2PIN, LOW);
+        robotIR.StopSensor(0);
+        robotIR.StopSensor(1);
+        robotIR.StopSensor(2);
+        robotIR.StopSensor(3);
+        robotIR.StopSensor(4);
+        robotIR.StopSensor(5);
+        currentMove = 0x00;
+        IRsensorsOk = true;
+      }
+    }
+  }
+  if (rebootPhase == 5) // end of arduino reboot
   {
     rebootPhase--;
     Serial.print("reboot phase:");
@@ -2527,7 +2565,7 @@ void CheckEndOfReboot()  //
       bLeftClockwise = !bLeftClockwise;
       delay(1500);
     }
-    if ((rebootPhase == 2) && millis() > rebootBNOTimeout) // BNU timeout
+    if ((rebootPhase == 2) && (millis() > rebootBNOTimeout || bitRead(BNOSysStat, 0))) // BNo timeout or BNO not iddle
     {
       rebootPhase--;
       bitWrite(rebootDiag, 1, 1);
@@ -2554,7 +2592,11 @@ void CheckEndOfReboot()  //
   {
     diagRobot = rebootDiag;
     waitFlag = 0x00;
-    appStat = 0x00;
+    if(diagRobot==0x00)
+    {
+     appStat = 0x00;     
+    }
+
     bitWrite(diagConnection, diagConnectionI2C, 0);
     PingFrontBack();
     Horn(true, 250);
@@ -2578,39 +2620,9 @@ void WheelInterrupt()   // wheel controler set a software interruption due to th
 
 void WheelThresholdReached( uint8_t wheelId)
 {
-  boolean equalSpeed = (leftSetpoint == rightSetpoint);
+  boolean equalSpeed = round(leftSetpoint * 10 == rightSetpoint * 10);
   if (wheelId != 5)
   {
-    /*
-      if (endMoveSlowdown) {
-      if (wheelId == leftWheelId && bSpeedHigh[wheelId])
-      {
-        digitalWrite(wheelPinInterrupt, LOW);
-        attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
-        bSpeedHigh[wheelId] = false;
-        if (equalSpeed)
-        {
-          leftMotor.AdjustMotorPWM(optimalLowStraightSpeed);
-        }
-        Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
-        lowHighSpeedTimer = millis();
-        return;
-      }
-      if (wheelId == rightWheelId && bSpeedHigh[wheelId])
-      {
-        digitalWrite(wheelPinInterrupt, LOW);
-        attachInterrupt(digitalPinToInterrupt(wheelPinInterrupt), WheelInterrupt, RISING);
-        bSpeedHigh[wheelId] = false;
-        if (equalSpeed)
-        {
-          rightMotor.AdjustMotorPWM(optimalLowStraightSpeed);
-        }
-        Wheels.IncreaseThreshold ( wheelId, slowMoveHolesDuration );
-        lowHighSpeedTimer = millis();
-        return;
-      }
-      }
-    */
     if (wheelId == leftWheelId)
     {
       leftMotor.StopMotor();                             // stop firstly the motor that reached the threshold
@@ -2643,20 +2655,13 @@ void WheelThresholdReached( uint8_t wheelId)
       delay(500);                                      // wait a little for robot intertia
       Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
       detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
-      //      pinMode(wheelPinInterrupt, INPUT);
       digitalWrite(encoderPower, LOW);
       gyroUpToDate = 0x00;
       GyroGetHeadingRegisters();
-      //     leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
-      //     rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
-      //      unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
-      //      unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
       timeAfterStopMotors = millis();
-      // ComputeNewLocalization(0x01);                       // compute new  robot position
       bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation
       delay(100);
-      //      NOAfterRotation = NorthOrientation();
-      if (bitRead(toDo, toDoStraight) == false && bitRead(toDoDetail, toDoGyroRotation) == 0)
+      if (bitRead(toDo, toDoStraight) == false && bitRead(toDoDetail, toDoGyroRotation) == 0 && !bitRead(toDoDetail, toDoAlignRotate))
       {
         if (pbSynchro) {
 
@@ -2995,7 +3000,7 @@ void northAlign()
       bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
       bitWrite(toDoDetail, toDoAlignRotate, 0);
       bitWrite(toDoDetail, toDoGyroRotation, 0);
-      //   SendEndAction(alignEnded, moveKoDueToNotEnoughSpace);
+      EndMoveUpdate(alignEnded, moveKoDueToNotEnoughSpace);
       StopMagneto();
       return;
     }
@@ -3042,7 +3047,7 @@ void northAlign()
     bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
     bitWrite(toDoDetail, toDoGyroRotation, 0);
     bitWrite(toDoDetail, toDoAlignRotate, 0);
-    SendEndAction(alignEnded, 0x01);
+    EndMoveUpdate(alignEnded, rotationKoToManyRetry);
     StopMagneto();
     return;
   }
@@ -3081,7 +3086,7 @@ void northAlign()
       rot = 360 + alignShift;
     }
     rot = rot * .8;
-    if (abs(alignShift) >= 4 * minRotEncoderAbility)
+    if (abs(alignShift) >= 2 * minRotEncoderAbility)
     {
       if (CheckRotationAvaibility(rot))
       {
@@ -3093,7 +3098,7 @@ void northAlign()
         bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
         bitWrite(toDoDetail, toDoAlignRotate, 0);
         bitWrite(toDoDetail, toDoGyroRotation, 0);
-        SendEndAction(alignEnded, moveKoDueToNotEnoughSpace);
+        EndMoveUpdate(alignEnded, moveKoDueToNotEnoughSpace);
         StopMagneto();
         return;
       }
@@ -3134,7 +3139,7 @@ void northAlign()
       bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
       bitWrite(toDoDetail, toDoAlignRotate, 0);
       bitWrite(toDoDetail, toDoGyroRotation, 0);
-      SendEndAction(alignEnded, 0x00);
+      EndMoveUpdate(alignEnded, 0x00);
       if (!bitRead(toDoDetail, toDoAlignUpdateNO))
       {
         StopMagneto();
@@ -3364,12 +3369,13 @@ void resetStatus(uint8_t code)
 
 void OptimizeGyroRotation(int rotation)
 {
+  boolean check = (gyroRotationRetry < 2);
   if (abs(rotation) > 3 * maxInertialRotation)
   {
     if (rotation >= 0)
     {
       int newRotation = rotation - maxInertialRotation;
-      Rotate(newRotation, true);
+      Rotate(newRotation, check);
 #if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.print( newRotation);
@@ -3380,7 +3386,7 @@ void OptimizeGyroRotation(int rotation)
     else
     {
       int newRotation = rotation + maxInertialRotation;
-      Rotate(newRotation, true);
+      Rotate(newRotation, check);
 #if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println( rotation + maxInertialRotation);
@@ -3392,7 +3398,7 @@ void OptimizeGyroRotation(int rotation)
     if (rotation >= 0)
     {
       int newRotation = max(round(rotation * 0.8), minRotEncoderAbility);
-      Rotate(newRotation, true);
+      Rotate(newRotation, check);
 #if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println( newRotation);
@@ -3401,7 +3407,7 @@ void OptimizeGyroRotation(int rotation)
     else
     {
       int newRotation = min(round(rotation * 0.8), -minRotEncoderAbility);
-      Rotate(newRotation, true);
+      Rotate(newRotation, check);
 #if defined(debugGyroscopeOn)
       Serial.print("gyro: ");
       Serial.println(newRotation);
@@ -3451,6 +3457,10 @@ boolean CheckRotationAvaibility(int rotation)
 #if defined(debugObstacleOn)
   Serial.println("CheckRotationAvaibility");
 #endif
+  if (abs(rotation) <= 3 * minRotToBeDone) // no check > IR sensors will detect obtsacle
+  {
+    return true;
+  }
   int signRotation = 1;
   if (rotation < 0)
   {
@@ -3795,9 +3805,7 @@ void PowerOnIRSensors()
     digitalWrite(IRPower2PIN, HIGH);
     robotIR.StartSensor(3);
   }
-
-  delay(100);
+  delay(500);
   IrDetectionActive = true;
   stateObstacle state = robotIR.CheckObstacle();
 }
-
