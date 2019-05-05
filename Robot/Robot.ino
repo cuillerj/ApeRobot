@@ -38,10 +38,12 @@
    v6.3 hexa action code suppressed  un inpuUDP
    v6.4 modif PID speed and end northalign + check bno iddle at the end of boot
    v6.5 tunning PID after battery modification
+   v6.6 modif updateNO
+   v6.7 modif pinginit for move backward
 */
 
 //  Version
-uint8_t ver[2] = {6, 5};
+uint8_t ver[2] = {6, 7};
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -136,9 +138,9 @@ float fLeftTractionDistPerRev =  (PI * fLeftWheelDiameter) ;
 float fRightTractionDistPerRev = (PI * fRightWheelDiameter);
 float coeffGlissementRotation = 1.;
 #define rebootDuration 20000 // delay to completly start arduino
-#define rebootBNODuration 4000 // reboot subsytem first step duration
+#define rebootBNODuration 2000 // reboot subsytem first step duration
 #define rebootESPDuration 40000 // ESP reboot and WIFI maximum duration
-#define rebootBNOTimeout 45000 // ESPreboot timeout
+#define rebootBNOTimeout 90000 // BNOreboot timeout
 #define hornPin 49           // to activate horn
 
 //-- power control --
@@ -280,7 +282,7 @@ double Kx[sizeOfKx] = {0.45, 0.80, 0.12};  // {Ki,Kp,Kd}
 #define rightStartOut 5
 boolean PIDMode = false;
 #define sizeOfOutlim 6
-int outLimit[sizeOfOutlim] = {55, 25, 255, 240, 255, 200}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut} % 40 25 243 130 100
+int outLimit[sizeOfOutlim] = {47, 25, 255, 240, 255, 200}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut} % 40 25 243 130 100
 double leftSetpoint = optimalHighStraightSpeed; // default speed average min max expressed in RPM/100
 //double leftSetpoint = minRPS*100; // default speed average min max expressed in RPM/100
 double leftInput, leftOutput;
@@ -553,7 +555,7 @@ unsigned long timeLoop;  // cycle demande heure
    to keep not too high to avoid false encoders threshold in case wheel stop in border of a hole
 */
 #define delayToStopEnocder 60    // 60 adjusted by tunning
-#define delayGyroRotation 150  //
+#define delayGyroRotation 200  //
 #define maxPauseDuration 10000
 #define maxPassMonitorDuration 45000
 #define echoPrecision 5
@@ -709,7 +711,14 @@ void loop() {
       Serial.print("stop:");
       Serial.println(IRObstacleHeading);
 #endif
-      InterruptMove(moveEnded, moveKoDueToObstacle);
+      if (bitRead(toDoDetail, toDoAlignRotate))
+      {
+        InterruptMove(alignEnded, moveKoDueToObstacle);
+      }
+      else
+      {
+        InterruptMove(moveEnded, moveKoDueToObstacle);
+      }
     }
     if (state.change && !state.obstacle)
     {
@@ -813,26 +822,30 @@ void loop() {
 
   if (endMoveToSend == 0x00 && !bitRead(appTrace, traceBitRequest) && (millis() - timeSendInfo >= delayBetweenInfo) && actStat != scan360 && pendingAckSerial == 0x00) // alternatively send status and power to the server
   {
-    if (sendInfoSwitch % 5 == 1)
+    if (sendInfoSwitch % 6 == 1)
     {
       SendStatus();                 // send robot status to the server
     }
-    if (sendInfoSwitch % 5 == 2)
+    if (sendInfoSwitch % 6 == 2)
     {
       SendPowerValue();             // send power info to the server
       newPowerCycle = true;
     }
-    if (sendInfoSwitch % 5 == 4)
+    if (sendInfoSwitch % 6 == 4)
     {
       SendEncodersHolesValues();             //
     }
-    if (sendInfoSwitch % 5 == 3)
+    if (sendInfoSwitch % 6 == 3)
     {
       SendEncoderValues();
     }
-    if (sendInfoSwitch % 5 == 0)
+    if (sendInfoSwitch % 6 == 0)
     {
       SendBNOSubsytemStatus();
+    }
+    if (sendInfoSwitch % 6 == 5)
+    {
+      SendInternalFlags();
     }
     sendInfoSwitch ++;
     timeSendInfo = millis();
@@ -860,7 +873,7 @@ void loop() {
   {
 
     // *** checking resqueted actions
-    if (bitRead(toDo, toDoScan) == 1 && pendingPollingResp == 0x00)      // check if scan is requested
+    if (bitRead(toDo, toDoScan) == 1  && pendingPollingResp == 0x00)     // check if scan is requested
     {
       if (BNOMode == MODE_COMPASS)
       {
@@ -1394,9 +1407,9 @@ void MoveForward(int lengthToDo ) {
           if movePingInit=0 most likely  the next obstacle beyond sensor limitation
           else check move possibility
       */
-      if (movePingInit != 0 && (abs(movePingInit) - abs(lengthToDo) < (frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack))
+      if (movePingInit != 0 && abs((abs(movePingInit) - abs(lengthToDo)) < (frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack))
       {
-        movePingMax = abs(movePingInit) - abs((frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack);
+        movePingMax = abs((abs(movePingInit) - abs((frontLenght + securityLenght) * doEchoFront + (backLenght + securityLenght) * doEchoBack))) * (movePingInit / abs(movePingInit));
 #if defined(debugObstacleOn)
         Serial.print("not enough free space to move: ");
         Serial.print(lengthToDo);
@@ -1422,7 +1435,6 @@ void MoveForward(int lengthToDo ) {
         bitWrite(currentMove, toDoStraight, false);
         bitWrite(saveCurrentMove, toDoStraight, false);
         lengthToDo = 0;
-
         return;
       }
       /*
@@ -1512,11 +1524,11 @@ void PowerCheck()
   //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
   if (power3Mesurt < power3LowLimit)                                    // check power voltage is over minimum threshold
   {
-    bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
+    bitWrite(diagPower, 2, true);                                       // set diag bit power 1 ok
   }
   else
   {
-    bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
+    bitWrite(diagPower, 2, false);                                       // set diag bit power 1 pk
   }
   unsigned int power4 = analogRead(power4Value); // read power1 analog value and map to fit real voltage
   power4 = analogRead(power4Value);              // read twice to get a better value
@@ -1528,11 +1540,11 @@ void PowerCheck()
   //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
   if (power4Mesurt < power4LowLimit)                                    // check power voltage is over minimum threshold
   {
-    bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
+    bitWrite(diagPower, 3, true);                                       // set diag bit power 1 ok
   }
   else
   {
-    bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
+    bitWrite(diagPower, 3, false);                                       // set diag bit power 1 pk
   }
   unsigned int power5 = analogRead(power5Value); // read power1 analog value and map to fit real voltage
   power5 = analogRead(power5Value);              // read twice to get a better value
@@ -1545,11 +1557,11 @@ void PowerCheck()
   //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
   if (power5Mesurt < power5LowLimit)                                    // check power voltage is over minimum threshold
   {
-    bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
+    bitWrite(diagPower, 4, true);                                       // set diag bit power 1 ok
   }
   else
   {
-    bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
+    bitWrite(diagPower, 4, false);                                       // set diag bit power 1 pk
   }
   unsigned int power6 = analogRead(power6Value); // read power1 analog value and map to fit real voltage
   power6 = analogRead(power6Value);              // read twice to get a better value
@@ -1562,17 +1574,14 @@ void PowerCheck()
   //    power1Mesurt = (power1 * float (1005) / 1023);  // map to fit real voltage
   if (power6Mesurt < power6LowLimit)                                    // check power voltage is over minimum threshold
   {
-    bitWrite(diagPower, 0, true);                                       // set diag bit power 1 ok
+    bitWrite(diagPower, 5, true);                                       // set diag bit power 1 ok
   }
   else
   {
-    bitWrite(diagPower, 0, false);                                       // set diag bit power 1 pk
+    bitWrite(diagPower, 5, false);                                       // set diag bit power 1 pk
   }
 
-  if (diagPower >= 0x03 && appStat != 0xff)             // global power issue set appStat flag
-  {
-    //   StopAll();
-  }
+
 #if defined(debugPowerOn)
   Serial.print(power1);
   Serial.print(" ");
@@ -2481,131 +2490,7 @@ void CheckBeforeStart()
   }
 }
 
-void CheckEndOfReboot()  //
-{
-  if (rebootPhase == 6 && millis() > rebootDuration) // end of arduino reboot
-  {
-    rebootPhase--;
-    Serial.print("reboot phase:");
-    Serial.println(rebootPhase);
-    bitWrite(currentMove, toDoRotation, HIGH);
-    bitWrite(currentMove, toDoBackward, HIGH);
-    boolean IRsensorsOk = false;
-    PowerOnIRSensors();
-    while (!IRsensorsOk)
-    {
-      stateObstacle state = robotIR.CheckObstacle();
-      if (state.obstacle)
-      {
-        Serial.println(state.sensorsOnMap, HEX);
-        delay(10000);
-        digitalWrite(IRPower1PIN, LOW);
-        digitalWrite(IRPower2PIN, LOW);
-        delay(1000);
-        PowerOnIRSensors();
-      }
-      else
-      {
-        digitalWrite(IRPower1PIN, LOW);
-        digitalWrite(IRPower2PIN, LOW);
-        robotIR.StopSensor(0);
-        robotIR.StopSensor(1);
-        robotIR.StopSensor(2);
-        robotIR.StopSensor(3);
-        robotIR.StopSensor(4);
-        robotIR.StopSensor(5);
-        currentMove = 0x00;
-        IRsensorsOk = true;
-      }
-    }
-  }
-  if (rebootPhase == 5) // end of arduino reboot
-  {
-    rebootPhase--;
-    Serial.print("reboot phase:");
-    Serial.println(rebootPhase);
-    EchoServoAlign(servoAlignedPosition, false);                              // adjust servo motor to center position
-  }
-  if (rebootPhase == 4 && millis() > rebootDuration + 1000) // end of arduino reboot
-  {
-    PingFrontBack();
-    rebootPhase--;
-    Serial.print("reboot phase:");
-    Serial.println(rebootPhase);
 
-  }
-
-  if (rebootPhase == 3 && analogRead(power6Value) > map(power6LowLimit, 0, 1873, 0, 1023)) // motors power on
-  {
-    rebootPhase--;
-    Serial.print("reboot phase:");
-    Serial.println(rebootPhase);
-    digitalWrite(RobotOutputRobotRequestPin, HIGH);
-    delay(500);
-    pinMode(RobotOutputRobotRequestPin, INPUT);     // input mode till the subsystem is ready
-  }
-  if (rebootPhase == 3 && millis() > rebootESPDuration)
-  {
-    rebootPhase--;
-    bitWrite(rebootDiag, 2, 1);
-    Serial.print("timeout>reboot phase:");
-    Serial.println(rebootPhase);
-  }
-  if ((rebootPhase == 2) && millis() > rebootBNODuration) // end of arduino reboot
-  {
-    int pulseCount = 0;
-    if (digitalRead(RobotOutputRobotRequestPin) == 1 && digitalRead(RobotInputReadyPin) == 0)
-    {
-      pulseCount++;
-      Serial.println("move a little to calibrate compass");
-      bRightClockwise = bLeftClockwise;
-      //        bitWrite(currentMove, toDoClockwise, false);
-      //        bitWrite(saveCurrentMove, toDoClockwise, false);
-      pulseMotors(2);
-      bLeftClockwise = !bLeftClockwise;
-      delay(1500);
-    }
-    if ((rebootPhase == 2) && (millis() > rebootBNOTimeout || bitRead(BNOSysStat, 0))) // BNo timeout or BNO not iddle
-    {
-      rebootPhase--;
-      bitWrite(rebootDiag, 1, 1);
-      Serial.print("timoeout>reboot phase:");
-      Serial.println(rebootPhase);
-    }
-    if (pulseCount % 2 == 1)     // to balance clockwise and anitclockwise move
-    {
-      bRightClockwise = bLeftClockwise;
-      pulseMotors(2);
-    }
-  }
-  if (rebootPhase == 2 && digitalRead(RobotInputReadyPin) == 1 && millis() > rebootDuration + 5000) // end of arduino reboot
-  {
-    //   northOrientation = NorthOrientation();            // added 24/10/2016
-    PingFrontBack();
-    rebootPhase--;
-    pinMode(RobotOutputRobotRequestPin, OUTPUT);     // subsystel is ready set output mode as running mode
-    digitalWrite(RobotOutputRobotRequestPin, LOW);
-    Serial.print("reboot phase:");
-    Serial.println(rebootPhase);
-  }
-  if (rebootPhase == 1 && gyroCalibrationOk && millis() > rebootDuration + 7000) // end of arduino reboot
-  {
-    diagRobot = rebootDiag;
-    waitFlag = 0x00;
-    if(diagRobot==0x00)
-    {
-     appStat = 0x00;     
-    }
-
-    bitWrite(diagConnection, diagConnectionI2C, 0);
-    PingFrontBack();
-    Horn(true, 250);
-    rebootPhase = 0;
-    iddleTimer = millis();
-    Serial.print("reboot diag:");
-    Serial.println(rebootDiag, HEX);
-  }
-}
 
 void WheelInterrupt()   // wheel controler set a software interruption due to threshold reaching
 {
@@ -3041,7 +2926,7 @@ void northAlign()
   Serial.print(" shift:");
   Serial.println(alignShift);
 #endif
-  if (retryAlign > 25) {
+  if (retryAlign > 30) {
     actStat = alignEnded; // align required
     northAligned = false;
     bitWrite(toDo, toDoAlign, 0);       // clear bit toDo
@@ -3085,7 +2970,7 @@ void northAlign()
       bRightClockwise = bLeftClockwise;
       rot = 360 + alignShift;
     }
-    rot = rot * .8;
+    rot = rot * .9;
     if (abs(alignShift) >= 2 * minRotEncoderAbility)
     {
       if (CheckRotationAvaibility(rot))

@@ -155,22 +155,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         Serial.print("north align:");
         Serial.println(northAlignTarget);
 #endif
-        /*
-          northAligned = false;
-          ResetGyroscopeHeadings();
-          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
-          bitWrite(toDo, toDoAlign, 1);       // position bit toDo
-          iddleTimer = millis();
-          #if defined(debugConnection)
-          Serial.print("north align:");
-          Serial.println(northAlignShift);
-          #endif
-          //       targetAfterNORotation= ((int) alpha + reqN) % 360;
-          targetAfterNORotation = 0;
-        */
-        //       northAlign(reqN);
         break;
-        //       }
       }
     case 0x49: // commande I init robot postion
       {
@@ -231,8 +216,6 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         Serial.print(":");
       }
       Serial.println();
-
-      //      Serial.print(":");
       Serial.print(lastAckTrameNumber);
       Serial.print(":");
       Serial.println(trameNumber);
@@ -542,7 +525,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       //     GyroStartInitMonitor();
       SendStatus();
       break;
-    case requestSetBNOMode: // 
+    case requestSetBNOMode: //
       iddleTimer = millis();
       SetBNOMode(GatewayLink.DataInSerial[3]);
       Serial.print("set BNOMode");
@@ -557,10 +540,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       getNorthOrientation = 0x00;
       compasUpToDate = 0x00;
       saveNorthOrientation = 999;
-      bitWrite(toDo, toDoAlign, 1);
+      // bitWrite(toDo, toDoAlign, 0);
       toDoDetail = 0x00;
       //  bitWrite(toDoDetail, toDoAlignRotate, 0);
-      bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
+      // bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
+      SetBNOMode(MODE_COMPASS);
       Serial.println("getNorthOrientation");
       sendInfoSwitch = 1;        // for sending status priority
       timeSendInfo = millis() + delayBetweenInfo; // for delaying the next send
@@ -618,6 +602,11 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         SendVersion();
         break;
       }
+    case requestInternalFlags:
+      {
+        SendInternalFlags();
+        break;
+      }
     case requestPID:
       {
         SendPID();
@@ -663,7 +652,6 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
               rightSetpoint = (GatewayLink.DataInSerial[5] & 0b01111111) * 256 + GatewayLink.DataInSerial[6];
             }
             break;
-
         }
         SendPID();
         break;
@@ -711,4 +699,3 @@ void ClearActionFlags()
   endMoveToSend = 0x00;
   endMoveRetCodeToSend = 0x00;
 }
-

@@ -12,7 +12,7 @@ void SendEndAction(uint8_t action, uint8_t retCode)
 
 #endif
   lastActionRetcode = retCode;
-  if (action == moveEnded || action == moveAcrossPassEnded)
+  if (action == moveEnded || action == moveAcrossPassEnded || action == alignEnded)
   {
     GyroStopInitMonitor();
     digitalWrite(encoderPower, LOW);
@@ -20,7 +20,14 @@ void SendEndAction(uint8_t action, uint8_t retCode)
     digitalWrite(IRPower2PIN, LOW);
     endMoveToSend = 0x00;
     endMoveRetCodeToSend = 0x00;
-    actStat = moveEnded;
+    if (action == moveAcrossPassEnded)
+    {
+      actStat = moveEnded;
+    }
+    else
+    {
+      actStat = action;
+    }
   }
   sendInfoSwitch = 1;        // for sending status priority
   timeSendInfo = millis(); // for delaying the next automatic send
@@ -28,7 +35,6 @@ void SendEndAction(uint8_t action, uint8_t retCode)
   //  int northOrientation = NorthOrientation();
   int deltaNORotation = NOBeforeRotation - NOAfterRotation;
   int deltaNOMoving = NOBeforeMoving - NOAfterMoving;
-  actStat = action;
   trameNumber = trameNumber + 1;
   GatewayLink.PendingDataReqSerial[0] = 0x01;   // ack expected
   GatewayLink.PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
@@ -130,7 +136,7 @@ void SendEndAction(uint8_t action, uint8_t retCode)
     GatewayLink.PendingDataReqSerial[28] = uint8_t(abs(movePingMax) / 256);
     GatewayLink.PendingDataReqSerial[29] = uint8_t(abs(movePingMax));
   }
-  else if (action == moveEnded && (retCode == moveKoDueToObstacle || retCode == moveAcrossPathKoDueToObstacle))
+  else if ((action == moveEnded || action == alignEnded) && (retCode == moveKoDueToObstacle || retCode == moveAcrossPathKoDueToObstacle))
   {
     if (obstacleSensor == echoSensor)
     {
@@ -694,4 +700,42 @@ void SendIRSensors()
   GatewayLink.PendingDataReqSerial[4] = 0x00;
   GatewayLink.PendingDataReqSerial[5] = IRSensorsOnMap;
   GatewayLink.PendingDataLenSerial = 0x06; // 6 longueur mini max 25  pour la gateway
+}
+void SendInternalFlags()
+{
+  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  {
+    return;
+  }
+  GatewayLink.PendingReqSerial = PendingReqRefSerial;
+  GatewayLink.PendingDataReqSerial[0] = respInternalFlags; //
+  GatewayLink.PendingDataReqSerial[1] = 0x00;
+  GatewayLink.PendingDataReqSerial[2] = toDo;
+  GatewayLink.PendingDataReqSerial[3] = toDoDetail;
+  GatewayLink.PendingDataReqSerial[4] = 0x00;
+  GatewayLink.PendingDataReqSerial[5] = wheelIdInterruption ;
+  GatewayLink.PendingDataReqSerial[6] = IrDetectionActive;
+  GatewayLink.PendingDataReqSerial[7] = 0x00; //
+  GatewayLink.PendingDataReqSerial[8] = waitFlag;
+  GatewayLink.PendingDataReqSerial[9] = currentMove;
+  GatewayLink.PendingDataReqSerial[10] = 0x00;
+  GatewayLink.PendingDataReqSerial[11] = pendingAction;
+  GatewayLink.PendingDataReqSerial[12] = pendingPollingResp;
+  GatewayLink.PendingDataReqSerial[13] = 0x00;
+  GatewayLink.PendingDataReqSerial[14] = gyroUpToDate;
+  GatewayLink.PendingDataReqSerial[15] = endMoveToSend;
+  GatewayLink.PendingDataReqSerial[16] = 0x00;
+  GatewayLink.PendingDataReqSerial[17] = northAligned;
+  GatewayLink.PendingDataReqSerial[18] = stepBNOInitLocation;
+  GatewayLink.PendingDataReqSerial[19] = 0x00;
+  GatewayLink.PendingDataReqSerial[20] = getBNOLocation;
+  GatewayLink.PendingDataReqSerial[21] = BNOMode;
+  GatewayLink.PendingDataReqSerial[22] = 0x00;
+  GatewayLink.PendingDataReqSerial[23] = PIDMode;
+  GatewayLink.PendingDataReqSerial[24] = rebootPhase;
+  GatewayLink.PendingDataReqSerial[25] = 0x00;
+  GatewayLink.PendingDataReqSerial[26] = retryCount;
+  GatewayLink.PendingDataReqSerial[27] = lastAckTrameNumber;
+  GatewayLink.PendingDataReqSerial[28] =  lastReceivedNumber; // for debuging
+  GatewayLink.PendingDataLenSerial = 0x1d; // 6 longueur mini max 30 pour la gateway
 }
