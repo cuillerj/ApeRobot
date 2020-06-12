@@ -40,6 +40,7 @@
    v6.5 tunning PID after battery modification
    v6.6 modif updateNO
    v6.7 modif pinginit for move backward
+   v6.8 non testee ajout   analogReference(INTERNAL);
 */
 
 //  Version
@@ -674,6 +675,7 @@ void setup() {
   robotIR.AddSensor(3, IRsensor3PIN, -10, 0, 4, IrThreshold, IrObstacleOn, IrInactive); // back
   robotIR.AddSensor(4, IRsensor4PIN, 40, -15, 6, IrThreshold, IrObstacleOn, IrInactive); // right front
   robotIR.AddSensor(5, IRsensor5PIN, 40, -15, 0, IrThreshold, IrObstacleOn, IrInactive); // front right
+  analogReference(INTERNAL); // to increase digital read performance temperature below 110 ajoute le 05/11 et non teste
 }
 
 void loop() {
