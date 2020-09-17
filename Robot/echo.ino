@@ -136,8 +136,9 @@ void ScanPosition() {
     //   delay(1000);
     //   myservo.detach();
     SetBNOMode(MODE_IMUPLUS);
-
-    EndMoveUpdate(scanEnded, 0x00);
+    actStat=scanEnded;
+    SendEndAction(scanEnded, 0x00);
+   // EndMoveUpdate(scanEnded, 0x00);
   }
 }
 

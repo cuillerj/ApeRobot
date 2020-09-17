@@ -6,7 +6,7 @@ void TurnPIDOn()
   leftPID.SetOutputLimits(outLimit[leftMinOut], outLimit[leftMaxOut]);
   rightPID.SetOutputLimits(outLimit[rightMinOut], outLimit[rightMaxOut]);
   SetPIDKx();
-  SetPIDSampleTime(delayMiniBetweenHoles / 3);
+  SetPIDSampleTime(delayMiniBetweenHoles * 3);
 #if defined(debugPID)
   {
     Serial.print("leftMinOut;");
@@ -22,8 +22,8 @@ void TurnPIDOn()
 }
 void SetPIDKx()
 {
-  leftPID.SetTunings(Kx[KpRegister], Kx[KiRegister], Kx[KdRegister]);
-  rightPID.SetTunings(Kx[KpRegister], Kx[KiRegister], Kx[KdRegister]);
+  leftPID.SetTunings(KxLeft[KpRegister], KxLeft[KiRegister], KxLeft[KdRegister]);
+  rightPID.SetTunings(KxRight[KpRegister], KxRight[KiRegister], KxRight[KdRegister]);
   // leftPID.SetSampleTime((delayMiniBetweenHoles / 3));
   // rightPID.SetSampleTime((delayMiniBetweenHoles / 3));
 #if defined(debugPID)
@@ -47,37 +47,49 @@ void SetPIDKx()
 }
 void ComputePID()
 {
-  double speedLeft = Wheels.GetLastTurnSpeed(leftWheelId) * 100;
-  speedLeft = (Wheels.Get2LastTurnSpeed(leftWheelId) * 100 + speedLeft) / 2;
-  leftInput = speedLeft;
+  // double speedLeft = Wheels.GetLastTurnSpeed(leftWheelId) * 100;
+  // speedLeft = (Wheels.Get2LastTurnSpeed(leftWheelId) * 100 + speedLeft) / 2;
+  if (millis() >= timePID + 25000. / optimalHighStraightSpeed ) // update speed every 1/4 turn
+  {
+    leftInput = Wheels.GetTurnSpeed(leftWheelId) * 100;
+    rightInput = Wheels.GetTurnSpeed(rightWheelId) * 100;
+  }
+  //  double speedLeft = Wheels.GetTurnSpeed(leftWheelId) * 100;
+  // speedLeft = (Wheels.Get2LastTurnSpeed(leftWheelId) * 100 + speedLeft) / 2;
+  // leftInput = speedLeft;
   leftPID.Compute();
-  leftMotor.AdjustMotorPWM(leftOutput);
-  double speedRight = Wheels.GetLastTurnSpeed(rightWheelId) * 100;
-  speedRight = (Wheels.Get2LastTurnSpeed(rightWheelId) * 100 + speedRight) / 2;
-  rightInput = speedRight;
   rightPID.Compute();
+  leftMotor.AdjustMotorPWM(leftOutput);
   rightMotor.AdjustMotorPWM(rightOutput);
-  timePID = millis();
+  // double speedRight = Wheels.GetLastTurnSpeed(rightWheelId) * 100;
+  // speedRight = (Wheels.Get2LastTurnSpeed(rightWheelId) * 100 + speedRight) / 2;
+  //double speedRight = Wheels.GetTurnSpeed(rightWheelId) * 100;
+  // rightInput = speedRight;
+
+
 #if defined(debugPID)
   {
-    Serial.print("leftIn:");
-    Serial.print(leftInput);
-    Serial.print(" leftOU:");
-    Serial.print(leftOutput);
-    Serial.print(" rightIn:");
-    Serial.print(rightInput);
-    Serial.print(" rightOU:");
-    Serial.print(rightOutput);
-    Serial.print(" LsetP:");
-    Serial.print(leftSetpoint);
-    Serial.print(" setP:");
-    Serial.println(rightSetpoint);
+    if (millis() >= timePID + optimalHighStraightSpeed * maxWheelEncoderHoles / 200)
+    {
+      Serial.print("leftIn:");
+      Serial.print(leftInput);
+      Serial.print(" leftOU:");
+      Serial.print(leftOutput);
+      Serial.print(" rightIn:");
+      Serial.print(rightInput);
+      Serial.print(" rightOU:");
+      Serial.print(rightOutput);
+      Serial.print(" LsetP:");
+      Serial.print(leftSetpoint);
+      Serial.print(" setP:");
+      Serial.println(rightSetpoint);
+    }
   }
 #endif
+  timePID = millis();
 }
 void SetPIDSampleTime(double sampTime)
 {
   leftPID.SetSampleTime(sampTime);
   rightPID.SetSampleTime(sampTime);
 }
-

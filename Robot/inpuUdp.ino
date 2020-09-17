@@ -445,6 +445,7 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         {
           if (abs(reqN) < minRotGyroAbility )
           {
+            actStat = moveEnded;
             EndMoveUpdate(moveEnded, moveUnderLimitation);
             break;
           }
@@ -625,8 +626,10 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
             Serial.println(GatewayLink.DataInSerial[4]);
             if (GatewayLink.DataInSerial[4] >= 0 && GatewayLink.DataInSerial[4] < sizeOfKx)
             {
-              Kx[GatewayLink.DataInSerial[4]] = (GatewayLink.DataInSerial[5] & 0b01111111) * 256 + GatewayLink.DataInSerial[6];
-              Kx[GatewayLink.DataInSerial[4]] = Kx[GatewayLink.DataInSerial[4]] / 100;
+              KxLeft[GatewayLink.DataInSerial[4]] = (GatewayLink.DataInSerial[5] & 0b01111111) * 256 + GatewayLink.DataInSerial[6];
+              KxLeft[GatewayLink.DataInSerial[4]] = KxLeft[GatewayLink.DataInSerial[4]] / 100;
+              KxRight[GatewayLink.DataInSerial[4]] = (GatewayLink.DataInSerial[5] & 0b01111111) * 256 + GatewayLink.DataInSerial[6];
+              KxRight[GatewayLink.DataInSerial[4]] = KxRight[GatewayLink.DataInSerial[4]] / 100;
               SetPIDKx();
               break;
             }

@@ -39,13 +39,14 @@ void CheckEndOfReboot()  //
     if (digitalRead(RobotOutputRobotRequestPin) == 1 && digitalRead(RobotInputReadyPin) == 0)
     {
       pulseCount++;
+      delay(1000);
       Serial.println("move a little to calibrate compass");
       bRightClockwise = bLeftClockwise;
       //        bitWrite(currentMove, toDoClockwise, false);
       //        bitWrite(saveCurrentMove, toDoClockwise, false);
       pulseMotors(2);
       bLeftClockwise = !bLeftClockwise;
-      delay(1500);
+      //   delay(1500);
     }
     if ((rebootPhase == 3) && (millis() > rebootBNOTimeout || bitRead(BNOSysStat, 0))) // BNo timeout or BNO not iddle
     {
@@ -56,11 +57,13 @@ void CheckEndOfReboot()  //
     }
     if (pulseCount % 2 == 1)     // to balance clockwise and anitclockwise move
     {
+      delay(1000);
+      Serial.println("...");
       bRightClockwise = bLeftClockwise;
       pulseMotors(2);
     }
   }
-  if (rebootPhase == 3 && digitalRead(RobotInputReadyPin) == 1 && millis() > rebootDuration + 5000) // end of arduino reboot
+  if (rebootPhase == 3 && digitalRead(RobotInputReadyPin) == 1 && millis() > rebootDuration + 7000) // end of arduino reboot
   {
     //   northOrientation = NorthOrientation();            // added 24/10/2016
     PingFrontBack();
@@ -124,7 +127,7 @@ void CheckEndOfReboot()  //
         IRsensorsOk = true;
       }
     }
- //   SetBNOMode(MODE_IMUPLUS);
+    //   SetBNOMode(MODE_IMUPLUS);
   }
 
 }
