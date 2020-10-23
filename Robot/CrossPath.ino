@@ -184,7 +184,7 @@ void MoveAcrossPath()
           passRetCode = moveAcrossPathKoDueToNotFindingStart;       // store move across path return code
           InterruptMoveAcrossPath(moveAcrossPathKoDueToNotFindingStart);
           //       timePassMonitorStarted = millis();                        // to wait a little bit to complete location calculation
-          //      getBNOLocation = 0x07;                // to resquest BNO computed location
+          //      BNORequestedState = 0x07;                // to resquest BNO computed location
         }
         break;
       }
@@ -267,7 +267,7 @@ void MoveAcrossPath()
           passRetCode = moveAcrossPathKoDueToNotFindingEntry;
           InterruptMoveAcrossPath(moveAcrossPathKoDueToNotFindingEntry);
           //        timePassMonitorStarted = millis();
-          //      getBNOLocation = 0x07;                // to resquest BNO computed location
+          //      BNORequestedState = 0x07;                // to resquest BNO computed location
         }
         break;
       }

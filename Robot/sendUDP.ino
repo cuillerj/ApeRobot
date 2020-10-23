@@ -43,7 +43,7 @@ void SendEndAction(uint8_t action, uint8_t retCode)
   GatewayLink.PendingDataReqSerial[4] = retCode;
 
   GatewayLink.PendingDataReqSerial[5] = 0x00;
-  if (action == requestUpdateNO)
+  if (action == requestUpdateNO && (bitRead(toDoDetail, toDoAlignUpdateNO)))
   {
     GatewayLink.PendingDataReqSerial[6] = uint8_t(saveNorthOrientation / 256);
     GatewayLink.PendingDataReqSerial[7] = uint8_t(saveNorthOrientation);
@@ -52,7 +52,6 @@ void SendEndAction(uint8_t action, uint8_t retCode)
     GatewayLink.PendingDataReqSerial[6] = uint8_t(northOrientation / 256);
     GatewayLink.PendingDataReqSerial[7] = uint8_t(northOrientation);
   }
-
 
   if (posX >= 0)
   {
@@ -457,7 +456,7 @@ void SendBNOLocation ()
   GatewayLink.PendingDataReqSerial[0] = 0x01;
   GatewayLink.PendingDataReqSerial[1] = uint8_t(trameNumber % 256);
   GatewayLink.PendingDataReqSerial[2] = respBNOLocation;
-  GatewayLink.PendingDataReqSerial[3] = getBNOLocation;    // used by java to check uptodate (0x00)
+  GatewayLink.PendingDataReqSerial[3] = BNORequestedState;    // used by java to check uptodate (0x00)
   if (BNOLeftPosX >= 0)
   {
     GatewayLink.PendingDataReqSerial[4] = 0x2b;
@@ -728,7 +727,7 @@ void SendInternalFlags()
   GatewayLink.PendingDataReqSerial[17] = northAligned;
   GatewayLink.PendingDataReqSerial[18] = stepBNOInitLocation;
   GatewayLink.PendingDataReqSerial[19] = 0x00;
-  GatewayLink.PendingDataReqSerial[20] = getBNOLocation;
+  GatewayLink.PendingDataReqSerial[20] = BNORequestedState;
   GatewayLink.PendingDataReqSerial[21] = BNOMode;
   GatewayLink.PendingDataReqSerial[22] = 0x00;
   GatewayLink.PendingDataReqSerial[23] = PIDMode;

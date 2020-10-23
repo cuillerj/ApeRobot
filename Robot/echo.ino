@@ -135,7 +135,8 @@ void ScanPosition() {
     //    myservo.write(pulseValue[(nbPulse + 1) / 2]); // remise au centre
     //   delay(1000);
     //   myservo.detach();
-    SetBNOMode(MODE_IMUPLUS);
+   // SetBNOMode(MODE_IMUPLUS);
+         expectedBNOMode = MODE_IMUPLUS;
     actStat=scanEnded;
     SendEndAction(scanEnded, 0x00);
    // EndMoveUpdate(scanEnded, 0x00);

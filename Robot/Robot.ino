@@ -44,12 +44,15 @@
    v6.9 loosen wheel consistancy condition
    v6.10 gyrorotate limitatio updated
    v6.11 motorControl library instead of motorControl2342L
-   v7.0 new wheelcontrol
+   v7.0 new wheelcontrol and balance right & left speed
+   v7.1 BNO055subsystemV3
+
 
 */
 
 //  Version
-uint8_t ver[2] = {7, 0};
+
+uint8_t ver[2] = {7, 1};
 // uncomment #define debug to get log on serial link
 //#define debugScanOn true
 //#define debugMoveOn true
@@ -196,22 +199,28 @@ float SlowPWMRatio = 0.7;              // PWM ratio for a low speed move
 #define iLeftSlowPWM leftMotorPWM * SlowPWMRatio        // PMW value to slowdown motor at the end of the run
 #define leftRotatePWMRatio 1.0    // 
 #define pendingLeftMotor 0      // define pendingAction bit used for left motor
-Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, iLeftMotorMaxrpm, iLeftSlowPWM); // define left Motor
+#define maxRPS 1.8 //
+#define maxRPS100 maxRPS*100 //
+#define minRPS 1.2
+#define minRPS100 minRPS*100 //
+#define optimalHighStraightSpeed 150  // modif le 23042019 148 vs 152
+#define optimalLowStraightSpeed minRPS100 // 130
+Motor leftMotor(leftMotorENA, leftMotorIN1, leftMotorIN2, maxRPS * 60, iLeftSlowPWM); // define left Motor
 unsigned int rightMotorPWM = 235;      // default expected robot PMW  must be < 255 in order that dynamic speed adjustment could increase this value
 #define iRightSlowPWM rightMotorPWM * SlowPWMRatio  // PMW value to slowdown motor at the end of the run
 //#define iRightRotatePWM 170   // PMW value
 #define rightRotatePWMRatio 0.9    // 
 #define pendingRightMotor 1    // define pendingAction bit used for right motor
-Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, iRightMotorMaxrpm, iRightSlowPWM); // define right Motor
+
+Motor rightMotor(rightMotorENB, rightMotorIN3, rightMotorIN4, maxRPS * 60, iRightSlowPWM); // define right Motor
 float leftToRightDynamicAdjustRatio = 1.0;    // ratio used to compensate speed difference between the 2 motors rght PWM = left PWM x ratio
-int pulseLenght = 5; // pulse duration
+int pulseLenght = 6; // pulse duration
 #define slowMoveHolesDuration 12     // target distance expressed in term of numbers of holes under that slow move is required
 //-- wheel control --
-#define maxRPS 1.65 // loaded
-#define minRPS 1.10
-#define optimalHighStraightSpeed 148   // modif le 23042019 148 vs 152
+
+
 //#define optimalHighStraightSpeed 200   // unloaded
-#define optimalLowStraightSpeed 130 // 130
+
 #define wheelPinInterruptIn 3    // used by sotfware interrupt when rotation reach threshold
 #define wheelPinInterruptOut 7    // used by sotfware interrupt when rotation reach threshold
 #define leftAnalogEncoderInput A8   // analog input left encoder
@@ -259,8 +268,8 @@ unsigned int rightIncoderHighValue = 500; // define value mV above that signal i
 unsigned int rightIncoderLowValue = 100;  // define value mV below that signal is low
 //#define delayBetweenEncoderAnalogRead  750 //  micro second between analog read of wheel encoder level
 //#define delayMiniBetweenHoles  20  //  delay millis second between 2 encoder holes at the maximum speed  (35)
-#define delayMiniBetweenHoles  (1000/(maxRPS*leftWheelEncoderHoles))*0.9  //  delay millis second between 2 encoder holes at the maximum speed  
-#define delayMaxBetweenHoles  (1000/(minRPS*leftWheelEncoderHoles))*1.1  //  delay millis second between 2 encoder holes at the minimum speed  
+#define delayMiniBetweenHoles  (1000/(maxRPS*leftWheelEncoderHoles)) //  delay millis second between 2 encoder holes at the maximum speed  
+//#define delayMaxBetweenHoles  (1000/(minRPS*leftWheelEncoderHoles))*1.1  //  delay millis second between 2 encoder holes at the minimum speed  
 // create wheel control object
 boolean encodersStopped = true;
 WheelControl Wheels(leftWheelEncoderHoles, leftIncoderHighValue, leftIncoderLowValue, leftAnalogEncoderInput,
@@ -292,6 +301,7 @@ volatile uint8_t wheelIdInterruption = 0xff; // if not 0xff a wheelinterruption 
 //double KxRight[sizeOfKx] = {1.2, 1.5, 0.05};  // {Kp,Ki,Kd}
 float KxLeft[sizeOfKx] = {0.45, 0.10, 0.12};  // {Kp,Ki,Kd}
 float KxRight[sizeOfKx] = {0.45, 0.10, 0.12};  // {Kp,Ki,Kd}
+float KxHeading[sizeOfKx] = {1., 0., 2.};  // {Kp,Ki,Kd}
 //double KxLeft[sizeOfKx] = {0., 0.80, 0.12};  // {Kp,Ki,Kd}
 //double KxRight[sizeOfKx] = {0., 0.80, 0.12};  //{Kp,Ki,Kd}
 //double Kx[sizeOfKx] = {1.2, 1.5, 0.05};  // registers that contain PID Kx
@@ -302,17 +312,21 @@ float KxRight[sizeOfKx] = {0.45, 0.10, 0.12};  // {Kp,Ki,Kd}
 #define leftStartOut 4
 #define rightStartOut 5
 volatile boolean PIDMode = false;
+boolean PIDFirstLoop = true;
 #define sizeOfOutlim 6
-int outLimit[sizeOfOutlim] = {80, 80, 255, 230, 240, 220}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut} % 40 25 243 130 100
+int outLimit[sizeOfOutlim] = {35, 35, 255, 230, 240, 220}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut} % 40 25 243 130 100
+//int outLimit[sizeOfOutlim] = {20, 20, 255, 225, 240, 215}; // {leftMinOut,rightMinOut,leftMaxOut,rightMaxOut, leftStartOut, rightStartOut} % 40 25 243 130 100
 double leftSetpoint = optimalHighStraightSpeed; // default speed average min max expressed in RPM/100
 //double leftSetpoint = minRPS*100; // default speed average min max expressed in RPM/100
-volatile double leftInput, leftOutput;
+volatile double leftInput, leftOutput, headingInput;
 volatile double rightSetpoint = leftSetpoint * (fLeftWheelDiameter / fRightWheelDiameter);
+volatile double headingSetpoint = 0;
 boolean equalSpeed = (leftSetpoint == rightSetpoint);
 //double rightSetpoint = maxRPS*100;
-double rightInput, rightOutput;
+double rightInput, rightOutput, headingOutput;
 PID leftPID(&leftInput, &leftOutput, &leftSetpoint, KxLeft[KpRegister], KxLeft[KiRegister], KxLeft[KdRegister], DIRECT);
 PID rightPID(&rightInput, &rightOutput, &rightSetpoint, KxRight[KpRegister], KxRight[KiRegister], KxRight[KdRegister], DIRECT);
+PID headingPID(&headingInput, &headingOutput, &headingSetpoint, KxHeading[KpRegister], KxHeading[KiRegister], KxHeading[KdRegister], DIRECT);
 /*
    toDo bit definitions
 */
@@ -331,6 +345,7 @@ PID rightPID(&rightInput, &rightOutput, &rightSetpoint, KxRight[KpRegister], KxR
 #define toDoMoveAcrossPass 1      // move detail across path
 #define toDoAlignRotate 2 //
 #define toDoAlignUpdateNO 3 //
+#define toDoGetNO 4 //
 /*
    waitFlag bit definitions
 */
@@ -406,7 +421,7 @@ uint8_t getNorthOrientation = 0xff;
    gyroscope subsytem
 */
 boolean gyroCalibrationOk = true; // flag gyroscope calibration true or not
-uint8_t inputData[256];           // input zone for data comming from subsystem
+volatile uint8_t inputData[256];           // input zone for data comming from subsystem
 uint8_t slaveAddress = robotI2CAddress; // I2c subsytem address
 long OutputRobotRequestPinTimer;        //  timer used to reset the request PIN
 uint8_t outData[pollResponseLenght] = {slaveAddress, 0x00, 0x00, 0x00};  // output zone for data to be send to the subsystem
@@ -415,6 +430,7 @@ int gyroscopeHeading[maxGyroscopeHeadings]; // pile of last the gyroscope headin
 uint8_t gyroscopeHeadingIdx = 0x00;         // current gyroscope heading index
 volatile uint8_t gyroUpToDate = 0x00;                // flag defining status of data comming from gyroscope
 uint8_t monitSubsystemStatus = 0x00;
+uint8_t expectedSubsystemStatus = 0x00;
 int prevGyroRotation = 0;
 uint8_t gyroInitRotationSens = 0x00;       // rotation clockwise or anti-clockwise
 
@@ -423,16 +439,57 @@ uint8_t gyroInitRotationSens = 0x00;       // rotation clockwise or anti-clockwi
    cf subsystem documentation
 */
 uint8_t BNOMode = 0x00;
+uint8_t expectedBNOMode = 0x00;
 uint8_t BNOCalStat = 0x00;
 uint8_t BNOSysStat = 0x00;
 uint8_t BNOSysError = 0x00;
 /*
-
+  BNORequestedState sttates below
 */
+#define BNOIddleState 0xff
+#define BNOGetStatus 0x13
+#define BNOGotStatus 0x12
+#define BNOGetMode 0x11
+#define BNOGotMode 0x10
+#define BNOGetCompasHeadingState 0x0f
+#define BNOGotCompasHeadingState 0x0e
+#define BNOGetAbsoluteHeadingState 0x0d
+#define BNOGotAbsoluteHeadingState 0x0c
+#define BNOGetRelativeHeadingState 0x0b
+#define BNOGotRelativeHeadingState 0x0a
+#define BNOUpdateHoles 0x09
+#define BNOUpdatedHoles 0x08
+#define BNOGetHeadingState 0x07
+#define BNOGotHeadingState 0x06
+#define BNOGetRightState 0x05
+#define BNOGotRightState 0x04
+#define BNOGetLeftState 0x03
+#define BNOGotLeftState 0x02
+
+#define sendBNOState 0x01
+
+#define BNOLoopRetcodeReady 0x00
+#define BNOLoopRetcodeWaitingPoll 0x01
+#define BNOLoopRetcodeWaitingData 0x02
+#define BNOLoopRetcodePollTimeout 0x03
+#define BNOLoopRetcodeDataTimeout 0x04
+
+//#define BNOLoopRetcodeWaitStatus 0x07
+#define BNOLoopRetcodeWaitInitLocation 0x08
+#define BNOLoopRequestedState 0x09
+#define BNOLoopRetcodeOverflow 0xff
+byte BNOLoopRetcode = 0x00;
+boolean BNOLocationToSend = false;
+boolean BNORequestSequence = true;                 // set to true to link requests as get all location data - set to fals for getting only one
+volatile uint8_t BNORequestedState = BNOIddleState;         // step count when asking for BNO location
+
 uint8_t BNOUpToDateFlag = 0x00;          // flag data up to date
 uint8_t compasUpToDate = 0x00;          // flag data up to date
-uint8_t pendingPollingResp = 0x00;      // flag waiting for subsystem response
-uint8_t getBNOLocation = 0xff;         // step count when asking for BNO location
+volatile uint8_t pendingPollingResp = 0x00;      // flag waiting for subsystem response
+volatile boolean pendingDataResp = false;      // flag waiting for subsystem response
+volatile int eventHowMany;
+//volatile boolean requestReceived = false;
+//volatile boolean eventReceived = false;
 uint8_t endMoveToSend = 0x00;
 uint8_t endMoveRetCodeToSend = 0x00;
 
@@ -443,7 +500,7 @@ float BNOLeftPosX = 0;
 float BNOLeftPosY = 0;
 float BNORightPosX = 0;
 float BNORightPosY = 0;
-int BNOLocationHeading = 0;
+float BNOLocationHeading = 0;
 
 /*
    scan control
@@ -531,7 +588,7 @@ unsigned long serialTimer;       //   for serial link communication
 unsigned long checkObstacleTimer;     // to regurarly check obstacle when moving
 unsigned long durationMaxEcho = 25000; // maximum scan echo duration en us
 unsigned long timeSendInfo;     // to regurarly send information to th server
- unsigned long timeAfterStopMotors;     // to avoid I2C perturbations
+unsigned long timeAfterStopMotors;     // to avoid I2C perturbations
 unsigned long timeBetweenOnOffObstacle;  // use to compute delay between obstacle detection sitch on off
 volatile unsigned long timeMotorStarted;          // set to time motors started
 unsigned long timerHorn   ;          // set to time horn started
@@ -551,6 +608,13 @@ unsigned long timeTraceDataSent;
 unsigned long timePID;
 unsigned long lastEchoTime;           //
 unsigned long timerIRDetection;
+unsigned long lastBNOLoopTime = 0;
+unsigned long pendingPollingRespTimer = 0;
+unsigned long pendingDataRespTimer = 0;
+unsigned long requestSystemStatusTime = 0;
+unsigned long requestChangeMonitorModeTime = 0;
+unsigned long lastUpdateHeading = 0;
+
 #define wheelCheckMoveDelay 500
 #define wheelCheckRotateDelay 3000
 int wheelCheckDelay = 500;
@@ -563,10 +627,10 @@ unsigned long timeLoop;  // cycle demande heure
 #define delayBetweenInfo 5000   // delay before sending new status to the server  
 #define delayPowerCheck 100    // delay before next checking of power
 #define delayBeforeRestartAfterAbstacle 3000 // delay before taking into account obstacle disappearance
-#define delayBetweenCheckPosition 200       // delay between 2 check position
+#define delayBetweenCheckPosition 300       // delay between 2 check position
 #define delayBetween2NO 500          // delay between 2 NO update
 #define delayBetween2BNOStatus 500
-#define delayBetweenlastUpdateBNOMoveTime 200
+#define delayBetweenlastUpdateBNOMoveTime 150
 #define delayGyro360Rotation 4000 // mawimum duration for 360° rotation
 #define delaylowHighSpeedTimer 20  // maximum delay between 1 wheel still running high speed and 1 starting to slowdown
 #define delayBetweenTraceSend 5000
@@ -585,14 +649,14 @@ unsigned long timeLoop;  // cycle demande heure
 //-- robot status & diagnostics
 volatile uint8_t diagMotor = 0x00;   // bit 0 pb left motor, 1 right moto, 2 synchro motor
 uint8_t diagPower = 0x00;   // bit 0 power1, 1 power2, 2 power3 0 Ok 1 Ko
-uint8_t diagConnection = 0x03;   // bit 0 pending serial link bit 1 pending I2C
+uint8_t diagConnection = 0x07;   // bit 0 pending serial link bit 1 pending I2C bit 2 BNO timeout
 uint8_t diagRobot = 0xff;     // to be cleared after complete reboot
 uint8_t toDo = 0x00;          // flag kind of move to do
 uint8_t toDoDetail = 0x00;          // flag kind of move to do
 volatile uint8_t waitFlag = 0xff;     // used to pause and waiting before starting
 
- uint8_t currentMove = 0x00;   // flag kind of current move
- uint8_t pendingAction = 0x00; // flag pending action to be started
+uint8_t currentMove = 0x00;   // flag kind of current move
+uint8_t pendingAction = 0x00; // flag pending action to be started
 uint8_t sendInfoSwitch = 0x00;  // flag to switch between different data to send
 uint8_t saveCurrentMove = 0x00;   // flag last kind of current move
 boolean moveForward;           // flag to indicate if requested move is forward or backward
@@ -678,13 +742,12 @@ void setup() {
   digitalWrite(redLed, HIGH);
   Serial.println("Start I2C");
   Wire.begin(slaveAddress);                // join i2c bus with address #8
-  Wire.onReceive(receiveEvent); // register event
+  Wire.onReceive(receiveData); // register event
   Wire.onRequest(requestEvent); // register event
   Serial.println("starting I2C slave mode");
   pinMode(RobotOutputRobotRequestPin, OUTPUT);
   digitalWrite(RobotOutputRobotRequestPin, LOW);
   digitalWrite(toDoLed, LOW);
-  Wire.begin();
   Serial.println("I2C ready");
   TurnPIDOn();   // turn PID on
   PrintRobotParameters();
@@ -703,6 +766,12 @@ void setup() {
 
 void loop() {
   delay(1);
+  // boolean SubsystemOkForMoving = CheckSubsystemStatus();
+#if defined (debugGyroscopeOn)
+  //if (!CheckSubsystemStatus() && bitRead(toDo, toDoMove)) {
+  // Serial.println("not ready to move");
+  //}
+#endif
   if (wheelIdInterruption != 0xff)                   // we got wheel encoder interruption
   {
     WheelThresholdReached(wheelIdInterruption);                      // call the threshold analyse
@@ -712,7 +781,8 @@ void loop() {
 #endif
     //   WheelThresholdReached(wheelIdInterruption);      // interruption treatment
     StopEchoInterrupt();                    // stop obstacles detection
-    GyroGetHeadingRegisters();
+    //  GyroGetHeadingRegisters();
+    BNORequestedState = BNOGetRelativeHeadingState;
     wheelIdInterruption = 0xff;                      // clear the flag
   }
 
@@ -758,7 +828,7 @@ void loop() {
 
 
 #if defined(debugLoop)
-  if (millis() - timeLoop > 1000)
+  if (millis() - timeLoop > 250)
   {
     debugPrintLoop();                     // for degub only
     timeLoop = millis();
@@ -783,21 +853,17 @@ void loop() {
   {
     digitalWrite(toDoLed, HIGH);
   }
-  if (rebootPhase == 0x00 && millis() - iddleTimer > 60000 && toDo == 0x00 && toDoDetail == 0x00 && pendingPollingResp == 0x00 && !bitRead(appTrace, traceBitNO))
-  {
-    if (BNOMode != MODE_IMUPLUS)
-    {
-      SetBNOMode(MODE_IMUPLUS);
-    }
-  }
+
   if (rebootPhase == 0x00 && millis() - OutputRobotRequestPinTimer >= minimumDurationBeetwenPolling / 2)
   {
-    digitalWrite(RobotOutputRobotRequestPin, LOW);      // reset the request to the subsystem
+    //digitalWrite(RobotOutputRobotRequestPin, LOW);      // reset the request to the subsystem
   }
 
-  if ( pendingPollingResp == !0x00 && millis() - OutputRobotRequestPinTimer >= 5000 )     // detect timeout
+  if ( pendingPollingResp == 0x02 && millis() - OutputRobotRequestPinTimer >= 1500 )     // detect timeout
   {
     pendingPollingResp = 0x00;  // to detect timeout
+    Serial.println("BNO polling timeout");
+    bitWrite(diagConnection, 2, 1); //
   }
 
   // ***  keep in touch with the server
@@ -810,9 +876,9 @@ void loop() {
   }
   //  if (GatewayLink.PendingReqSerial != 0x00 )           // check if we have a message to send
   //  {
-  if (GatewayLink.PendingReqSerial != 0x00)           // check if we have a message to send (or a message currently sending)
+  if (GatewayLink.PendingReqSerial != 0x00 && !pendingDataResp && pendingPollingResp == 0x00 && millis() - timeSendSecSerial > 200)    // check if we have a message to send (or a message currently sending)
   {
-    GatewayLink.DataToSendSerial();                    // send message on the serial link
+    // GatewayLink.DataToSendSerial();                    // send message on the serial link
 #if defined(debugConnection)
     Serial.println("send");
 #endif
@@ -914,11 +980,12 @@ void loop() {
         ScanPosition();
       }
       else {
-        SetBNOMode(MODE_COMPASS);
+        //  SetBNOMode(MODE_COMPASS);
+        expectedBNOMode = MODE_COMPASS;
       }
     }
 
-    if (bitRead(toDo, toDoAlign) == 1 && (northAligned == false || bitRead(toDoDetail, toDoAlignUpdateNO)) && pendingPollingResp == 0x00)   // check if  scan is requested
+    if (CheckSubsystemStatus() && bitRead(toDo, toDoAlign) == 1 && (northAligned == false || bitRead(toDoDetail, toDoAlignUpdateNO)) && pendingPollingResp == 0x00)   // north aligned requested
     {
       if (BNOMode == MODE_COMPASS)
       {
@@ -929,7 +996,8 @@ void loop() {
 #if defined(debugGyroscopeOn)
             Serial.println("request compas");
 #endif
-            GyroGetHeadingRegisters();
+            //   GyroGetHeadingRegisters();
+            BNORequestedState = BNOGetCompasHeadingState;
             compasUpToDate = 0x01;
           }
           if (compasUpToDate == 0x02)
@@ -944,14 +1012,26 @@ void loop() {
         }
       }
       else {
-        SetBNOMode(MODE_COMPASS);
+        expectedBNOMode = MODE_COMPASS;
+        //  SetBNOMode(MODE_COMPASS);
       }
-
     }
-    if (bitRead(toDo, toDoMove) == 1 && bitRead(toDoDetail, toDoMoveAcrossPass) == 0  && bitRead(waitFlag, toWait) == 0 && pendingPollingResp == 0x00) {   // check if  move is requested
-      if (BNOMode != MODE_IMUPLUS )
-      {
-        SetBNOMode(MODE_IMUPLUS);       // set BNO IMU mode
+    if (compasUpToDate == 0x02 && bitRead(toDoDetail, toDoAlignUpdateNO) && !bitRead(toDo, toDoAlign))         // update north orientation requested
+    {
+#if defined(debugGyroscopeOn)
+      Serial.println("send NO");
+#endif
+      compasUpToDate = 0x00;
+      bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
+      SendEndAction(actStat, 0x00);
+    }
+    if (CheckSubsystemStatus() && bitRead(toDo, toDoMove) == 1 && bitRead(toDoDetail, toDoMoveAcrossPass) == 0  && bitRead(waitFlag, toWait) == 0 && pendingPollingResp == 0x00) {   // check if  move is requested
+      if (BNOMode != MODE_IMUPLUS ) {
+        expectedBNOMode = MODE_IMUPLUS;
+        //SetBNOMode(MODE_IMUPLUS);       // set BNO IMU mode
+      }
+      else if (!bitRead(monitSubsystemStatus, monitGyroStatusBit)) {
+        bitWrite(expectedSubsystemStatus, monitMagnetoStatusBit, 1);
       }
       else {
         ComputeTargetLocalization(reqAng, reqMove);
@@ -960,14 +1040,16 @@ void loop() {
       }
     }
 
-    if (bitRead(toDo, toDoMove) == 1 && bitRead(toDoDetail, toDoMoveAcrossPass) == 1  && bitRead(waitFlag, toWait) == 0 && pendingPollingResp == 0x00) {   // check if  move is requested
+    if (CheckSubsystemStatus() && bitRead(toDo, toDoMove) == 1 && bitRead(toDoDetail, toDoMoveAcrossPass) == 1  && bitRead(waitFlag, toWait) == 0 && pendingPollingResp == 0x00) {  // check if  move is requested
       if (BNOMode != MODE_IMUPLUS && passMonitorStepID > 0x01) // NO aligned completed
       {
-        SetBNOMode(MODE_IMUPLUS);    // set BNO IMU mode
+        //SetBNOMode(MODE_IMUPLUS);    // set BNO IMU mode
+        expectedBNOMode = MODE_IMUPLUS;
       }
       else if (BNOMode != MODE_COMPASS && passMonitorStepID == 0x01) // NO aligned to be done
       {
-        SetBNOMode(MODE_COMPASS);    // set BNO IMU mode
+        expectedBNOMode = MODE_COMPASS;
+        // SetBNOMode(MODE_COMPASS);    // set BNO IMU mode
       }
       else {
         MoveAcrossPath();
@@ -1072,27 +1154,28 @@ void loop() {
 
     // *** checking for move completion
 
-    if (bitRead(toDo, toDoStraight) == true && bitRead(toDoDetail, toDoMoveAcrossPass) == false && bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false && pendingPollingResp == 0x00 && stepBNOInitLocation == 0x00)
-    {
-      if (BNOMode != MODE_IMUPLUS )
-      {
-        SetBNOMode(MODE_IMUPLUS);
-        //     delay(200);
-      }
-      else {
-#if defined(debugMoveOn)
-        Serial.println("ready to go straight");
-#endif
-        if ( bitRead(currentMove, toDoRotation) == true )  // end of first move step (rotation) move straight to be done
+    if (CheckSubsystemStatus() && bitRead(toDo, toDoStraight) == true && bitRead(toDoDetail, toDoMoveAcrossPass) == false && bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false && pendingPollingResp == 0x00 && stepBNOInitLocation == 0x00)
+    { /*      if (BNOMode != MODE_IMUPLUS )
         {
-#if defined(debugMoveOn)
-          Serial.println("end rotation still straight move todo");
-          bitWrite(currentMove, toDoRotation, false);
-          //       bitWrite(currentMove, toDoStraight, true);
-#endif
+         //        SetBNOMode(MODE_IMUPLUS);
+         expectedBNOMode = MODE_IMUPLUS;
+         //        delay(250);
         }
-        MoveForward(pendingStraight) ;
+        else {
+      */
+#if defined(debugMoveOn)
+      Serial.println("ready to go straight");
+#endif
+      if ( bitRead(currentMove, toDoRotation) == true )  // end of first move step (rotation) move straight to be done
+      {
+#if defined(debugMoveOn)
+        Serial.println("end rotation still straight move todo");
+        bitWrite(currentMove, toDoRotation, false);
+        //       bitWrite(currentMove, toDoStraight, true);
+#endif
       }
+      MoveForward(pendingStraight) ;
+      //     }
     }
     // *** end of checking move completion
 
@@ -1109,139 +1192,84 @@ void loop() {
   if (millis() - timeSubsystemPolling > 5000 && rebootPhase == 0)
   {
     timeSubsystemPolling = millis();
-    RequestForPolling();
+    //  RequestForPolling();
   }
 
-  if (millis() - timeGyroRotation > delayGyroRotation && bitRead(toDo, toDoRotation) == 1 && bitRead(toDoDetail, toDoGyroRotation) == 1 && !leftMotor.RunningMotor() && !rightMotor.RunningMotor() && pendingPollingResp == 0x00) //
-  {
-    if (BNOMode != MODE_IMUPLUS )
-    {
-      SetBNOMode(MODE_IMUPLUS);
+  if (rebootPhase < 3) {
+    byte retcode = BNOLoop();
+#if defined(debugGyroscopeL2On)
+    if (retcode != BNOLoopRetcode) {
+      Serial.print(" prev:0x");
+      Serial.print(retcode, HEX);
+      Serial.print("new rc:0x");
+      Serial.println(BNOLoopRetcode, HEX);
     }
-    else {
-      timeGyroRotation = millis();
-#if defined(debugLoop)
-      Serial.print("loop gyro todo 0x:");
-      Serial.print(toDo, HEX);
-      Serial.print(" loop gyro tododetail 0x:");
-      Serial.println(toDoDetail, HEX);
 #endif
-      if (gyroRotationRetry >= maxGyroRotationRetry)
-      {
-
-#if defined(debugGyroscopeOn)
-        Serial.print("gyro to many retry:0x");
-        Serial.print(toDo, HEX);
-        Serial.print(" loop gyro tododetail 0x:");
-        Serial.println(toDoDetail, HEX);
-#endif
-        bitWrite(diagRobot, diagRobotGyroRotation, 1);
-        bitWrite(toDoDetail, toDoGyroRotation, 0);
-        EndMoveUpdate(moveEnded, rotationKoToManyRetry);
-      }
-      else
-      {
-        if (gyroUpToDate == 0x00)
-        {
-#if defined(debugGyroscopeOn)
-          Serial.print("request heading: 0x");
-          Serial.print(toDo, HEX);
-          Serial.print(" dodetail 0x:");
-          Serial.println(toDoDetail, HEX);
-#endif
-          GyroGetHeadingRegisters();
-          gyroUpToDate = 0x01;
-        }
-        if (gyroUpToDate == 0x02)
-        {
-#if defined(debugGyroscopeOn)
-          Serial.print("got heading 0x:");
-          Serial.print(toDo, HEX);
-          Serial.print(" tododetail 0x:");
-          Serial.println(toDoDetail, HEX);
-#endif
-          gyroUpToDate = 0x00;
-          uint8_t retCode = GyroscopeRotate();
-#if defined(debugGyroscopeOn)
-          Serial.print("back gyrorotate 0x:");
-          Serial.print(toDo, HEX);
-          Serial.print(" 0x:");
-          Serial.println(toDoDetail, HEX);
-#endif
-          if (abs(retCode) > 1)
-          {
-            ComputeAngleAndPositionVSGyro(gyroscopeHeading[gyroscopeHeadingIdx]);
-            bitWrite(toDoDetail, toDoGyroRotation, 0);
-            bitWrite(diagRobot, diagRobotGyroRotation, 1);
-            EndMoveUpdate(moveEnded, retCode);
-          }
-          if (retCode == -1)
-          {
-            //          Serial.println(".");
-            //         GyroStartInitMonitor;
-            //        timeGyroRotation = millis() + 500;
-          }
-        }
-      }
-    }
+    BNOLoopRetcode = retcode;
   }
-  if (rebootPhase == 0 && millis() - timeUpdateBNOStatus >= delayBetween2BNOStatus && gyroUpToDate != 0x01 && pendingPollingResp == 0x00) // regurarly request North orientation if no other request pending
+  if (BNORequestedState == BNOIddleState && rebootPhase == 0 && currentMove == 0x00 && gyroUpToDate != 0x01 && !pendingDataResp && pendingPollingResp == 0x00  && stepBNOInitLocation == 0x00 && (millis() - requestSystemStatusTime) > 5000)
   {
-    timeUpdateBNOStatus = millis();
+    requestSystemStatusTime = millis();
     if (BNOUpToDateFlag % 2 == 0)
     {
-      GetBNO055Status();
+      BNORequestedState = BNOGetStatus ;
     }
     if (BNOUpToDateFlag % 2 == 1)
     {
+      BNORequestedState = BNOGetMode  ;
+    }
+    /*
+      if (BNOUpToDateFlag % 3 == 2)
+      {
       if (BNOMode == MODE_NDOF)
       {
-        GetAbsoluteHeading();
+        BNORequestedState =  BNOGetAbsoluteHeadingState;
+        //   GetAbsoluteHeading();
       }
       if (BNOMode == MODE_COMPASS)
       {
-        GetNorthOrientation();
+        //    GetNorthOrientation();
+        BNORequestedState = BNOGetCompasHeadingState;
       }
       if (BNOMode == MODE_IMUPLUS)
       {
-        GyroGetHeadingRegisters();
+        //GyroGetHeadingRegisters();
+        //        BNORequestedState = BNOGetRelativeHeadingState;
       }
-    }
+      }
+    */
     BNOUpToDateFlag++;
-    //   GetNorthOrientation();
   }
-  if (millis() - lastUpdateBNOMoveTime > delayBetweenlastUpdateBNOMoveTime && bitRead(currentMove, toDoStraight) == true && pendingPollingResp == 0x00 )
+  if ((millis() - lastUpdateBNOMoveTime > delayBetweenlastUpdateBNOMoveTime && BNORequestedState == BNOUpdateHoles))
   {
     UpdateBNOMove();
   }
-  if (stepBNOInitLocation != 0x00 && pendingPollingResp == 0x00)
-  {
-    InitBNOLocation();
+  else if (bitRead(currentMove, toDoStraight)  && millis() - lastUpdateHeading > 200 ) {
+    BNORequestedState = BNOGetHeadingState;
+    lastUpdateHeading = millis();
   }
-  if (getBNOLocation == 0x07)
-  {
-    GetBNOHeadingLocation();
-  }
-  if (getBNOLocation == 0x05)
-  {
-    GetBNORightLocation();
-  }
-  if (getBNOLocation == 0x03)
-  {
-    GetBNOLeftLocation();
-  }
-  if (getBNOLocation == 0x01 && GatewayLink.PendingReqSerial == 0x00 && millis() - timeSendSecSerial > 250 )
+  /*
+    if (BNORequestedState == BNOUpdateHoles && pendingPollingResp == 0x02)
+    {
+    BNORequestedState = BNOUpdatedHoles;
+    }
+  */
+
+  if (BNORequestedState == BNOIddleState && BNOLocationToSend  && GatewayLink.PendingReqSerial == 0x00 && millis() - timeSendSecSerial > 250 )
   {
 #if defined(debugGyroscopeOn)
     Serial.println("send bno loc");
 #endif
-    getBNOLocation = 0x00;
     SendBNOLocation ();
+    BNOLocationToSend = false;
   }
 
   if (pendingPollingResp == 0x01)           // to be kept at the end of the loop in order to be sure every subsytem response will be taken into account
   {
-    pendingPollingResp = 0x00;
+    //    pendingPollingResp = 0x00;
+#if defined(debugGyroscopeOn)
+    // Serial.println("clear polling");
+#endif
   }
   if (!encodersStopped && encodersToStop && millis() > (timeAfterStopMotors + delayToStopEnocder))
   {
@@ -1258,7 +1286,8 @@ void loop() {
       SendTraceNO();
       if (BNOMode != MODE_COMPASS)
       {
-        SetBNOMode(MODE_COMPASS);
+        //      SetBNOMode(MODE_COMPASS);
+        expectedBNOMode = MODE_COMPASS;
       }
     }
     else {
@@ -1270,12 +1299,22 @@ void loop() {
     timeTraceDataSent = millis();
   }
 
-  if (endMoveToSend != 0x00 && getBNOLocation == 0x00 && millis() - timeSendSecSerial > 250) // BNO location has been updated
+  if (endMoveToSend != 0x00 && BNORequestedState == BNOGotLeftState && millis() - timeSendSecSerial > 250) // BNO location has been updated
   {
+    delay(50);
     posX = (BNOLeftPosX + BNORightPosX) / 2;
     posY = (BNOLeftPosY + BNORightPosY) / 2;
     alpha = BNOLocationHeading;
+    /*
+      Serial.print("loc(x,y,H):");
+      Serial.print(posX);
+      Serial.print(",");
+      Serial.print(posY);
+      Serial.print(",");
+      Serial.println(alpha);
+    */
     SendEndAction(endMoveToSend, endMoveRetCodeToSend);
+    //    BNORequestedState = BNOIddleState;
   }
 }
 
@@ -1291,6 +1330,12 @@ void Move(int orientation, int lenghtToDo)
   NOBeforeMoving = 0;
   NOAfterMoving = 0;
   bitWrite(toDo, toDoMove, false);       // position bit toDo move
+#if defined (debugMoveOn)
+  Serial.print("Move():");
+  Serial.print(orientation);
+  Serial.print(",");
+  Serial.println(lenghtToDo);
+#endif
   if (orientation != 0)
   {
     Rotate(orientation, true);
@@ -1302,66 +1347,7 @@ void Move(int orientation, int lenghtToDo)
   }
 }
 
-void Rotate( int orientation, boolean check) {
-  wheelCheckDelay = wheelCheckRotateDelay;
-  leftSetpoint = optimalLowStraightSpeed;
-  rightSetpoint = leftSetpoint;
-  if ( bitRead(pendingAction, pendingLeftMotor) == false && bitRead(pendingAction, pendingRightMotor) == false );
-  {
-    boolean availableRotation = true;
-    if (check)
-    {
-      availableRotation = CheckRotationAvaibility(orientation);
-    }
 
-    if (availableRotation)    // check rotation
-    {
-      posRotationCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
-      posRotationCenterY = posY + shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
-      currentMove = 0x00;
-      saveCurrentMove = 0x00;
-      bitWrite(currentMove, toDoRotation, true);
-      bitWrite(saveCurrentMove, toDoRotation, true);
-      if (!bitRead(toDoDetail, toDoGyroRotation))
-      {
-        bitWrite(toDo, toDoRotation, false);       // position bit toDo move
-      }
-      deltaPosX = 0;
-      deltaPosY = 0;
-      unsigned int lentghLeftToDo = 0;
-      unsigned int lentghRightToDo = 0;
-      if (orientation != 0)
-      {
-        Serial.print("rotationToDo:");
-        Serial.println(orientation);
-        // Rotate
-        lentghLeftToDo = RotationCalculation(abs(orientation));
-        lentghRightToDo = lentghLeftToDo;
-        ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, leftMotorPWM * leftRotatePWMRatio, lentghRightToDo, rightMotorPWM * rightRotatePWMRatio);
-        if (orientation > 0)
-        {
-          bLeftClockwise = true;
-          bitWrite(currentMove, toDoClockwise, true);
-          bitWrite(saveCurrentMove, toDoClockwise, true);
-        }
-        else {
-          bLeftClockwise = false;
-          bitWrite(currentMove, toDoClockwise, false);
-          bitWrite(saveCurrentMove, toDoClockwise, false);
-        }
-        bRightClockwise = bLeftClockwise;
-
-        startMotors();
-      }
-      Serial.println("rotate ");
-    }
-    else {
-      EndMoveUpdate(moveEnded, moveKoDueToNotEnoughSpace);
-      toDo = 0x00;
-      toDoDetail = 0x00;
-    }
-  }
-}
 void MoveForward(int lengthToDo ) {
   //  GyroGetHeadingRegisters();
   delay(10);
@@ -1379,11 +1365,12 @@ void MoveForward(int lengthToDo ) {
   deltaPosY = 0;
   trigBoth = false;
   SendStatus();
+  Serial.print("moveToDo:");
+  Serial.println(lengthToDo);
   // move Toward
   if (lengthToDo != 0 )
   {
-    Serial.print("moveToDo:");
-    Serial.println(lengthToDo);
+
     lentghLeftToDo = abs(lengthToDo);
     lentghRightToDo = abs(lengthToDo);
     ComputerMotorsRevolutionsAndrpm(lentghLeftToDo, leftMotorPWM, lentghRightToDo, rightMotorPWM);
@@ -1495,23 +1482,34 @@ void MoveForward(int lengthToDo ) {
   }
 }
 
-float  RotationCalculation(int orientation) {
-  float distToDo = round(((iRobotWidth * PI / 360) * orientation));
-  Serial.print("distRot: ");
-  Serial.println(distToDo);
-  return (distToDo);
-}
-
 
 
 
 
 void startMotors()
 {
-  GyroGetHeadingRegisters();
+  if (bitRead(currentMove, toDoStraight) || bitRead(toDo, toDoStraight)) {
+    PIDMode = true;
+    PIDFirstLoop = true;
+    BNOLocationHeading = -1;
+  }
+  else {
+    PIDMode = false;
+    PIDFirstLoop = true;
+  }
+
+  // GyroGetHeadingRegisters();
+  if (bitRead(toDo, toDoAlign)) {
+    BNORequestedState = BNOGetCompasHeadingState;
+  }
+  else {
+    BNORequestedState = BNOGetRelativeHeadingState;
+  }
+
   digitalWrite(encoderPower, HIGH);
   PowerOnIRSensors();
   delay(100);
+  BNORequestSequence = false;
   prevCheckLeftHoles = 0;
   prevCheckRightHoles = 0;
   BNOprevSentLeftHoles = 0;
@@ -1523,9 +1521,9 @@ void startMotors()
     bitWrite(pendingAction, pendingLeftMotor, true);
     bitWrite(pendingAction, pendingRightMotor, true);
 #if defined(debugMotorsOn)
-    Serial.print("iLeftCentiRevolutions:");
+    Serial.print("currentLeftWheelThreshold:");
     Serial.print(iLeftCentiRevolutions);
-    Serial.print(" iRightCentiRevolutions:");
+    Serial.print(" currentRightWheelThreshold:");
     Serial.println(iRightCentiRevolutions);
 #endif
     diagMotor = 0x00;
@@ -1535,8 +1533,13 @@ void startMotors()
     diagMotor = 0x00;
     //    digitalWrite(wheelPinInterrupt, LOW);
     attachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn), WheelInterrupt, FALLING);
-    //  delay(15);
-    Wheels.StartWheelControl(true, true, iLeftCentiRevolutions , true, true, iRightCentiRevolutions , false, false, 0, false, false, 0);
+    Wheels.StartWheelControl(true, true, currentLeftWheelThreshold , true, true, currentRightWheelThreshold , false, false, 0, false, false, 0);
+#if defined(debugMotorsOn)
+    Serial.print("currentLeftWheelThreshold:");
+    Serial.print(Wheels.GetWheelThreshold(0));
+    Serial.print(" currentRightWheelThreshold:");
+    Serial.println(Wheels.GetWheelThreshold(1));
+#endif
     encodersStopped = false;
     //  int iLeftRevPWM = outLimit[leftStartOut];
     //  int iRightRevPWM = outLimit[rightStartOut];
@@ -1563,32 +1566,14 @@ void startMotors()
     leftMotor.RunMotor(bLeftClockwise,  startLeftPWM);
 
     timeMotorStarted = millis();
-    PIDMode = true;
+
+
     //    ComputePID();
     Horn(true, 100);
   }
 }
 
-void pulseMotors(unsigned int pulseNumber)
-{
-  GyroGetHeadingRegisters();
-  // bitWrite(pendingAction, pendingLeftMotor, true);
-  //  bitWrite(pendingAction, pendingRightMotor, true);
-#if defined(debugMotorsOn)
-  Serial.print("reqSpeed: ");
-  Serial.print(leftMotorPWM);
-  Serial.print(" ");
-  Serial.println(rightMotorPWM);
-#endif
-  diagMotor = 0x00;
-  //  digitalWrite(wheelPinInterrupt, LOW);
-  attachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn), WheelInterrupt, FALLING);
-  Wheels.StartWheelPulse(pulseNumber);
-  leftMotor.RunMotor(bLeftClockwise,  leftMotorPWM);
-  rightMotor.RunMotor(bRightClockwise,  rightMotorPWM);
-  timeMotorStarted = millis();
 
-}
 
 void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int leftMotorPWM, unsigned long iRightDistance, int rightMotorPWM)
 {
@@ -1763,33 +1748,7 @@ void ComputerMotorsRevolutionsAndrpm(unsigned long iLeftDistance, unsigned int l
   }
   }
 */
-void ComputeAngleAndPosition(float deltaD, float deltaLeft, float deltaRight, uint8_t param)
-{
-  float deltaAlphaRadian = asin(deltaD / (2 * iRobotWidth));
-  float rayon =  deltaRight / (2 * sin(deltaAlphaRadian));
-  float arcCenter = 2 * (rayon - iRobotWidth / 2) * sin(deltaAlphaRadian);
-  float alphaRadian = alpha * PI / 180;
-  deltaPosX = deltaPosX + arcCenter * cos(alphaRadian + deltaAlphaRadian);
-  deltaPosY = deltaPosY + arcCenter * sin(alphaRadian + deltaAlphaRadian);
-  alpha = (deltaAlphaRadian * 2 * 180 / PI + alpha);
-#if defined(debugLocalizationOn)
-  Serial.print("delta alpha: ");
-  Serial.print(deltaAlphaRadian * 2 * 180 / PI);
-  Serial.print(" ");
-#endif
-}
-void ComputeAngleAndPositionVSGyro(int gyroRot)
-{
-  //  float deltaAlphaRadian = (gyroRot * PI) / 180;
-  posX = posRotationGyroCenterX + shiftEchoVsRotationCenter * cos(gyroRot * PI / 180);    // to take into account the distance beetwen (X,Y) reference and rotation center
-  posY = posRotationGyroCenterY + shiftEchoVsRotationCenter * sin(gyroRot * PI / 180);
 
-#if defined(debugLocalizationOn)
-  Serial.print(" alpha: ");
-  Serial.print(gyroRot);
-  Serial.print(" ");
-#endif
-}
 void PrintSpeed()
 {
   delayPrintSpeed = millis();
@@ -2282,6 +2241,7 @@ void StopEncoders()
 #endif
   encodersToStop = false;
   encodersStopped = true;
+  BNORequestSequence = true;
   //passInterruptBy = 0x02;
   Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
   detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
@@ -2289,13 +2249,26 @@ void StopEncoders()
   digitalWrite(encoderPower, LOW);
   //  delay(160);                                      // wait a little bit more for robot intertia before requesting heading
   gyroUpToDate = 0x00;
-  GyroGetHeadingRegisters();
+  //GyroGetHeadingRegisters();
   leftWheeelCumulative = leftWheeelCumulative + Wheels.GetCurrentHolesCount(leftWheelId);
   rightWheeelCumulative = rightWheeelCumulative + Wheels.GetCurrentHolesCount(rightWheelId);
   unsigned int leftHoles = Wheels.GetCurrentHolesCount(leftWheelId);
   unsigned int rightHoles = Wheels.GetCurrentHolesCount(rightWheelId);
 
-
+  float avgRPS = leftHoles / leftWheelEncoderHoles; // turns number
+  float duration = (float(millis()) - timeMotorStarted) / 1000;
+  avgRPS = (avgRPS / duration);
+  timeMotorStarted = 0;
+#if defined(debugMoveOn)
+  Serial.print(" duration:");
+  Serial.print(duration);
+  Serial.print("sec >> average left RPS:");
+  Serial.print(avgRPS);
+  Serial.print(" right:");
+  avgRPS = rightHoles / rightWheelEncoderHoles; // turns number
+  avgRPS = (avgRPS / duration);
+  Serial.println(avgRPS);
+#endif
 #if defined(debugMoveOn)
   Serial.print("RPM left: ");
   Serial.print(leftWheelId);
@@ -2336,12 +2309,13 @@ void StopEncoders()
           EndMoveUpdate(moveEnded, 0x00);
         }
       }
-
+      BNORequestedState = BNOGetHeadingState;
     }
   }
   else
   {
-    UpdateBNOMove();
+    //UpdateBNOMove();
+    BNORequestedState = BNOUpdateHoles;
     // ComputeNewLocalization(0xff);                       // compute new  robot position
     bitWrite(currentMove, toDoStraight, false) ;        // clear flag todo straight
     actStat = moveEnded;                                      // status move completed
@@ -2459,10 +2433,6 @@ void initNorthAlign(unsigned int alignTarget)
   northAlignTarget = alignTarget;
   northAligned = false;
   northAlignedPossibilityChecked = false;
-  // ResetGyroscopeHeadings();
-  //  GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
-  StartMagneto();
-  bitWrite(toDo, toDoAlign, 1);       // position bit toDo
   iddleTimer = millis();
   retryAlign = 0;
 #if defined(debugNorthAlign)
@@ -2483,6 +2453,10 @@ void northAlign()
     int toToCheck = OptimizeNorthAlign(northOrientation, northAlignTarget);
 #if defined(debugNorthAlign)
     Serial.print("toToCheck:");
+    Serial.print(northOrientation);
+    Serial.print(" ");
+    Serial.print(northAlignTarget);
+    Serial.print(" ");
     Serial.println(toToCheck);
 #endif
 
@@ -2644,13 +2618,15 @@ void northAlign()
       EndMoveUpdate(alignEnded, 0x00);
       if (!bitRead(toDoDetail, toDoAlignUpdateNO))
       {
-        StopMagneto();
+        //    StopMagneto();
+        bitWrite(expectedSubsystemStatus, monitGyroStatusBit, 1);
+        bitWrite(expectedSubsystemStatus,  monitMagnetoStatusBit, 0);
       }
     }
   }
 }
 
-uint8_t GyroscopeRotate()
+int GyroscopeRotate()
 /*
    rotate the robot using the gyroscope as a reference
 */
@@ -2659,8 +2635,9 @@ uint8_t GyroscopeRotate()
   if (bitRead(monitSubsystemStatus, monitGyroStatusBit) == 1)
   {
     //  GyroGetHeadingRegisters();
+    BNORequestedState = BNOGetRelativeHeadingState;
     //   timeGyroRotation = millis();
-    gyroRotationRetry++;         // count the number of timer we tried to reach the target heading
+    gyroRotationRetry++;         // count the number of time we tried to reach the target heading
 #if defined(debugGyroscopeOn)
     Serial.print("gyro retry:");
     Serial.print(gyroRotationRetry);
@@ -2843,7 +2820,15 @@ void debugPrintLoop()
   Serial.print(" pendingBNO: ");
   Serial.print(pendingPollingResp);
   Serial.print(" passMonitorStepID: 0x");
-  Serial.println(passMonitorStepID, HEX);
+  Serial.print(passMonitorStepID, HEX);
+  Serial.print(" BNOUpToDateFlag:0x");
+  Serial.print(BNOUpToDateFlag, HEX);
+  Serial.print(" pendingPollingResp:0x");
+  Serial.print(pendingPollingResp, HEX);
+  Serial.print(" BNORequestedState: 0x");
+  Serial.print(BNORequestedState, HEX);
+  Serial.print(" BNOLoopRetcode: 0x");
+  Serial.println(BNOLoopRetcode, HEX);
 
 }
 
@@ -3199,6 +3184,10 @@ int * MinEchoFB(int fromPosition, int rotation)
 }
 void InterruptMove(uint8_t action, uint8_t retCode)
 {
+#if defined (debugObstacleOn)
+  Serial.println("interrupt");
+  debugPrintLoop();
+#endif
   if (passMonitorStepID != passMonitorIddle)
   {
     passRetCode = retCode;
@@ -3267,17 +3256,19 @@ void StopMotors()
   rightMotor.StopMotor();
   bitWrite(pendingAction, pendingLeftMotor, LOW) ;
   bitWrite(pendingAction, pendingRightMotor, LOW) ;
-  timeMotorStarted = 0;
   PIDMode = false;
+  PIDFirstLoop = false;
+  BNORequestSequence = true;
   //delay(100);
 }
 void EndMoveUpdate(uint8_t action, uint8_t retCode)
 {
   endMoveToSend = action;
   endMoveRetCodeToSend = retCode;
-  getBNOLocation = 0x07;                // to resquest BNO computed location
+  BNORequestedState = BNOUpdateHoles;                // to update last encoders data
   toDo = 0x00;
   toDoDetail = 0x00;                                         // clear flag todo
+  pendingStraight = 0x00;
   digitalWrite(IRPower1PIN, LOW);
   digitalWrite(IRPower2PIN, LOW);
   digitalWrite(encoderPower, LOW);

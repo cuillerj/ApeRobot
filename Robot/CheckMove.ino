@@ -54,32 +54,35 @@ void CheckMoveSynchronisation()       // check that the 2 wheels are rotating at
       bitWrite(diagMotor, diagMotorPbRight, 1);       // position bit diagMotor
     }
   }
-  if ( equalSpeed && (deltaMove > 5 && deltaMove / float(currentLeftHoles)   > 0.2)  )
+  if ( equalSpeed && (deltaMove > 10 && deltaMove / float(currentLeftHoles)   > 0.2)  )
   {
 #if defined(debugMotorsOn)
     Serial.println("pb delta");
 #endif
     pbSynchro = true;
   }
-  // if ( equalSpeed && deltaMove != 0. && currentLeftHoles > leftWheelEncoderHoles && currentRightHoles > rightWheelEncoderHoles )
-  int deltaH = currentLeftHoles - currentRightHoles;
-  if ( PIDMode && equalSpeed && deltaH != 0  && currentLeftHoles > leftWheelEncoderHoles && currentRightHoles > rightWheelEncoderHoles )
-  {
+
+//  int deltaHeading = gyroscopeHeading[gyroscopeHeadingIdx];
+
+  /*
+    int deltaH = currentLeftHoles - currentRightHoles;
+    if ( PIDMode && equalSpeed && deltaH != 0  && currentLeftHoles > leftWheelEncoderHoles && currentRightHoles > rightWheelEncoderHoles )
+    {
     float avgH = (currentLeftHoles + currentRightHoles) / 2;
     leftSetpoint = leftSetpoint - (leftSetpoint * deltaH) / (2 * avgH);
-//    leftSetpoint = max(outLimit[leftMinOut], leftSetpoint);
-//    leftSetpoint = min(outLimit[leftMaxOut], leftSetpoint);
+    //    leftSetpoint = max(outLimit[leftMinOut], leftSetpoint);
+    //    leftSetpoint = min(outLimit[leftMaxOut], leftSetpoint);
     rightSetpoint = rightSetpoint + (rightSetpoint * deltaH) / (2 * avgH);
- //   rightSetpoint = max(outLimit[rightMinOut], rightSetpoint);
- //   rightSetpoint = min(outLimit[rightMaxOut], rightSetpoint);
-#if defined(debugMotorsOn)
+    //   rightSetpoint = max(outLimit[rightMinOut], rightSetpoint);
+    //   rightSetpoint = min(outLimit[rightMaxOut], rightSetpoint);
+    #if defined(debugMotorsOn)
     Serial.print("> speed left:");
     Serial.print(leftInput);
     Serial.print(" right:");
     Serial.print(rightInput);
-#endif
-
-  }
+    #endif
+    }
+  */
   if (pbWheelStopped == true || pbSynchro == true)
   {
 #if defined(debugMotorsOn)

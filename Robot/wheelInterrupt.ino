@@ -5,12 +5,15 @@ void WheelInterrupt()   // wheel controler set a software interruption due to th
   if (wheelIdInterruption != 5 && bSpeedHigh[wheelIdInterruption] == false)    //
   {
     Wheels.ClearThreshold(wheelIdInterruption);                      // clear the threshold flag to avoid any more interruption
+            StopMotors();
   }
   else{
         StopMotors();
   }
   //WheelThresholdReached(wheelIdInterruption);                      // call the threshold analyse
   PIDMode = false;
+  PIDFirstLoop=false;
+  IrDetectionActive=false;
 }
 
 void WheelThresholdReached(uint8_t wheelId)
@@ -28,7 +31,7 @@ void WheelThresholdReached(uint8_t wheelId)
     leftSetpoint=0;
     rightSetpoint=0;
     StopMotors();
-    timeMotorStarted = 0;
+   // timeMotorStarted = 0;
     if (passMonitorStepID != passMonitorIddle)
     {
       passInterruptBy = 0x02;
@@ -51,7 +54,7 @@ void WheelThresholdReached(uint8_t wheelId)
       Wheels.StopWheelControl(true, true, false, false);  // stop wheel control
       detachInterrupt(digitalPinToInterrupt(wheelPinInterruptIn));
       digitalWrite(encoderPower, LOW);
-      gyroUpToDate = 0x00;
+      //gyroUpToDate = 0x00;
    //   GyroGetHeadingRegisters();
       timeAfterStopMotors = millis();
       bitWrite(currentMove, toDoRotation, false) ;        // clear flag todo rotation

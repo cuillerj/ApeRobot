@@ -146,6 +146,9 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         //        {
         ClearActionFlags();
         actStat = northAlignRequest;
+        toDo = 0x00;
+        toDoDetail = 0x00;
+        bitWrite(toDo, toDoAlign, 1);       // position bit toDo
         bitWrite(toDoDetail, toDoAlignRotate, 1);
         //      bitWrite(toDoDetail, toDoAlignUpdateNO, 0);
         //         northAlignTarget = GatewayLink.DataInSerial[3] * 256 + GatewayLink.DataInSerial[4];
@@ -174,11 +177,12 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         }
         deltaPosX = 0;
         deltaPosY = 0;
-        posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180); // x position of the rotation center
-        posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180); // y position of the rotation center
+        //       posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180); // x position of the rotation center
+        //       posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180); // y position of the rotation center
         currentLocProb = GatewayLink.DataInSerial[13];   // localisation probability
         sendInfoSwitch = 1;                  // to force next sent info to be status
         SendStatus();
+        //       GyroStartInitMonitor(true);
         stepBNOInitLocation = 0x01;
         //      InitBNOLocation();
 #if defined(debugConnection)
@@ -255,6 +259,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         targetX = reqX;
         targetY = reqY;
         toDo = 0x00;
+        toDo = 0x00;
+        toDoDetail = 0x00;
         bitWrite(toDo, toDoMove, 1);       // position bit toDo move
         appStat = appStat & 0x1f;
         actStat = moving; // moving
@@ -291,41 +297,53 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
         {
           bitWrite(toDo, toDoRotation, 1);
         }
-#if defined(debugConnection)
-        Serial.print("Move: ");
-        Serial.print(reqAng);
-#endif
         reqMove = GatewayLink.DataInSerial[7] * 256 + GatewayLink.DataInSerial[8];
-        if ((abs(reqMove) > 0 && abs(reqMove) < minDistToBeDone) || (abs(reqAng) < 0 && abs(reqAng) < minRotToBeDone))
+        pendingStraight = reqMove;
+#if defined(debugConnection)
+        Serial.print("requestMove:");
+        Serial.print(reqAng);
+        Serial.print(",");
+        Serial.println(reqMove);
+#endif
+        if ((abs(reqMove) >= 0 && abs(reqMove) < minDistToBeDone) || (abs(reqAng) > 0 && abs(reqAng) < minRotToBeDone))
         {
           EndMoveUpdate(moveEnded, moveUnderLimitation);
           break;
         }
-        getBNOLocation = 0xff;
+        BNORequestedState = BNOIddleState;
+        BNORequestSequence = true;
         iddleTimer = millis();
         ResetGyroscopeHeadings();
 
         appStat = appStat & 0x1f;
         actStat = moving; // moving
+        toDo = 0x00;
+        toDoDetail = 0x00;
         bitWrite(toDo, toDoMove, 1);       // position bit toDo move
         toDoDetail = 0x00;
         //     bitWrite(toDoDetail, toDoMoveAcrossPass, 0);       // position bit toDodetail
+                  expectedSubsystemStatus=0x00;
         if (GatewayLink.DataInSerial[6] == 0x2d) {
           reqMove = -reqMove;
         }
+
         if (reqMove > 0)
         {
           bitWrite(toDo, toDoStraight, true);
           bitWrite(toDo, toDoBackward, false);   // to go forward
+          bitWrite(expectedSubsystemStatus, monitGyroforward, true);
         }
         if (reqMove < 0)
         {
           bitWrite(toDo, toDoStraight, true);
           bitWrite(toDo, toDoBackward, true);  // to go backward
+          bitWrite(expectedSubsystemStatus, monitGyroforward, false);
         }
-        GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+        //      GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+        bitWrite(expectedSubsystemStatus, monitGyroStatusBit, 1);
+        bitWrite(expectedSubsystemStatus, monitMagnetoStatusBit, 0);
 #if defined(debugGyroscopeOn)
-        Serial.print("start gyro monitor:");
+        Serial.print("startgyro-monitor:");
         Serial.println(!bitRead(toDo, toDoBackward));
 #endif
         SendStatus();
@@ -405,6 +423,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
           Serial.print(" startToEntryDistance:");
           Serial.println( passStartEntryDistance);
 #endif
+
+          toDo = 0x00;
           toDoDetail = 0x00;
           bitWrite(toDoDetail, toDoMoveAcrossPass, true);       // position bit toDo
           bitWrite(toDo, toDoMove, true);
@@ -449,6 +469,8 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
             EndMoveUpdate(moveEnded, moveUnderLimitation);
             break;
           }
+          BNORequestSequence = false;
+          BNORequestedState = BNOIddleState;
           iddleTimer = millis();
           rotationType = cmdInput;
 
@@ -467,17 +489,23 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
 #endif
           timeGyroRotation = millis();
           gyroTargetRotation = reqN;
+          toDo = 0x00;
+          toDoDetail = 0x00;
           bitWrite(toDoDetail, toDoGyroRotation, 1);       // position bit toDo
           bitWrite(toDo, toDoRotation, 1);       // position bit toDo
           gyroRotationRetry = 0;
           iddleTimer = millis();
           rotationType = cmdInput;
-          posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
-          posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
+          //         posRotationGyroCenterX = posX - shiftEchoVsRotationCenter * cos(alpha * PI / 180);  // save rotation center x position
+          //         posRotationGyroCenterY = posY - shiftEchoVsRotationCenter * sin(alpha * PI / 180);  // save rotation center y position
           ResetGyroscopeHeadings();
-          GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
+          expectedSubsystemStatus=0x00;
+          bitWrite(expectedSubsystemStatus, monitGyroStatusBit, 1);
+          bitWrite(expectedSubsystemStatus, monitMagnetoStatusBit, 0);
+          bitWrite(expectedSubsystemStatus, monitGyroforward, true);
+          // GyroStartInitMonitor(!bitRead(toDo, toDoBackward));
           PowerOnIRSensors();
-          delay(100);
+          // delay(100);
         }
         else
         {
@@ -528,24 +556,32 @@ void TraitInput(uint8_t cmdInput) {     // wet got data on serial
       break;
     case requestSetBNOMode: //
       iddleTimer = millis();
-      SetBNOMode(GatewayLink.DataInSerial[3]);
+      //   SetBNOMode(GatewayLink.DataInSerial[3]);
+      expectedBNOMode = GatewayLink.DataInSerial[3];
       Serial.print("set BNOMode");
       Serial.println(GatewayLink.DataInSerial[3]);
       break;
     case requestBNOLocation: // get subsytem location
-      getBNOLocation = 0x07;
-      Serial.println("getBNOLocation");
+      BNORequestedState = BNOGetHeadingState;
+      BNORequestSequence = true;
+      BNOLocationToSend = true;
+      Serial.println("BNORequestedState");
       break;
     case requestUpdateNO: // get north orientation
       actStat = requestUpdateNO;
+      BNORequestedState = BNOGetCompasHeadingState;
+      BNORequestSequence = false;
       getNorthOrientation = 0x00;
-      compasUpToDate = 0x00;
-      saveNorthOrientation = 999;
-      // bitWrite(toDo, toDoAlign, 0);
+      compasUpToDate = 0x01;
+      saveNorthOrientation = -1;
+      toDo = 0x00;
       toDoDetail = 0x00;
-      //  bitWrite(toDoDetail, toDoAlignRotate, 0);
-      // bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
-      SetBNOMode(MODE_COMPASS);
+      bitWrite(toDo, toDoAlign, 0);
+      bitWrite(toDoDetail, toDoAlignUpdateNO, 1);
+      //      SetBNOMode(MODE_COMPASS);
+      //  bitWrite(toDoDetail, toDoGetNO, 1);       // position bit toDo
+      //  bitWrite(toDoDetail, toDoAlignRotate, 1);
+      //expectedBNOMode = MODE_COMPASS;
       Serial.println("getNorthOrientation");
       sendInfoSwitch = 1;        // for sending status priority
       timeSendInfo = millis() + delayBetweenInfo; // for delaying the next send

@@ -127,7 +127,8 @@ void CheckEndOfReboot()  //
         IRsensorsOk = true;
       }
     }
-    //   SetBNOMode(MODE_IMUPLUS);
+    expectedBNOMode = MODE_IMUPLUS;
+    // SetBNOMode(MODE_IMUPLUS);
   }
 
 }
